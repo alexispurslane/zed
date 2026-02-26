@@ -51,6 +51,7 @@ impl Template for SystemPromptTemplate<'_> {
 pub struct SkillContext {
     pub name: String,
     pub description: String,
+    pub path: String,
 }
 
 /// Template for rendering the available skills section of the system prompt.
@@ -115,12 +116,15 @@ mod tests {
             skills: vec![SkillContext {
                 name: "test-skill".to_string(),
                 description: "A test skill description".to_string(),
+                path: "/home/user/.config/zed/skills/test-skill".to_string(),
             }],
             has_skills: true,
         };
         let rendered = template.render(&templates).unwrap();
         assert!(rendered.contains("## Available Agent Skills"));
-        assert!(rendered.contains("| test-skill | A test skill description |"));
+        assert!(rendered.contains(
+            "| test-skill | A test skill description | /home/user/.config/zed/skills/test-skill |"
+        ));
     }
 
     #[test]

@@ -332,6 +332,7 @@ pub fn format_skills_for_prompt(
             } else {
                 skill.description().to_string()
             },
+            path: skill.path.display().to_string(),
         })
         .collect();
 

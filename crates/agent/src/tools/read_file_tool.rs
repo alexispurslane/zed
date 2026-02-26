@@ -10,6 +10,7 @@ use project::{AgentLocation, ImageItem, Project, WorktreeSettings, image_store};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use settings::Settings;
+use std::path::PathBuf;
 use std::sync::Arc;
 use util::markdown::MarkdownCodeBlock;
 
@@ -18,8 +19,8 @@ fn tool_content_err(e: impl std::fmt::Display) -> LanguageModelToolResultContent
 }
 
 use super::tool_permissions::{
-    ResolvedProjectPath, authorize_symlink_access, canonicalize_worktree_roots,
-    resolve_project_path,
+    ResolvedProjectPath, authorize_symlink_access, canonicalize_skills_root,
+    canonicalize_worktree_roots, is_within_skills_directory, resolve_project_path,
 };
 use crate::{AgentTool, Thread, ToolCallEventStream, ToolInput, outline};
 
@@ -128,6 +129,45 @@ impl AgentTool for ReadFileTool {
                 .map_err(tool_content_err)?;
             let fs = project.read_with(cx, |project, _cx| project.fs().clone());
             let canonical_roots = canonicalize_worktree_roots(&project, &fs, cx).await;
+            let canonical_skills_root = canonicalize_skills_root(&fs).await;
+
+            // Check if path is in skills directory first (before project resolution)
+            let input_path = PathBuf::from(&input.path);
+            let canonical_input = fs.canonicalize(&input_path).await.unwrap_or_else(|_| input_path.clone());
+
+            if is_within_skills_directory(&canonical_input, &canonical_skills_root) {
+                // Skills directory access - read directly via FS
+                if !fs.is_file(&canonical_input).await {
+                    return Err(tool_content_err(format!("{} not found", input.path)));
+                }
+
+                cx.update(|_cx| {
+                    event_stream.update_fields(ToolCallUpdateFields::new().locations(vec![
+                        acp::ToolCallLocation::new(&canonical_input)
+                            .line(input.start_line.map(|line| line.saturating_sub(1))),
+                    ]));
+                });
+
+                // Read file directly
+                let content = fs.load(&canonical_input).await.map_err(tool_content_err)?;
+
+                // Apply line range filtering if specified
+                let content = if input.start_line.is_some() || input.end_line.is_some() {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let start = input.start_line.unwrap_or(1).max(1) as usize;
+                    let start_idx = start.saturating_sub(1);
+                    let end = input.end_line.unwrap_or(u32::MAX) as usize;
+                    if end <= start_idx {
+                        lines.get(start_idx).copied().unwrap_or("").to_string()
+                    } else {
+                        lines[start_idx..end.min(lines.len())].join("\n")
+                    }
+                } else {
+                    content
+                };
+
+                return Ok(LanguageModelToolResultContent::Text(content.into()));
+            }
 
             let (project_path, symlink_canonical_target) =
                 project.read_with(cx, |project, cx| {

@@ -59,6 +59,21 @@ pub async fn canonicalize_worktree_roots<C: gpui::AppContext>(
     canonical_roots
 }
 
+/// Asynchronously canonicalizes the global skills directory path.
+/// Returns the canonicalized path, or the original path if canonicalization fails.
+pub async fn canonicalize_skills_root(fs: &Arc<dyn Fs>) -> PathBuf {
+    let skills_dir = crate::skills::global_skills_dir();
+    match fs.canonicalize(&skills_dir).await {
+        Ok(canonical) => canonical,
+        Err(_) => skills_dir,
+    }
+}
+
+/// Checks if a canonical path is within the canonical skills directory.
+pub fn is_within_skills_directory(canonical_path: &Path, canonical_skills_root: &Path) -> bool {
+    canonical_path.starts_with(canonical_skills_root)
+}
+
 /// Walks up ancestors of `path` to find the deepest one that exists on disk and
 /// can be canonicalized, then reattaches the remaining suffix components.
 ///

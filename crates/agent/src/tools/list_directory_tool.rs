@@ -1,16 +1,18 @@
 use super::tool_permissions::{
-    ResolvedProjectPath, authorize_symlink_access, canonicalize_worktree_roots,
-    resolve_project_path,
+    ResolvedProjectPath, authorize_symlink_access, canonicalize_skills_root,
+    canonicalize_worktree_roots, is_within_skills_directory, resolve_project_path,
 };
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
 use agent_client_protocol::ToolKind;
 use anyhow::{Context as _, Result, anyhow};
+use futures::StreamExt;
 use gpui::{App, Entity, SharedString, Task};
 use project::{Project, ProjectPath, WorktreeSettings};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use settings::Settings;
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use util::markdown::MarkdownInlineCode;
 
@@ -181,6 +183,34 @@ impl AgentTool for ListDirectoryTool {
 
             let fs = project.read_with(cx, |project, _cx| project.fs().clone());
             let canonical_roots = canonicalize_worktree_roots(&project, &fs, cx).await;
+            let canonical_skills_root = canonicalize_skills_root(&fs).await;
+
+            // Check if path is in skills directory first (before project resolution)
+            let input_path = PathBuf::from(&input.path);
+            let canonical_input = fs.canonicalize(&input_path).await.unwrap_or_else(|_| input_path.clone());
+
+            if is_within_skills_directory(&canonical_input, &canonical_skills_root) {
+                // Skills directory access - list directly via FS
+                if !fs.is_dir(&canonical_input).await {
+                    return Err(format!("{} is not a directory.", input.path));
+                }
+
+                let mut entries = fs.read_dir(&canonical_input).await.map_err(|e| e.to_string())?;
+                let mut output = String::new();
+
+                while let Some(entry) = entries.next().await {
+                    let path = entry.map_err(|e| e.to_string())?;
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    let is_dir = fs.is_dir(&path).await;
+                    if is_dir {
+                        writeln!(output, "{}/", name).ok();
+                    } else {
+                        writeln!(output, "{}", name).ok();
+                    }
+                }
+
+                return Ok(output);
+            }
 
             let (project_path, symlink_canonical_target) =
                 project.read_with(cx, |project, cx| -> anyhow::Result<_> {
