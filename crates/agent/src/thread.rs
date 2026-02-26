@@ -881,6 +881,8 @@ pub struct Thread {
     profile_id: AgentProfileId,
     project_context: Entity<ProjectContext>,
     pub(crate) templates: Arc<Templates>,
+    /// Formatted available skills for the system prompt.
+    available_skills: String,
     model: Option<Arc<dyn LanguageModel>>,
     summarization_model: Option<Arc<dyn LanguageModel>>,
     thinking_enabled: bool,
@@ -950,6 +952,18 @@ impl Thread {
         let action_log = cx.new(|_cx| ActionLog::new(project.clone()));
         let (prompt_capabilities_tx, prompt_capabilities_rx) =
             watch::channel(Self::prompt_capabilities(model.as_deref()));
+        let available_skills = {
+            // Collect worktree root paths
+            let worktree_roots: Vec<PathBuf> = project
+                .read(cx)
+                .visible_worktrees(cx)
+                .map(|worktree| worktree.read(cx).abs_path().as_ref().to_path_buf())
+                .collect();
+
+            // Discover skills from global and worktree locations
+            let skills = crate::skills::discover_all_skills_sync(&worktree_roots);
+            crate::skills::format_skills_for_prompt(&skills, &templates)
+        };
         Self {
             id: acp::SessionId::new(uuid::Uuid::new_v4().to_string()),
             prompt_id: PromptId::new(),
@@ -976,6 +990,7 @@ impl Thread {
             profile_id,
             project_context,
             templates,
+            available_skills,
             model,
             summarization_model: None,
             thinking_enabled: enable_thinking,
@@ -1166,6 +1181,19 @@ impl Thread {
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
 
+        let available_skills = {
+            // Collect worktree root paths
+            let worktree_roots: Vec<PathBuf> = project
+                .read(cx)
+                .visible_worktrees(cx)
+                .map(|worktree| worktree.read(cx).abs_path().as_ref().to_path_buf())
+                .collect();
+
+            // Discover skills from global and worktree locations
+            let skills = crate::skills::discover_all_skills_sync(&worktree_roots);
+            crate::skills::format_skills_for_prompt(&skills, &templates)
+        };
+
         Self {
             id,
             prompt_id: PromptId::new(),
@@ -1190,6 +1218,7 @@ impl Thread {
             profile_id,
             project_context,
             templates,
+            available_skills,
             model,
             summarization_model: None,
             thinking_enabled: db_thread.thinking_enabled,
@@ -2661,6 +2690,7 @@ impl Thread {
         let system_prompt = SystemPromptTemplate {
             project: self.project_context.read(cx),
             available_tools,
+            available_skills: self.available_skills.clone(),
             model_name: self.model.as_ref().map(|m| m.name().0.to_string()),
         }
         .render(&self.templates)

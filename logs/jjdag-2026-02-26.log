@@ -1,0 +1,527 @@
+[2026-02-26 18:44:19.218] [INFO] jjdag: jjdag starting up
+[2026-02-26 18:44:19.218] [INFO] jjdag: CLI args parsed, repository: "."
+[2026-02-26 18:44:19.218] [DEBUG] jjdag::shell_out: Validating repository: .
+[2026-02-26 18:44:19.264] [DEBUG] jjdag::shell_out: Repository validated at: /Users/alexispurslane/Development/scratch/zed
+[2026-02-26 18:44:19.264] [INFO] jjdag: Repository validated: /Users/alexispurslane/Development/scratch/zed
+[2026-02-26 18:44:19.267] [INFO] jjdag::shell_out: Running jj command: log --template builtin_log_compact --revisions root() | remote_bookmarks() | ancestors(immutable_heads().., 24)
+[2026-02-26 18:44:20.947] [DEBUG] jjdag::shell_out: Command succeeded: log --template builtin_log_compact --revisions root() | remote_bookmarks() | ancestors(immutable_heads().., 24)
+[2026-02-26 18:44:21.230] [INFO] jjdag::shell_out: Running jj command: diff --summary --revisions tmtpvqtk
+[2026-02-26 18:44:21.398] [DEBUG] jjdag::shell_out: Command succeeded: diff --summary --revisions tmtpvqtk
+[2026-02-26 18:44:21.404] [INFO] jjdag: Model initialized with 3684 revisions
+[2026-02-26 18:44:21.404] [INFO] jjdag: Starting TUI loop
+[2026-02-26 18:44:21.404] [DEBUG] jjdag: Entering TUI loop
+[2026-02-26 18:44:21.406] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:21.609] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:21.811] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:22.017] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:22.224] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:22.429] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:22.635] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:22.840] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:23.049] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:23.255] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:23.417] [DEBUG] jjdag::update: Key pressed: Char('d'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:23.420] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:23.558] [DEBUG] jjdag::update: Key pressed: Char('d'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:23.559] [DEBUG] jjdag::update: Handling message: DescriptionEditStart { mode: Default }
+[2026-02-26 18:44:23.559] [DEBUG] jjdag::update: Handling message: DescriptionEditStart { mode: Default }
+[2026-02-26 18:44:23.559] [INFO] jjdag::shell_out: Running jj command: log -r tmtpvqtk -T description --no-graph --no-pager
+[2026-02-26 18:44:24.334] [DEBUG] jjdag::shell_out: Command succeeded: log -r tmtpvqtk -T description --no-graph --no-pager
+[2026-02-26 18:44:24.335] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="", text_cursor=0, lines_count=1
+[2026-02-26 18:44:24.335] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="", len=0
+[2026-02-26 18:44:24.335] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="", current_pos=0, line_end=0, text_cursor=0, condition=HIT
+[2026-02-26 18:44:24.335] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=0
+[2026-02-26 18:44:24.335] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=0, x=4, y=3
+[2026-02-26 18:44:24.336] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="", text_cursor=0, lines_count=1
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="", len=0
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="", current_pos=0, line_end=0, text_cursor=0, condition=HIT
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=0
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=0, x=4, y=3
+[2026-02-26 18:44:24.538] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="", text_cursor=0, lines_count=1
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="", len=0
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="", current_pos=0, line_end=0, text_cursor=0, condition=HIT
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=0
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=0, x=4, y=3
+[2026-02-26 18:44:24.741] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:24.937] [DEBUG] jjdag::update: Key pressed: Char('a'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:24.937] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:24.937] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'a' }
+[2026-02-26 18:44:24.937] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'a' }
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="a", text_cursor=1, lines_count=1
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="a", len=1
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="a", current_pos=0, line_end=1, text_cursor=1, condition=HIT
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=1
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=1, x=5, y=3
+[2026-02-26 18:44:24.939] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.091] [DEBUG] jjdag::update: Key pressed: Char('d'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:25.091] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:25.091] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'd' }
+[2026-02-26 18:44:25.091] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'd' }
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="ad", text_cursor=2, lines_count=1
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="ad", len=2
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="ad", current_pos=0, line_end=2, text_cursor=2, condition=HIT
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=2
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=2, x=6, y=3
+[2026-02-26 18:44:25.093] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.194] [DEBUG] jjdag::update: Key pressed: Char('d'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:25.194] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:25.194] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'd' }
+[2026-02-26 18:44:25.194] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'd' }
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add", text_cursor=3, lines_count=1
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add", len=3
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add", current_pos=0, line_end=3, text_cursor=3, condition=HIT
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=3
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=3, x=7, y=3
+[2026-02-26 18:44:25.196] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.246] [DEBUG] jjdag::update: Key pressed: Char(' '), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:25.246] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:25.246] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: ' ' }
+[2026-02-26 18:44:25.246] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: ' ' }
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:25.247] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:25.454] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.661] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:25.661] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:25.661] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:25.662] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:25.662] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:25.662] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:25.868] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:26.075] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.282] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:26.282] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:26.282] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:26.282] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:26.282] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:26.283] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.489] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:26.490] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:26.490] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:26.490] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:26.490] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:26.490] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.697] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:26.697] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:26.697] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:26.697] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:26.697] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:26.698] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ", text_cursor=4, lines_count=1
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ", len=4
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ", current_pos=0, line_end=4, text_cursor=4, condition=HIT
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=4
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=4, x=8, y=3
+[2026-02-26 18:44:26.905] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:26.996] [DEBUG] jjdag::update: Key pressed: Char('a'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:26.996] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:26.996] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'a' }
+[2026-02-26 18:44:26.996] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'a' }
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add a", text_cursor=5, lines_count=1
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add a", len=5
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add a", current_pos=0, line_end=5, text_cursor=5, condition=HIT
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=5
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=5, x=9, y=3
+[2026-02-26 18:44:27.000] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.135] [DEBUG] jjdag::update: Key pressed: Char('g'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.136] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.136] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'g' }
+[2026-02-26 18:44:27.136] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'g' }
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add ag", text_cursor=6, lines_count=1
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add ag", len=6
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add ag", current_pos=0, line_end=6, text_cursor=6, condition=HIT
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=6
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=6, x=10, y=3
+[2026-02-26 18:44:27.139] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.263] [DEBUG] jjdag::update: Key pressed: Char('e'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.263] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.263] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'e' }
+[2026-02-26 18:44:27.263] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'e' }
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add age", text_cursor=7, lines_count=1
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add age", len=7
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add age", current_pos=0, line_end=7, text_cursor=7, condition=HIT
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=7
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=7, x=11, y=3
+[2026-02-26 18:44:27.264] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.341] [DEBUG] jjdag::update: Key pressed: Char('n'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.341] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.341] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'n' }
+[2026-02-26 18:44:27.341] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'n' }
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agen", text_cursor=8, lines_count=1
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agen", len=8
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agen", current_pos=0, line_end=8, text_cursor=8, condition=HIT
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=8
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=8, x=12, y=3
+[2026-02-26 18:44:27.345] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.419] [DEBUG] jjdag::update: Key pressed: Char('t'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.419] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.419] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 't' }
+[2026-02-26 18:44:27.419] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 't' }
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent", text_cursor=9, lines_count=1
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent", len=9
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent", current_pos=0, line_end=9, text_cursor=9, condition=HIT
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=9
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=9, x=13, y=3
+[2026-02-26 18:44:27.422] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.499] [DEBUG] jjdag::update: Key pressed: Char(' '), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.499] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.499] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: ' ' }
+[2026-02-26 18:44:27.499] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: ' ' }
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent ", text_cursor=10, lines_count=1
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent ", len=10
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent ", current_pos=0, line_end=10, text_cursor=10, condition=HIT
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=10
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=10, x=14, y=3
+[2026-02-26 18:44:27.503] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.597] [DEBUG] jjdag::update: Key pressed: Char('s'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.597] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.597] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 's' }
+[2026-02-26 18:44:27.597] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 's' }
+[2026-02-26 18:44:27.600] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent s", text_cursor=11, lines_count=1
+[2026-02-26 18:44:27.600] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent s", len=11
+[2026-02-26 18:44:27.600] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent s", current_pos=0, line_end=11, text_cursor=11, condition=HIT
+[2026-02-26 18:44:27.600] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=11
+[2026-02-26 18:44:27.600] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=11, x=15, y=3
+[2026-02-26 18:44:27.601] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.672] [DEBUG] jjdag::update: Key pressed: Char('k'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.672] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.672] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'k' }
+[2026-02-26 18:44:27.672] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'k' }
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent sk", text_cursor=12, lines_count=1
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent sk", len=12
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent sk", current_pos=0, line_end=12, text_cursor=12, condition=HIT
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=12
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=12, x=16, y=3
+[2026-02-26 18:44:27.676] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.821] [DEBUG] jjdag::update: Key pressed: Char('i'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.821] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.821] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'i' }
+[2026-02-26 18:44:27.821] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'i' }
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent ski", text_cursor=13, lines_count=1
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent ski", len=13
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent ski", current_pos=0, line_end=13, text_cursor=13, condition=HIT
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=13
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=13, x=17, y=3
+[2026-02-26 18:44:27.824] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:27.954] [DEBUG] jjdag::update: Key pressed: Char('l'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:27.954] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:27.954] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'l' }
+[2026-02-26 18:44:27.954] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'l' }
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:27.958] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:28.165] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:28.373] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:28.579] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:28.786] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:28.992] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.199] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.401] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.401] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.401] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.401] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.401] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.402] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.506] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.508] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.523] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.524] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.526] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.527] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.538] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.539] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.542] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.544] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.556] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.558] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.559] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.612] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.614] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.623] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.624] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.626] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.627] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.627] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.627] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.627] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.627] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.628] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.768] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.769] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.769] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.769] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.769] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.769] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.770] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.882] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.883] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.926] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.928] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.934] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.935] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:29.943] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:29.945] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.149] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.149] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.149] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.149] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.149] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.150] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.247] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:30.248] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.248] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.248] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.248] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.248] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.249] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.325] [DEBUG] jjdag::update: Mouse event: Down(Left)
+[2026-02-26 18:44:30.325] [DEBUG] jjdag::update: Handling message: LeftMouseClick { row: 3, column: 76 }
+[2026-02-26 18:44:30.325] [DEBUG] jjdag::update: Handling message: LeftMouseClick { row: 3, column: 76 }
+[2026-02-26 18:44:30.327] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.327] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.327] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.327] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.327] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.328] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.388] [DEBUG] jjdag::update: Mouse event: Up(Left)
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.391] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:30.394] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.394] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.394] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.394] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.394] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.395] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.404] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:30.407] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.407] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.407] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.407] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.407] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.408] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.613] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skil", text_cursor=14, lines_count=1
+[2026-02-26 18:44:30.613] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skil", len=14
+[2026-02-26 18:44:30.613] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skil", current_pos=0, line_end=14, text_cursor=14, condition=HIT
+[2026-02-26 18:44:30.613] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=14
+[2026-02-26 18:44:30.613] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=14, x=18, y=3
+[2026-02-26 18:44:30.614] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.790] [DEBUG] jjdag::update: Key pressed: Char('l'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:30.790] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:30.790] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'l' }
+[2026-02-26 18:44:30.790] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 'l' }
+[2026-02-26 18:44:30.818] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skill", text_cursor=15, lines_count=1
+[2026-02-26 18:44:30.819] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skill", len=15
+[2026-02-26 18:44:30.819] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skill", current_pos=0, line_end=15, text_cursor=15, condition=HIT
+[2026-02-26 18:44:30.819] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=15
+[2026-02-26 18:44:30.819] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=15, x=19, y=3
+[2026-02-26 18:44:30.819] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:30.923] [DEBUG] jjdag::update: Key pressed: Char('s'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:30.925] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:30.925] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 's' }
+[2026-02-26 18:44:30.925] [DEBUG] jjdag::update: Handling message: TextInputChar { ch: 's' }
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skills", text_cursor=16, lines_count=1
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skills", len=16
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skills", current_pos=0, line_end=16, text_cursor=16, condition=HIT
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=16
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=16, x=20, y=3
+[2026-02-26 18:44:31.009] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::model: CURSOR_DEBUG: text_input="add agent skills", text_cursor=16, lines_count=1
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::model: CURSOR_DEBUG: line[0]="add agent skills", len=16
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::model: CURSOR_DEBUG: loop idx=0, line="add agent skills", current_pos=0, line_end=16, text_cursor=16, condition=HIT
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::model: CURSOR_DEBUG: FOUND on line 0, offset_in_line=16
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::model: CURSOR_DEBUG: FINAL cursor_line_idx=0, cursor_offset_in_line=16, x=20, y=3
+[2026-02-26 18:44:31.221] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:31.225] [DEBUG] jjdag::update: Key pressed: Enter, modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:31.225] [DEBUG] jjdag::update: Text input active, dispatching text input message
+[2026-02-26 18:44:31.225] [DEBUG] jjdag::update: Handling message: TextInputSubmit
+[2026-02-26 18:44:31.225] [DEBUG] jjdag::update: Handling message: TextInputSubmit
+[2026-02-26 18:44:31.233] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:31.233] [INFO] jjdag::shell_out: Running jj command: describe tmtpvqtk --message add agent skills
+[2026-02-26 18:44:31.520] [DEBUG] jjdag::shell_out: Command succeeded: describe tmtpvqtk --message add agent skills
+[2026-02-26 18:44:31.520] [INFO] jjdag::shell_out: Running jj command: log --template builtin_log_compact --revisions root() | remote_bookmarks() | ancestors(immutable_heads().., 24)
+[2026-02-26 18:44:33.479] [DEBUG] jjdag::shell_out: Command succeeded: log --template builtin_log_compact --revisions root() | remote_bookmarks() | ancestors(immutable_heads().., 24)
+[2026-02-26 18:44:33.764] [INFO] jjdag::shell_out: Running jj command: diff --summary --revisions tmtpvqtk
+[2026-02-26 18:44:33.974] [DEBUG] jjdag::shell_out: Command succeeded: diff --summary --revisions tmtpvqtk
+[2026-02-26 18:44:34.181] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.228] [DEBUG] jjdag::update: Mouse event: Down(Left)
+[2026-02-26 18:44:34.228] [DEBUG] jjdag::update: Handling message: LeftMouseClick { row: 3, column: 76 }
+[2026-02-26 18:44:34.228] [DEBUG] jjdag::update: Handling message: LeftMouseClick { row: 3, column: 76 }
+[2026-02-26 18:44:34.230] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.324] [DEBUG] jjdag::update: Mouse event: Up(Left)
+[2026-02-26 18:44:34.325] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.438] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.439] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.454] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.455] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.475] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.476] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.489] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.491] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.502] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.504] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.505] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.507] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.518] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.519] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.523] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.525] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.538] [DEBUG] jjdag::update: Mouse event: Moved
+[2026-02-26 18:44:34.540] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.742] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:34.945] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:35.148] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:35.353] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:35.559] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:35.766] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:35.971] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:36.177] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:36.177] [DEBUG] jjdag::update: Key pressed: Char('j'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:36.177] [DEBUG] jjdag::update: Handling message: SelectNextNode
+[2026-02-26 18:44:36.177] [DEBUG] jjdag::update: Handling message: SelectNextNode
+[2026-02-26 18:44:36.181] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:36.388] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:36.598] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:36.805] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:37.013] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:37.222] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:37.374] [DEBUG] jjdag::update: Key pressed: Up, modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:37.376] [DEBUG] jjdag::update: Handling message: SelectPrevNode
+[2026-02-26 18:44:37.376] [DEBUG] jjdag::update: Handling message: SelectPrevNode
+[2026-02-26 18:44:37.380] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:37.588] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:37.797] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:38.004] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:38.041] [DEBUG] jjdag::update: Key pressed: Char('n'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:38.047] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:38.252] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:38.304] [DEBUG] jjdag::update: Key pressed: Char('n'), modifiers: KeyModifiers(0x0)
+[2026-02-26 18:44:38.304] [DEBUG] jjdag::update: Handling message: New { mode: Default }
+[2026-02-26 18:44:38.304] [DEBUG] jjdag::update: Handling message: New { mode: Default }
+[2026-02-26 18:44:38.304] [INFO] jjdag::update: New command, mode: Default
+[2026-02-26 18:44:38.304] [INFO] jjdag::model: Creating new change, mode: Default
+[2026-02-26 18:44:38.309] [DEBUG] jjdag::update: Processing update cycle
+[2026-02-26 18:44:38.309] [INFO] jjdag::shell_out: Running jj command: new tmtpvqtk
