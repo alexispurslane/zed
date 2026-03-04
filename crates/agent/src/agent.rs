@@ -42,6 +42,7 @@ use gpui::{
     App, AppContext, AsyncApp, Context, Entity, SharedString, Subscription, Task, WeakEntity,
 };
 use language_model::{IconOrSvg, LanguageModel, LanguageModelProvider, LanguageModelRegistry};
+use paths;
 use project::{Project, ProjectItem, ProjectPath, Worktree};
 use prompt_store::{
     ProjectContext, PromptStore, RULES_FILE_NAMES, RulesFileContext, UserRulesContext,
@@ -264,7 +265,9 @@ impl NativeAgent {
         log::debug!("Creating new NativeAgent");
 
         let project_context = cx
-            .update(|cx| Self::build_project_context(&project, prompt_store.as_ref(), cx))
+            .update(|cx| {
+                Self::build_project_context(&project, prompt_store.as_ref(), fs.clone(), cx)
+            })
             .await;
 
         Ok(cx.new(|cx| {
@@ -428,7 +431,12 @@ impl NativeAgent {
         while needs_refresh.changed().await.is_ok() {
             let project_context = this
                 .update(cx, |this, cx| {
-                    Self::build_project_context(&this.project, this.prompt_store.as_ref(), cx)
+                    Self::build_project_context(
+                        &this.project,
+                        this.prompt_store.as_ref(),
+                        this.fs.clone(),
+                        cx,
+                    )
                 })?
                 .await;
             this.update(cx, |this, cx| {
@@ -442,6 +450,7 @@ impl NativeAgent {
     fn build_project_context(
         project: &Entity<Project>,
         prompt_store: Option<&Entity<PromptStore>>,
+        fs: Arc<dyn Fs>,
         cx: &mut App,
     ) -> Task<ProjectContext> {
         let worktrees = project.read(cx).visible_worktrees(cx).collect::<Vec<_>>();
@@ -464,9 +473,24 @@ impl NativeAgent {
             Task::ready(vec![])
         };
 
+        let global_agents_task = cx.background_spawn({
+            let fs = fs.clone();
+            async move {
+                let global_agents_path = paths::config_dir().join("zed").join("AGENTS.md");
+                fs.load(&global_agents_path)
+                    .await
+                    .ok()
+                    .map(|content| content.trim().to_string())
+            }
+        });
+
         cx.spawn(async move |_cx| {
-            let (worktrees, default_user_rules) =
-                future::join(future::join_all(worktree_tasks), default_user_rules_task).await;
+            let (worktrees, default_user_rules, global_agents) = future::join3(
+                future::join_all(worktree_tasks),
+                default_user_rules_task,
+                global_agents_task,
+            )
+            .await;
 
             let worktrees = worktrees
                 .into_iter()
@@ -500,7 +524,7 @@ impl NativeAgent {
                 })
                 .collect::<Vec<_>>();
 
-            ProjectContext::new(worktrees, default_user_rules)
+            ProjectContext::new(worktrees, default_user_rules, global_agents)
         })
     }
 

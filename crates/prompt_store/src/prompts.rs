@@ -40,21 +40,31 @@ pub struct ProjectContext {
     pub user_rules: Vec<UserRulesContext>,
     /// `!user_rules.is_empty()` - provided as a field because handlebars can't do this.
     pub has_user_rules: bool,
+    pub global_agents: Option<String>,
+    /// `global_agents.is_some()` - provided as a field because handlebars can't do this.
+    pub has_global_agents: bool,
     pub os: String,
     pub arch: String,
     pub shell: String,
 }
 
 impl ProjectContext {
-    pub fn new(worktrees: Vec<WorktreeContext>, default_user_rules: Vec<UserRulesContext>) -> Self {
+    pub fn new(
+        worktrees: Vec<WorktreeContext>,
+        default_user_rules: Vec<UserRulesContext>,
+        global_agents: Option<String>,
+    ) -> Self {
         let has_rules = worktrees
             .iter()
             .any(|worktree| worktree.rules_file.is_some());
+        let has_global_agents = global_agents.is_some();
         Self {
             worktrees,
             has_rules,
             has_user_rules: !default_user_rules.is_empty(),
             user_rules: default_user_rules,
+            has_global_agents,
+            global_agents,
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
             shell: ShellKind::new(&get_default_system_shell_preferring_bash(), cfg!(windows))
