@@ -58,7 +58,6 @@ use workspace::{
     CollaboratorId, MultiWorkspace, NewTerminal, Toast, Workspace, notifications::NotificationId,
 };
 use zed_actions::agent::{Chat, ToggleModelSelector};
-use zed_actions::assistant::OpenRulesLibrary;
 
 use super::config_options::ConfigOptionsView;
 use super::entry_view_state::EntryViewState;

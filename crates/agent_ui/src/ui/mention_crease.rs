@@ -177,9 +177,7 @@ fn open_mention_uri(
             open_thread(workspace, id, name, window, cx);
         }
         MentionUri::TextThread { .. } => {}
-        MentionUri::Rule { id, .. } => {
-            open_rule(workspace, id, window, cx);
-        }
+
         MentionUri::Fetch { url } => {
             cx.open_url(url.as_str());
         }
@@ -187,7 +185,8 @@ fn open_mention_uri(
         | MentionUri::Selection { abs_path: None, .. }
         | MentionUri::Diagnostics { .. }
         | MentionUri::TerminalSelection { .. }
-        | MentionUri::GitDiff { .. } => {}
+        | MentionUri::GitDiff { .. }
+        | MentionUri::Rule { .. } => {}
     });
 }
 
@@ -288,24 +287,4 @@ fn open_thread(
             cx,
         )
     });
-}
-
-fn open_rule(
-    _workspace: &mut Workspace,
-    id: PromptId,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) {
-    use zed_actions::assistant::OpenRulesLibrary;
-
-    let PromptId::User { uuid } = id else {
-        return;
-    };
-
-    window.dispatch_action(
-        Box::new(OpenRulesLibrary {
-            prompt_to_select: Some(uuid.0),
-        }),
-        cx,
-    );
 }

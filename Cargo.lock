@@ -405,7 +405,6 @@ dependencies = [
  "remote_connection",
  "reqwest_client",
  "rope",
- "rules_library",
  "schemars",
  "search",
  "semver",
@@ -14635,33 +14634,6 @@ name = "rtrb"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad8388ea1a9e0ea807e442e8263a699e7edcb320ecbcd21b4fa8ff859acce3ba"
-
-[[package]]
-name = "rules_library"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "collections",
- "editor",
- "gpui",
- "language",
- "language_model",
- "log",
- "menu",
- "picker",
- "platform_title_bar",
- "prompt_store",
- "release_channel",
- "rope",
- "serde",
- "settings",
- "theme",
- "ui",
- "ui_input",
- "util",
- "workspace",
- "zed_actions",
-]
 
 [[package]]
 name = "runtimelib"

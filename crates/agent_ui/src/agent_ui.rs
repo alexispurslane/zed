@@ -289,7 +289,6 @@ pub fn init(
 ) {
     agent::ThreadStore::init_global(cx);
     assistant_text_thread::init(client, cx);
-    rules_library::init(cx);
     if !is_eval {
         // Initializing the language model from the user settings messes with the eval, so we only initialize them when
         // we're not running inside of the eval.

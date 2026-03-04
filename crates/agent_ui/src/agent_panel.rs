@@ -67,7 +67,7 @@ use language_model::{ConfigurationError, LanguageModelRegistry};
 use project::project_settings::ProjectSettings;
 use project::{Project, ProjectPath, Worktree};
 use prompt_store::{PromptBuilder, PromptStore, UserPromptId};
-use rules_library::{RulesLibrary, open_rules_library};
+use rand::Rng as _;
 use search::{BufferSearchBar, buffer_search};
 use settings::{Settings, update_settings_file};
 use theme::ThemeSettings;
@@ -84,7 +84,7 @@ use workspace::{
 use zed_actions::{
     DecreaseBufferFontSize, IncreaseBufferFontSize, ResetBufferFontSize,
     agent::{OpenAcpOnboardingModal, OpenSettings, ResetAgentZoom, ResetOnboarding},
-    assistant::{OpenRulesLibrary, Toggle, ToggleFocus},
+    assistant::{Toggle, ToggleFocus},
 };
 
 const AGENT_PANEL_KEY: &str = "agent_panel";
@@ -190,14 +190,6 @@ pub fn init(cx: &mut App) {
                         workspace.focus_panel::<AgentPanel>(window, cx);
                         panel.update(cx, |panel, cx| {
                             panel.external_thread(action.agent.clone(), None, None, window, cx)
-                        });
-                    }
-                })
-                .register_action(|workspace, action: &OpenRulesLibrary, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| {
-                            panel.deploy_rules_library(action, window, cx)
                         });
                     }
                 })
@@ -1142,30 +1134,6 @@ impl AgentPanel {
 
             anyhow::Ok(())
         })
-        .detach_and_log_err(cx);
-    }
-
-    fn deploy_rules_library(
-        &mut self,
-        action: &OpenRulesLibrary,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        open_rules_library(
-            self.language_registry.clone(),
-            Box::new(PromptLibraryInlineAssist::new(self.workspace.clone())),
-            Rc::new(|| {
-                Rc::new(SlashCommandCompletionProvider::new(
-                    Arc::new(SlashCommandWorkingSet::default()),
-                    None,
-                    None,
-                ))
-            }),
-            action
-                .prompt_to_select
-                .map(|uuid| UserPromptId(uuid).into()),
-            cx,
-        )
         .detach_and_log_err(cx);
     }
 
@@ -2912,7 +2880,6 @@ impl AgentPanel {
                             )
                             .action("Add Custom Server…", Box::new(AddContextServer))
                             .separator()
-                            .action("Rules", Box::new(OpenRulesLibrary::default()))
                             .action("Profiles", Box::new(ManageProfiles::default()))
                             .action("Settings", Box::new(OpenSettings))
                             .separator()
@@ -3975,7 +3942,6 @@ impl Render for AgentPanel {
                 this.open_configuration(window, cx);
             }))
             .on_action(cx.listener(Self::open_active_thread_as_markdown))
-            .on_action(cx.listener(Self::deploy_rules_library))
             .on_action(cx.listener(Self::go_back))
             .on_action(cx.listener(Self::toggle_navigation_menu))
             .on_action(cx.listener(Self::toggle_options_menu))
@@ -4055,59 +4021,6 @@ impl Render for AgentPanel {
             }
             _ => content.into_any(),
         }
-    }
-}
-
-struct PromptLibraryInlineAssist {
-    workspace: WeakEntity<Workspace>,
-}
-
-impl PromptLibraryInlineAssist {
-    pub fn new(workspace: WeakEntity<Workspace>) -> Self {
-        Self { workspace }
-    }
-}
-
-impl rules_library::InlineAssistDelegate for PromptLibraryInlineAssist {
-    fn assist(
-        &self,
-        prompt_editor: &Entity<Editor>,
-        initial_prompt: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<RulesLibrary>,
-    ) {
-        InlineAssistant::update_global(cx, |assistant, cx| {
-            let Some(workspace) = self.workspace.upgrade() else {
-                return;
-            };
-            let Some(panel) = workspace.read(cx).panel::<AgentPanel>(cx) else {
-                return;
-            };
-            let project = workspace.read(cx).project().downgrade();
-            let panel = panel.read(cx);
-            let thread_store = panel.thread_store().clone();
-            let history = panel.history().downgrade();
-            assistant.assist(
-                prompt_editor,
-                self.workspace.clone(),
-                project,
-                thread_store,
-                None,
-                history,
-                initial_prompt,
-                window,
-                cx,
-            );
-        })
-    }
-
-    fn focus_agent_panel(
-        &self,
-        workspace: &mut Workspace,
-        window: &mut Window,
-        cx: &mut Context<Workspace>,
-    ) -> bool {
-        workspace.focus_panel::<AgentPanel>(window, cx).is_some()
     }
 }
 
