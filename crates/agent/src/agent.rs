@@ -1,3 +1,4 @@
+mod custom_commands;
 mod db;
 mod edit_agent;
 mod legacy_thread;
@@ -14,6 +15,7 @@ mod tool_permissions;
 mod tools;
 
 use context_server::ContextServerId;
+pub use custom_commands::*;
 pub use db::*;
 use itertools::Itertools;
 pub use native_agent_server::NativeAgentServer;
