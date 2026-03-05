@@ -274,31 +274,31 @@ fn completions(&self, buffer: &BufferSnapshot, ...) -> Task<Result<Vec<Completio
 
 #### 2.4 Confirm Callback
 
+**Simplified approach:** The completion callback just inserts text. Crease insertion happens separately via MessageEditor detection (same pattern as @-mentions).
+
 ```rust
-fn confirm_slash_command_callback(
-    &self,
-    command_name: String,
-    custom_command: Option<Arc<CustomCommand>>,
-    source_range: Range<Anchor>,
-) -> Arc<dyn Fn(CompletionIntent, &mut Window, &mut App) -> bool + Send + Sync> {
-    Arc::new(move |_intent, window, cx| {
-        window.defer(cx, move |window, cx| {
-            if let Some(editor) = self.editor.upgrade() {
-                // Insert crease for slash command bubble
-                self.insert_slash_command_crease(
-                    command_name,
-                    custom_command,
-                    source_range,
-                    editor,
-                    window,
-                    cx,
-                );
-            }
-        });
-        false // Don't insert raw text
-    })
-}
+// In completion provider - simplified, no crease insertion here
+confirm: Some(Arc::new({
+    let source = source.clone();
+    move |intent, _window, cx| {
+        if !is_missing_argument {
+            cx.defer(move |cx| {
+                match intent {
+                    CompletionIntent::Complete
+                    | CompletionIntent::CompleteWithInsert
+                    | CompletionIntent::CompleteWithReplace => {
+                        source.confirm_command(cx);
+                    }
+                    CompletionIntent::Compose => {}
+                }
+            });
+        }
+        false
+    }
+})),
 ```
+
+**Note:** We moved crease insertion to Phase 3 (MessageEditor detection) to avoid complex closure lifetime issues and follow the @-mention pattern.
 
 **Phase 2 Deliverables:**
 
@@ -309,6 +309,12 @@ fn confirm_slash_command_callback(
 | Selecting a command inserts text with trailing space | Select `/test` from completions, see `/test ` inserted |
 | Built-in commands still work | Verify `/default`, `/cargo` etc. still appear |
 
+**Implementation Changes:**
+- Added `custom_command: Option<Arc<CustomCommand>>` field to `AvailableCommand` struct
+- Added `custom_commands()` method to `PromptCompletionProviderDelegate` trait
+- Modified `search_slash_commands()` to include custom commands alongside built-in commands
+- Simplified confirm callback to just insert text (following @-mention pattern)
+
 ---
 
 ### Phase 3: Crease/Bubble Implementation
@@ -318,6 +324,7 @@ fn confirm_slash_command_callback(
 **Technical Implementation:**
 - Create `SlashCommandCrease` component implementing `RenderOnce` for GPUI
 - Style as a tinted button with slash icon, command name, and optional argument hint
+- **Architecture:** Follow @-mention pattern - completion inserts text, MessageEditor detects and renders crease
 - Implement `insert_crease_for_slash_command()` to create editor folds
 - Use `Crease::inline()` with `FoldPlaceholder` to render the bubble in place of text
 - Store command metadata in the crease for later execution
@@ -357,46 +364,91 @@ impl RenderOnce for SlashCommandCrease {
 
 #### 3.2 Insert Slash Command Crease
 
-**Location:** `crates/agent_ui/src/mention_set.rs` or new `crates/agent_ui/src/command_set.rs`
+**Location:** `crates/agent_ui/src/mention_set.rs`
 
 ```rust
-pub fn insert_crease_for_slash_command(
-    command_name: &str,
-    custom_command: Option<Arc<CustomCommand>>,
+pub(crate) fn insert_crease_for_slash_command(
     range: Range<Anchor>,
+    command_name: SharedString,
+    argument_hint: Option<SharedString>,
     editor: Entity<Editor>,
-    workspace: WeakEntity<Workspace>,
     window: &mut Window,
     cx: &mut App,
 ) -> Option<CreaseId> {
-    let name = SharedString::from(command_name.to_string());
-    let hint = custom_command.as_ref().and_then(|c| c.argument_hint.clone())
-        .map(SharedString::from);
-
     let placeholder = FoldPlaceholder {
-        render: Arc::new(move |_fold_id, _range, _cx| {
-            SlashCommandCrease::new(name.clone())
-                .argument_hint(hint.clone())
+        render: Arc::new(move |_fold_id, _range, _cx: &mut App| {
+            SlashCommandCrease::new(command_name.clone(), command_name.clone())
+                .argument_hint(argument_hint.clone())
                 .into_any_element()
         }),
         merge_adjacent: false,
         ..Default::default()
     };
 
-    let crease = Crease::inline(
+    let crease = Crease::Inline {
         range,
         placeholder,
-        None, // render_toggle
-        None, // render_trailer
-    );
+        render_toggle: None,
+        render_trailer: None,
+        metadata: None,
+    };
 
-    let crease_id = editor.update(cx, |editor, cx| {
+    editor.update(cx, |editor, cx| {
         let ids = editor.insert_creases(vec![crease.clone()], cx);
         editor.fold_creases(vec![crease], false, window, cx);
-        ids[0]
-    });
+        ids.get(0).copied()
+    })
+}
+```
 
-    Some(crease_id)
+**Detection in MessageEditor:**
+
+Add to `MessageEditor::new()` in the `EditorEvent::Edited` handler:
+
+```rust
+// In MessageEditor's subscribe_in handler for EditorEvent::Edited
+if let EditorEvent::Edited { .. } = event {
+    // Detect slash commands and insert creases
+    this.detect_and_insert_slash_command_creases(&snapshot, window, cx);
+}
+
+// Method implementation:
+fn detect_and_insert_slash_command_creases(
+    &self,
+    snapshot: &EditorSnapshot,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let buffer = snapshot.buffer();
+    let text = buffer.text();
+    
+    // Parse for slash command at start of text
+    let Some(parsed) = SlashCommandCompletion::try_parse(&text, 0) else {
+        return;
+    };
+    
+    let Some(command_name) = parsed.command else {
+        return;
+    };
+    
+    // Check if custom command
+    let custom_commands = self.custom_commands.borrow();
+    let Some(custom_command) = custom_commands.get(&command_name) else {
+        return;
+    };
+    
+    // Convert range to anchors and insert crease
+    let start = buffer.anchor_before(MultiBufferOffset(parsed.source_range.start));
+    let end = buffer.anchor_after(MultiBufferOffset(parsed.source_range.end));
+    
+    insert_crease_for_slash_command(
+        start..end,
+        SharedString::from(command_name),
+        custom_command.argument_hint.clone().map(SharedString::from),
+        self.editor.clone(),
+        window,
+        cx,
+    );
 }
 ```
 
@@ -404,10 +456,12 @@ pub fn insert_crease_for_slash_command(
 
 | Deliverable | How to Test |
 |-------------|-------------|
-| Selecting a command from completions renders a colored bubble | Type `/test`, select it, see a button-like bubble appear |
+| Typing `/test` renders a colored bubble | Type `/test`, see a button-like bubble appear |
 | Bubble shows command name and optional argument hint | Verify the visual matches command's `argument_hint` from YAML |
 | Bubble is not editable as raw text (it's a fold/crease) | Try to click inside bubble - it should not behave like text |
 | Multiple commands in one message each render as separate bubbles | Type `/test /review`, see two distinct bubbles |
+
+**Architecture Note:** Following the @-mention pattern, creases are inserted by MessageEditor on `EditorEvent::Edited`, not by the completion callback. This avoids complex closure lifetime issues.
 
 ---
 

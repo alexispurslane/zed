@@ -38,7 +38,7 @@ use ui::{Disclosure, Toggleable, prelude::*};
 use util::{ResultExt, debug_panic, rel_path::RelPath};
 use workspace::{Workspace, notifications::NotifyResultExt as _};
 
-use crate::ui::MentionCrease;
+use crate::ui::{MentionCrease, SlashCommandCrease};
 
 pub type MentionTask = Shared<Task<Result<Mention, String>>>;
 
@@ -1221,4 +1221,40 @@ async fn fetch_url_content(http_client: Arc<HttpClientWithUrl>, url: String) -> 
             ))
         }
     }
+}
+
+/// Insert a crease for a slash command, rendering it as a compact bubble UI.
+/// Returns the crease ID if successful.
+pub(crate) fn insert_crease_for_slash_command(
+    range: Range<Anchor>,
+    command_name: SharedString,
+    argument_hint: Option<SharedString>,
+    editor: Entity<Editor>,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<CreaseId> {
+    let placeholder = FoldPlaceholder {
+        render: Arc::new(move |_fold_id, _range, _cx: &mut App| {
+            SlashCommandCrease::new(command_name.clone(), command_name.clone())
+                .argument_hint(argument_hint.clone())
+                .into_any_element()
+        }),
+        merge_adjacent: false,
+        ..Default::default()
+    };
+
+    let crease = editor.update(cx, |editor, cx| {
+        let crease = Crease::Inline {
+            range,
+            placeholder,
+            render_toggle: None,
+            render_trailer: None,
+            metadata: None,
+        };
+
+        let ids = editor.insert_creases(vec![crease.clone()], cx);
+        editor.fold_creases(vec![crease], false, window, cx);
+        ids.get(0).copied()
+    });
+    crease
 }

@@ -1168,7 +1168,7 @@ impl<T: PromptCompletionProviderDelegate> CompletionProvider for PromptCompletio
 
                             Completion {
                                 replace_range: source_range.clone(),
-                                new_text,
+                                new_text: new_text.clone(),
                                 label: CodeLabel::plain(command.name.to_string(), None),
                                 documentation: Some(CompletionDocumentation::MultiLinePlainText(
                                     command.description.into(),

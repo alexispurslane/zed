@@ -7,7 +7,8 @@ use crate::{
         PromptContextType, SlashCommandCompletion,
     },
     mention_set::{
-        Mention, MentionImage, MentionSet, insert_crease_for_mention, paste_images_as_context,
+        Mention, MentionImage, MentionSet, insert_crease_for_mention,
+        insert_crease_for_slash_command, paste_images_as_context,
     },
 };
 use acp_thread::{AgentSessionInfo, MentionUri};
@@ -17,7 +18,7 @@ use anyhow::{Result, anyhow};
 use collections::HashSet;
 use editor::{
     Addon, AnchorRangeExt, ContextMenuOptions, ContextMenuPlacement, Editor, EditorElement,
-    EditorEvent, EditorMode, EditorStyle, Inlay, MultiBuffer, MultiBufferOffset,
+    EditorEvent, EditorMode, EditorSnapshot, EditorStyle, Inlay, MultiBuffer, MultiBufferOffset,
     MultiBufferSnapshot, ToOffset, actions::Paste, code_context_menus::CodeContextMenu,
     scroll::Autoscroll,
 };
@@ -214,6 +215,14 @@ impl MessageEditor {
                         this.mention_set
                             .update(cx, |mention_set, _cx| mention_set.remove_invalid(&snapshot));
 
+                        // Detect and insert slash command creases
+                        this.detect_and_insert_slash_command_creases(
+                            &snapshot,
+                            &this.editor,
+                            window,
+                            cx,
+                        );
+
                         let new_hints = this
                             .command_hint(snapshot.buffer())
                             .into_iter()
@@ -304,6 +313,46 @@ impl MessageEditor {
                 resolve_state: project::ResolveState::Resolved,
             },
         ))
+    }
+
+    fn detect_and_insert_slash_command_creases(
+        &self,
+        snapshot: &EditorSnapshot,
+        editor: &Entity<Editor>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let buffer = snapshot.buffer();
+        let text = buffer.text();
+
+        // Try to parse a slash command at the start of the text
+        let Some(parsed) = SlashCommandCompletion::try_parse(&text, 0) else {
+            return;
+        };
+
+        let Some(command_name) = parsed.command else {
+            return;
+        };
+
+        // Check if this is a custom command
+        let custom_commands = self.custom_commands.borrow();
+        let Some(custom_command) = custom_commands.get(&command_name) else {
+            return;
+        };
+
+        // Convert the parsed range to buffer anchors
+        let start = buffer.anchor_before(MultiBufferOffset(parsed.source_range.start));
+        let end = buffer.anchor_after(MultiBufferOffset(parsed.source_range.end));
+
+        // Insert the crease
+        insert_crease_for_slash_command(
+            start..end,
+            SharedString::from(command_name),
+            custom_command.argument_hint.clone().map(SharedString::from),
+            editor.clone(),
+            window,
+            cx,
+        );
     }
 
     pub fn insert_thread_summary(
