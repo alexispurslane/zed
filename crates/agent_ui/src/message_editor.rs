@@ -45,6 +45,7 @@ pub struct MessageEditor {
     workspace: WeakEntity<Workspace>,
     prompt_capabilities: Rc<RefCell<acp::PromptCapabilities>>,
     available_commands: Rc<RefCell<Vec<acp::AvailableCommand>>>,
+    custom_commands: Rc<RefCell<collections::HashMap<String, Arc<agent::CustomCommand>>>>,
     agent_name: SharedString,
     thread_store: Option<Entity<ThreadStore>>,
     _subscriptions: Vec<Subscription>,
@@ -94,8 +95,13 @@ impl PromptCompletionProviderDelegate for Entity<MessageEditor> {
                 name: cmd.name.clone().into(),
                 description: cmd.description.clone().into(),
                 requires_argument: cmd.input.is_some(),
+                custom_command: None,
             })
             .collect()
+    }
+
+    fn custom_commands(&self, cx: &App) -> collections::HashMap<String, Arc<agent::CustomCommand>> {
+        self.read(cx).custom_commands.borrow().clone()
     }
 
     fn confirm_command(&self, cx: &mut App) {
@@ -235,6 +241,7 @@ impl MessageEditor {
             workspace,
             prompt_capabilities,
             available_commands,
+            custom_commands: Rc::new(RefCell::new(collections::HashMap::default())),
             agent_name,
             thread_store,
             _subscriptions: subscriptions,

@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use agent::CustomCommand;
+use collections::HashMap;
+
 use crate::ThreadHistory;
 use acp_thread::{AgentSessionInfo, MentionUri};
 use anyhow::Result;
@@ -189,6 +192,7 @@ pub struct AvailableCommand {
     pub name: Arc<str>,
     pub description: Arc<str>,
     pub requires_argument: bool,
+    pub custom_command: Option<Arc<CustomCommand>>,
 }
 
 pub trait PromptCompletionProviderDelegate: Send + Sync + 'static {
@@ -199,6 +203,7 @@ pub trait PromptCompletionProviderDelegate: Send + Sync + 'static {
     fn supports_images(&self, cx: &App) -> bool;
 
     fn available_commands(&self, cx: &App) -> Vec<AvailableCommand>;
+    fn custom_commands(&self, cx: &App) -> collections::HashMap<String, Arc<CustomCommand>>;
     fn confirm_command(&self, cx: &mut App);
 }
 
@@ -777,12 +782,26 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
 
     fn search_slash_commands(&self, query: String, cx: &mut App) -> Task<Vec<AvailableCommand>> {
         let commands = self.source.available_commands(cx);
-        if commands.is_empty() {
-            return Task::ready(Vec::new());
-        }
+        let custom_commands = self.source.custom_commands(cx);
 
         cx.spawn(async move |cx| {
-            let candidates = commands
+            let mut all_commands = commands;
+
+            // Add custom commands to the list
+            for (name, custom_cmd) in custom_commands {
+                all_commands.push(AvailableCommand {
+                    name: name.clone().into(),
+                    description: custom_cmd.description.clone().into(),
+                    requires_argument: custom_cmd.argument_hint.is_some(),
+                    custom_command: Some(custom_cmd),
+                });
+            }
+
+            if all_commands.is_empty() {
+                return Vec::new();
+            }
+
+            let candidates = all_commands
                 .iter()
                 .enumerate()
                 .map(|(id, command)| StringMatchCandidate::new(id, &command.name))
@@ -801,7 +820,7 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
 
             matches
                 .into_iter()
-                .map(|mat| commands[mat.candidate_id].clone())
+                .map(|mat| all_commands[mat.candidate_id].clone())
                 .collect()
         })
     }

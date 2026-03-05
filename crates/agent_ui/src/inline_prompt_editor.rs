@@ -1211,6 +1211,13 @@ impl PromptCompletionProviderDelegate for PromptEditorCompletionProviderDelegate
         Vec::new()
     }
 
+    fn custom_commands(
+        &self,
+        _cx: &App,
+    ) -> collections::HashMap<String, Arc<agent::CustomCommand>> {
+        collections::HashMap::default()
+    }
+
     fn confirm_command(&self, _cx: &mut App) {}
 }
 
