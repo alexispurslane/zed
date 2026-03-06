@@ -421,26 +421,26 @@ fn detect_and_insert_slash_command_creases(
 ) {
     let buffer = snapshot.buffer();
     let text = buffer.text();
-    
+
     // Parse for slash command at start of text
     let Some(parsed) = SlashCommandCompletion::try_parse(&text, 0) else {
         return;
     };
-    
+
     let Some(command_name) = parsed.command else {
         return;
     };
-    
+
     // Check if custom command
     let custom_commands = self.custom_commands.borrow();
     let Some(custom_command) = custom_commands.get(&command_name) else {
         return;
     };
-    
+
     // Convert range to anchors and insert crease
     let start = buffer.anchor_before(MultiBufferOffset(parsed.source_range.start));
     let end = buffer.anchor_after(MultiBufferOffset(parsed.source_range.end));
-    
+
     insert_crease_for_slash_command(
         start..end,
         SharedString::from(command_name),
@@ -576,6 +576,78 @@ lazy_static::lazy_static! {
   1. `completion_provider.rs` - to show available commands when user types `/`
   2. `system_prompt.hbs` - to list available commands for the LLM
   3. `thread.rs` - to lookup and process command invocations when building prompts
+
+#### 4.2.1 MessageEditor Loads Commands Independently
+
+Rather than routing CommandsContext from Thread through the UI layer, MessageEditor loads commands **independently** using the same discovery function. This is a cleaner parallel architecture:
+
+- **Thread** has CommandsContext for system prompts and LLM request processing
+- **MessageEditor** discovers commands separately for completions
+- Both load asynchronously from the same filesystem locations
+- No complex routing or cross-crate dependencies needed
+
+**In `crates/agent_ui/src/message_editor.rs`:**
+
+```rust
+impl MessageEditor {
+    pub fn new(
+        workspace: WeakEntity<Workspace>,
+        project: WeakEntity<Project>,
+        thread_store: Option<Entity<ThreadStore>>,
+        history: WeakEntity<ThreadHistory>,
+        prompt_store: Option<Entity<PromptStore>>,
+        prompt_capabilities: Rc<RefCell<acp::PromptCapabilities>>,
+        available_commands: Rc<RefCell<Vec<acp::AvailableCommand>>>,
+        agent_name: SharedString,
+        placeholder: &str,
+        mode: EditorMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // ... existing initialization ...
+
+        // Spawn async task to discover custom commands
+        if let Some(project) = project.upgrade() {
+            let worktree_roots: Vec<PathBuf> = project
+                .read(cx)
+                .visible_worktrees(cx)
+                .map(|w| w.read(cx).abs_path().to_path_buf())
+                .collect();
+            
+            let custom_commands = self.custom_commands.clone();
+            cx.spawn(async move |_, cx| {
+                let commands = cx
+                    .background_spawn(async move {
+                        agent::discover_custom_commands(&worktree_roots)
+                    })
+                    .await;
+                
+                // Update the custom_commands hashmap
+                *custom_commands.borrow_mut() = commands;
+                
+                // Notify to refresh completions
+                cx.notify();
+            })
+            .detach();
+        }
+
+        // ... rest of initialization ...
+    }
+}
+```
+
+**Why this approach:**
+- **Decoupled**: Thread and MessageEditor don't depend on each other for commands
+- **Simple**: No need to route Entities through multiple UI layers
+- **Consistent**: Both use the same `discover_custom_commands()` function
+- **Non-blocking**: Async loading doesn't block UI or thread creation
+- **Self-contained**: MessageEditor manages its own command lifecycle
+
+**The parallel flow:**
+1. Thread creates CommandsContext → loads commands for system prompts/LLM processing
+2. MessageEditor spawns its own discovery task → loads commands for completions
+3. Both load from the same global + worktree directories
+4. When MessageEditor's commands load, it notifies to refresh completions
 
 #### 4.3 Process Commands When Building LLM Request
 

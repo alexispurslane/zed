@@ -7778,6 +7778,7 @@ pub(crate) fn open_link(
             MentionUri::TerminalSelection { .. } => {}
             MentionUri::GitDiff { .. } => {}
             MentionUri::Rule { .. } => {}
+            MentionUri::SlashCommand { .. } => {}
         })
     } else {
         cx.open_url(&url);

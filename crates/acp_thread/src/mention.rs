@@ -60,6 +60,9 @@ pub enum MentionUri {
     GitDiff {
         base_ref: String,
     },
+    SlashCommand {
+        name: String,
+    },
 }
 
 impl MentionUri {
@@ -220,6 +223,13 @@ impl MentionUri {
                 }
             }
             "http" | "https" => Ok(MentionUri::Fetch { url }),
+            "slash" => {
+                let name = url.path().trim_start_matches('/').to_string();
+                if name.is_empty() {
+                    bail!("Slash command name is empty");
+                }
+                Ok(Self::SlashCommand { name })
+            }
             other => bail!("unrecognized scheme {:?}", other),
         }
     }
@@ -245,6 +255,9 @@ impl MentionUri {
                 }
             }
             MentionUri::GitDiff { base_ref } => format!("Branch Diff ({})", base_ref),
+            MentionUri::SlashCommand { name } => {
+                format!("/{}", name)
+            }
             MentionUri::Selection {
                 abs_path: path,
                 line_range,
@@ -306,6 +319,7 @@ impl MentionUri {
             MentionUri::Selection { .. } => IconName::Reader.path().into(),
             MentionUri::Fetch { .. } => IconName::ToolWeb.path().into(),
             MentionUri::GitDiff { .. } => IconName::GitBranch.path().into(),
+            MentionUri::SlashCommand { .. } => IconName::Slash.path().into(),
         }
     }
 
@@ -398,6 +412,11 @@ impl MentionUri {
                 url
             }
             MentionUri::Fetch { url } => url.clone(),
+            MentionUri::SlashCommand { name } => {
+                let mut url = Url::parse("slash://").unwrap();
+                url.set_path(&format!("/{}", name));
+                url
+            }
             MentionUri::TerminalSelection { line_count } => {
                 let mut url = Url::parse("zed:///agent/terminal-selection").unwrap();
                 url.query_pairs_mut()

@@ -2,6 +2,7 @@ use crate::SendImmediately;
 use crate::ThreadHistory;
 use crate::{
     ChatWithFollow,
+    commands_set::CommandsSet,
     completion_provider::{
         PromptCompletionProvider, PromptCompletionProviderDelegate, PromptContextAction,
         PromptContextType, SlashCommandCompletion,
@@ -12,15 +13,16 @@ use crate::{
     },
 };
 use acp_thread::{AgentSessionInfo, MentionUri};
+use agent::CommandsContext;
 use agent::ThreadStore;
 use agent_client_protocol as acp;
 use anyhow::{Result, anyhow};
-use collections::HashSet;
+use collections::{HashMap, HashSet};
 use editor::{
     Addon, AnchorRangeExt, ContextMenuOptions, ContextMenuPlacement, Editor, EditorElement,
     EditorEvent, EditorMode, EditorSnapshot, EditorStyle, Inlay, MultiBuffer, MultiBufferOffset,
     MultiBufferSnapshot, ToOffset, actions::Paste, code_context_menus::CodeContextMenu,
-    scroll::Autoscroll,
+    display_map::CreaseId, scroll::Autoscroll,
 };
 use futures::{FutureExt as _, future::join_all};
 use gpui::{
@@ -32,6 +34,7 @@ use project::{CompletionIntent, InlayHint, InlayHintLabel, InlayId, Project, Wor
 use prompt_store::PromptStore;
 use rope::Point;
 use settings::Settings;
+use std::path::PathBuf;
 use std::{cell::RefCell, fmt::Write, ops::Range, rc::Rc, sync::Arc};
 use theme::ThemeSettings;
 use ui::{ButtonLike, ButtonStyle, ContextMenu, Disclosure, ElevationIndex, prelude::*};
@@ -42,11 +45,12 @@ use zed_actions::agent::{Chat, PasteRaw};
 
 pub struct MessageEditor {
     mention_set: Entity<MentionSet>,
+    commands_set: Entity<CommandsSet>,
+    commands_context: Entity<CommandsContext>,
     editor: Entity<Editor>,
     workspace: WeakEntity<Workspace>,
     prompt_capabilities: Rc<RefCell<acp::PromptCapabilities>>,
     available_commands: Rc<RefCell<Vec<acp::AvailableCommand>>>,
-    custom_commands: Rc<RefCell<collections::HashMap<String, Arc<agent::CustomCommand>>>>,
     agent_name: SharedString,
     thread_store: Option<Entity<ThreadStore>>,
     _subscriptions: Vec<Subscription>,
@@ -102,7 +106,12 @@ impl PromptCompletionProviderDelegate for Entity<MessageEditor> {
     }
 
     fn custom_commands(&self, cx: &App) -> collections::HashMap<String, Arc<agent::CustomCommand>> {
-        self.read(cx).custom_commands.borrow().clone()
+        self.read(cx)
+            .commands_context
+            .read(cx)
+            .commands()
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn confirm_command(&self, cx: &mut App) {
@@ -167,12 +176,34 @@ impl MessageEditor {
 
             editor
         });
-        let mention_set =
-            cx.new(|_cx| MentionSet::new(project, thread_store.clone(), prompt_store.clone()));
+        // Clone project before moving it into closures
+        let project_for_mention_set = project.clone();
+        let mention_set = cx.new(|_cx| {
+            MentionSet::new(
+                project_for_mention_set,
+                thread_store.clone(),
+                prompt_store.clone(),
+            )
+        });
+        let commands_set = cx.new(|_cx| CommandsSet::new());
+
+        // Create CommandsContext to discover custom commands
+        let worktree_roots: Vec<PathBuf> = project
+            .upgrade()
+            .map(|project| {
+                project
+                    .read(cx)
+                    .visible_worktrees(cx)
+                    .map(|worktree| worktree.read(cx).abs_path().as_ref().to_path_buf())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let commands_context = CommandsContext::new(worktree_roots, cx);
         let completion_provider = Rc::new(PromptCompletionProvider::new(
             cx.entity(),
             editor.downgrade(),
             mention_set.clone(),
+            commands_set.clone(),
             history,
             prompt_store.clone(),
             workspace.clone(),
@@ -216,12 +247,7 @@ impl MessageEditor {
                             .update(cx, |mention_set, _cx| mention_set.remove_invalid(&snapshot));
 
                         // Detect and insert slash command creases
-                        this.detect_and_insert_slash_command_creases(
-                            &snapshot,
-                            &this.editor,
-                            window,
-                            cx,
-                        );
+                        this.detect_and_insert_slash_command_creases(&snapshot, editor, window, cx);
 
                         let new_hints = this
                             .command_hint(snapshot.buffer())
@@ -247,10 +273,11 @@ impl MessageEditor {
         Self {
             editor,
             mention_set,
+            commands_set,
+            commands_context,
             workspace,
             prompt_capabilities,
             available_commands,
-            custom_commands: Rc::new(RefCell::new(collections::HashMap::default())),
             agent_name,
             thread_store,
             _subscriptions: subscriptions,
@@ -318,9 +345,9 @@ impl MessageEditor {
     fn detect_and_insert_slash_command_creases(
         &self,
         snapshot: &EditorSnapshot,
-        editor: &Entity<Editor>,
+        editor: &mut Editor,
         window: &mut Window,
-        cx: &mut App,
+        cx: &mut Context<Editor>,
     ) {
         let buffer = snapshot.buffer();
         let text = buffer.text();
@@ -335,24 +362,57 @@ impl MessageEditor {
         };
 
         // Check if this is a custom command
-        let custom_commands = self.custom_commands.borrow();
-        let Some(custom_command) = custom_commands.get(&command_name) else {
+        let Some(custom_command) = self.commands_context.read(cx).get(&command_name) else {
             return;
         };
 
         // Convert the parsed range to buffer anchors
+        // Only crease the command name, not the arguments
         let start = buffer.anchor_before(MultiBufferOffset(parsed.source_range.start));
-        let end = buffer.anchor_after(MultiBufferOffset(parsed.source_range.end));
+        let command_end = parsed.source_range.start + 1 + command_name.len();
+        let end = buffer.anchor_after(MultiBufferOffset(command_end));
+
+        // Check if a crease already exists covering the start position
+        let start_offset = start.to_offset(buffer);
+        for (_, existing_crease) in snapshot.crease_snapshot.creases() {
+            let existing_range = existing_crease.range().to_offset(buffer);
+            if start_offset >= existing_range.start && start_offset < existing_range.end {
+                // Crease already exists covering this position
+                return;
+            }
+        }
 
         // Insert the crease
-        insert_crease_for_slash_command(
+        let crease_result = insert_crease_for_slash_command(
             start..end,
-            SharedString::from(command_name),
+            SharedString::from(command_name.clone()),
             custom_command.argument_hint.clone().map(SharedString::from),
-            editor.clone(),
+            editor,
             window,
             cx,
         );
+
+        // Store in commands_set for persistence and defer cursor movement
+        if let Some((crease_id, end_anchor)) = crease_result {
+            self.commands_set.update(cx, |set, _cx| {
+                set.insert(crease_id, SharedString::from(command_name.clone()));
+            });
+            // Defer cursor movement to avoid double-borrow during completion
+            // Move cursor after the trailing space (1 character past the crease)
+            let editor = self.editor.clone();
+            window.defer(cx, move |window, cx| {
+                editor.update(cx, |editor, cx| {
+                    let buffer = editor.buffer().read(cx);
+                    let snapshot = buffer.snapshot(cx);
+                    let end_offset = end_anchor.to_offset(&snapshot);
+                    let after_space_offset = MultiBufferOffset(end_offset.0 + 1);
+                    let after_space_anchor = snapshot.anchor_before(after_space_offset);
+                    editor.change_selections(Default::default(), window, cx, |sels| {
+                        sels.select_anchor_ranges([after_space_anchor..after_space_anchor]);
+                    });
+                });
+            });
+        }
     }
 
     pub fn insert_thread_summary(
@@ -435,28 +495,42 @@ impl MessageEditor {
     fn validate_slash_commands(
         text: &str,
         available_commands: &[acp::AvailableCommand],
+        custom_commands: Option<HashMap<String, Arc<agent::CustomCommand>>>,
         agent_name: &str,
     ) -> Result<()> {
         if let Some(parsed_command) = SlashCommandCompletion::try_parse(text, 0) {
             if let Some(command_name) = parsed_command.command {
                 // Check if this command is in the list of available commands from the server
-                let is_supported = available_commands
+                // or in custom commands
+                let is_in_available = available_commands
                     .iter()
                     .any(|cmd| cmd.name == command_name);
+                let is_in_custom = custom_commands
+                    .as_ref()
+                    .map(|cmds| cmds.contains_key(&command_name))
+                    .unwrap_or(false);
 
-                if !is_supported {
+                if !is_in_available && !is_in_custom {
+                    // Build list of all available command names
+                    let mut all_commands: Vec<String> = available_commands
+                        .iter()
+                        .map(|cmd| format!("/{}", cmd.name))
+                        .collect();
+                    if let Some(ref cmds) = custom_commands {
+                        for name in cmds.keys() {
+                            all_commands.push(format!("/{}", name));
+                        }
+                    }
+                    all_commands.sort();
+
                     return Err(anyhow!(
                         "The /{} command is not supported by {}.\n\nAvailable commands: {}",
                         command_name,
                         agent_name,
-                        if available_commands.is_empty() {
+                        if all_commands.is_empty() {
                             "none".to_string()
                         } else {
-                            available_commands
-                                .iter()
-                                .map(|cmd| format!("/{}", cmd.name))
-                                .collect::<Vec<_>>()
-                                .join(", ")
+                            all_commands.join(", ")
                         }
                     ));
                 }
@@ -472,11 +546,17 @@ impl MessageEditor {
     ) -> Task<Result<(Vec<acp::ContentBlock>, Vec<Entity<Buffer>>)>> {
         let text = self.editor.read(cx).text(cx);
         let available_commands = self.available_commands.borrow().clone();
+        let custom_commands = self.commands_context.read(cx).commands().cloned();
         let agent_name = self.agent_name.clone();
         let build_task = self.build_content_blocks(full_mention_content, cx);
 
         cx.spawn(async move |_, _cx| {
-            Self::validate_slash_commands(&text, &available_commands, &agent_name)?;
+            Self::validate_slash_commands(
+                &text,
+                &available_commands,
+                custom_commands,
+                &agent_name,
+            )?;
             build_task.await
         })
     }
@@ -497,6 +577,12 @@ impl MessageEditor {
         let contents = self
             .mention_set
             .update(cx, |store, cx| store.contents(full_mention_content, cx));
+        let slash_commands: HashMap<CreaseId, SharedString> = self
+            .commands_set
+            .read(cx)
+            .iter()
+            .map(|(id, info)| (*id, info.name.clone()))
+            .collect();
         let editor = self.editor.clone();
         let supports_embedded_context = self.prompt_capabilities.borrow().embedded_context;
 
@@ -514,6 +600,26 @@ impl MessageEditor {
                 editor.display_map.update(cx, |map, cx| {
                     let snapshot = map.snapshot(cx);
                     for (crease_id, crease) in snapshot.crease_snapshot.creases() {
+                        // Check for slash command first (before regular mentions)
+                        if let Some(command_name) = slash_commands.get(&crease_id) {
+                            let crease_range =
+                                crease.range().to_offset(&snapshot.buffer_snapshot());
+                            if crease_range.start.0 > ix {
+                                let chunk = text[ix..crease_range.start.0].into();
+                                chunks.push(chunk);
+                            }
+                            // Emit slash command as ResourceLink
+                            let uri = MentionUri::SlashCommand {
+                                name: command_name.to_string(),
+                            };
+                            chunks.push(acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+                                uri.name(),
+                                uri.to_uri().to_string(),
+                            )));
+                            ix = crease_range.end.0;
+                            continue;
+                        }
+
                         let Some((uri, mention)) = contents.get(&crease_id) else {
                             continue;
                         };
@@ -584,8 +690,17 @@ impl MessageEditor {
     }
 
     pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Collect slash command crease IDs to remove
+        let command_crease_ids = self.commands_set.update(cx, |commands_set, _cx| {
+            commands_set
+                .clear()
+                .map(|(crease_id, _)| crease_id)
+                .collect::<Vec<_>>()
+        });
+
         self.editor.update(cx, |editor, cx| {
             editor.clear(window, cx);
+            // Remove mention creases
             editor.remove_creases(
                 self.mention_set.update(cx, |mention_set, _cx| {
                     mention_set
@@ -594,7 +709,9 @@ impl MessageEditor {
                         .collect::<Vec<_>>()
                 }),
                 cx,
-            )
+            );
+            // Remove slash command creases
+            editor.remove_creases(command_crease_ids, cx);
         });
     }
 
@@ -1346,7 +1463,15 @@ impl MessageEditor {
                         continue;
                     };
                     let start = text.len();
-                    write!(&mut text, "{}", mention_uri.as_link()).ok();
+                    match &mention_uri {
+                        MentionUri::SlashCommand { .. } => {
+                            // For slash commands, just write the name, not a markdown link
+                            write!(&mut text, "{}", mention_uri.name()).ok();
+                        }
+                        _ => {
+                            write!(&mut text, "{}", mention_uri.as_link()).ok();
+                        }
+                    }
                     let end = text.len();
                     mentions.push((
                         start..end,
@@ -1362,7 +1487,15 @@ impl MessageEditor {
                         MentionUri::parse(&resource.uri, path_style).log_err()
                     {
                         let start = text.len();
-                        write!(&mut text, "{}", mention_uri.as_link()).ok();
+                        match &mention_uri {
+                            MentionUri::SlashCommand { .. } => {
+                                // For slash commands, just write the name, not a markdown link
+                                write!(&mut text, "{}", mention_uri.name()).ok();
+                            }
+                            _ => {
+                                write!(&mut text, "{}", mention_uri.as_link()).ok();
+                            }
+                        }
                         let end = text.len();
                         mentions.push((start..end, mention_uri, Mention::Link));
                     }
@@ -1426,31 +1559,74 @@ impl MessageEditor {
         for (range, mention_uri, mention) in mentions {
             let adjusted_start = insertion_start + range.start;
             let anchor = snapshot.anchor_before(MultiBufferOffset(adjusted_start));
-            let Some((crease_id, tx)) = insert_crease_for_mention(
-                anchor.excerpt_id,
-                anchor.text_anchor,
-                range.end - range.start,
-                mention_uri.name().into(),
-                mention_uri.icon_path(cx),
-                mention_uri.tooltip_text(),
-                Some(mention_uri.clone()),
-                Some(self.workspace.clone()),
-                None,
-                self.editor.clone(),
-                window,
-                cx,
-            ) else {
-                continue;
-            };
-            drop(tx);
 
-            self.mention_set.update(cx, |mention_set, _cx| {
-                mention_set.insert_mention(
-                    crease_id,
-                    mention_uri.clone(),
-                    Task::ready(Ok(mention)).shared(),
-                )
-            });
+            match &mention_uri {
+                MentionUri::SlashCommand { name } => {
+                    // Slash commands use their own crease insertion and tracking
+                    // Only crease the command name (/name), not the arguments
+                    let command_end = adjusted_start + 1 + name.len();
+                    let end_anchor = snapshot.anchor_after(MultiBufferOffset(command_end));
+                    let crease_result = self.editor.update(cx, |editor, cx| {
+                        insert_crease_for_slash_command(
+                            anchor..end_anchor,
+                            name.clone().into(),
+                            None, // args are separate text, not stored in crease
+                            editor,
+                            window,
+                            cx,
+                        )
+                    });
+                    if let Some((crease_id, end_anchor)) = crease_result {
+                        self.commands_set.update(cx, |set, _cx| {
+                            set.insert(crease_id, name.clone().into());
+                        });
+                        // Defer cursor movement to avoid double-borrow during completion
+                        // Move cursor after the trailing space (1 character past the crease)
+                        let editor = self.editor.clone();
+                        window.defer(cx, move |window, cx| {
+                            editor.update(cx, |editor, cx| {
+                                let buffer = editor.buffer().read(cx);
+                                let snapshot = buffer.snapshot(cx);
+                                let end_offset = end_anchor.to_offset(&snapshot);
+                                let after_space_offset = MultiBufferOffset(end_offset.0 + 1);
+                                let after_space_anchor = snapshot.anchor_before(after_space_offset);
+                                editor.change_selections(Default::default(), window, cx, |sels| {
+                                    sels.select_anchor_ranges([
+                                        after_space_anchor..after_space_anchor
+                                    ]);
+                                });
+                            });
+                        });
+                    }
+                }
+                _ => {
+                    let Some((crease_id, tx)) = insert_crease_for_mention(
+                        anchor.excerpt_id,
+                        anchor.text_anchor,
+                        range.end - range.start,
+                        mention_uri.name().into(),
+                        mention_uri.icon_path(cx),
+                        mention_uri.tooltip_text(),
+                        Some(mention_uri.clone()),
+                        Some(self.workspace.clone()),
+                        None,
+                        self.editor.clone(),
+                        window,
+                        cx,
+                    ) else {
+                        continue;
+                    };
+                    drop(tx);
+
+                    self.mention_set.update(cx, |mention_set, _cx| {
+                        mention_set.insert_mention(
+                            crease_id,
+                            mention_uri.clone(),
+                            Task::ready(Ok(mention)).shared(),
+                        )
+                    });
+                }
+            }
         }
 
         cx.notify();

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use collections::HashMap;
+use gpui::{App, AppContext, Context, Entity};
 use serde::Deserialize;
 
 /// A custom slash command loaded from a markdown file.
@@ -166,6 +167,68 @@ fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
     let template = &content[delimiter_end + 3..].trim_start();
 
     Ok((frontmatter, template))
+}
+
+/// Context entity that holds discovered custom command definitions.
+/// Populated asynchronously on creation via cx.spawn → background_spawn → update pattern.
+/// Used for: system prompt generation and template processing during LLM request building.
+pub struct CommandsContext {
+    commands: Option<HashMap<String, Arc<CustomCommand>>>,
+}
+
+impl CommandsContext {
+    /// Create a new CommandsContext and spawn background task to populate it.
+    /// Pattern matches SkillsContext::new() exactly.
+    pub fn new(worktree_roots: Vec<PathBuf>, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx: &mut Context<Self>| {
+            log::debug!(
+                "CommandsContext: Starting async discovery from {} worktrees",
+                worktree_roots.len()
+            );
+
+            // Spawn foreground task that coordinates background work
+            cx.spawn(async move |this, cx| {
+                log::debug!("CommandsContext: Discovering commands in background...");
+
+                // Do disk I/O on background executor
+                let commands = cx
+                    .background_spawn(async move {
+                        let cmds = discover_custom_commands(&worktree_roots);
+                        log::debug!("CommandsContext: Discovered {} commands", cmds.len());
+                        cmds
+                    })
+                    .await;
+
+                // Update entity on main thread
+                let count = commands.len();
+                this.update(cx, |this, _cx| {
+                    log::debug!("CommandsContext: Storing {} commands in context", count);
+                    this.commands = Some(commands);
+                })
+                .ok();
+            })
+            .detach();
+
+            Self {
+                commands: None, // Will be populated asynchronously
+            }
+        })
+    }
+
+    /// Get the commands map if loaded.
+    pub fn commands(&self) -> Option<&HashMap<String, Arc<CustomCommand>>> {
+        self.commands.as_ref()
+    }
+
+    /// Check if commands have been loaded from disk.
+    pub fn is_loaded(&self) -> bool {
+        self.commands.is_some()
+    }
+
+    /// Lookup a command by name. Returns None if not found or not yet loaded.
+    pub fn get(&self, name: &str) -> Option<Arc<CustomCommand>> {
+        self.commands.as_ref()?.get(name).cloned()
+    }
 }
 
 #[cfg(test)]

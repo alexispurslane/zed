@@ -1,6 +1,6 @@
 use crate::{
-    ContextServerRegistry, CopyPathTool, CreateDirectoryTool, DbLanguageModel, DbThread,
-    DeletePathTool, DiagnosticsTool, EditFileTool, FetchTool, FindPathTool, GrepTool,
+    CommandsContext, ContextServerRegistry, CopyPathTool, CreateDirectoryTool, DbLanguageModel,
+    DbThread, DeletePathTool, DiagnosticsTool, EditFileTool, FetchTool, FindPathTool, GrepTool,
     ListDirectoryTool, MovePathTool, NowTool, OpenTool, ProjectSnapshot, ReadFileTool,
     RestoreFileFromDiskTool, SaveFileTool, SkillsContext, SpawnAgentTool, StreamingEditFileTool,
     SystemPromptTemplate, Template, Templates, TerminalTool, ToolPermissionDecision, WebSearchTool,
@@ -123,13 +123,17 @@ impl Message {
         }
     }
 
-    pub fn to_request(&self) -> Vec<LanguageModelRequestMessage> {
+    pub fn to_request(
+        &self,
+        commands_context: &Entity<CommandsContext>,
+        cx: &App,
+    ) -> Vec<LanguageModelRequestMessage> {
         match self {
             Message::User(message) => {
                 if message.content.is_empty() {
                     vec![]
                 } else {
-                    vec![message.to_request()]
+                    vec![message.to_request(commands_context, cx)]
                 }
             }
             Message::Agent(message) => message.to_request(),
@@ -185,10 +189,22 @@ impl UserMessage {
                     markdown.push_str("<image />\n");
                 }
                 UserMessageContent::Mention { uri, content } => {
-                    if !content.is_empty() {
-                        let _ = writeln!(&mut markdown, "{}\n\n{}", uri.as_link(), content);
-                    } else {
-                        let _ = writeln!(&mut markdown, "{}", uri.as_link());
+                    match uri {
+                        MentionUri::SlashCommand { .. } => {
+                            // For slash commands, just display the name without link format
+                            if !content.is_empty() {
+                                let _ = writeln!(&mut markdown, "{}\n\n{}", uri.name(), content);
+                            } else {
+                                let _ = writeln!(&mut markdown, "{}", uri.name());
+                            }
+                        }
+                        _ => {
+                            if !content.is_empty() {
+                                let _ = writeln!(&mut markdown, "{}\n\n{}", uri.as_link(), content);
+                            } else {
+                                let _ = writeln!(&mut markdown, "{}", uri.as_link());
+                            }
+                        }
                     }
                 }
             }
@@ -197,10 +213,17 @@ impl UserMessage {
         markdown
     }
 
-    fn to_request(&self) -> LanguageModelRequestMessage {
+    fn to_request(
+        &self,
+        commands_context: &Entity<CommandsContext>,
+        cx: &App,
+    ) -> LanguageModelRequestMessage {
+        // Expand slash commands before processing
+        let expanded_content = self.expand_slash_commands(commands_context, cx);
+
         let mut message = LanguageModelRequestMessage {
             role: Role::User,
-            content: Vec::with_capacity(self.content.len()),
+            content: Vec::with_capacity(expanded_content.len()),
             cache: false,
             reasoning_details: None,
         };
@@ -230,7 +253,7 @@ impl UserMessage {
         let mut diagnostics_context = OPEN_DIAGNOSTICS_TAG.to_string();
         let mut diffs_context = OPEN_DIFFS_TAG.to_string();
 
-        for chunk in &self.content {
+        for chunk in &expanded_content {
             let chunk = match chunk {
                 UserMessageContent::Text(text) => {
                     language_model::MessageContent::Text(text.clone())
@@ -336,6 +359,10 @@ impl UserMessage {
                             )
                             .ok();
                         }
+                        MentionUri::SlashCommand { .. } => {
+                            // Slash commands are expanded above by expand_slash_commands,
+                            // so they should not appear here. If they do, skip them.
+                        }
                     }
 
                     language_model::MessageContent::Text(uri.as_link().to_string())
@@ -421,6 +448,70 @@ impl UserMessage {
         }
 
         message
+    }
+
+    /// Expand slash command mentions by looking up custom commands and processing their templates.
+    /// This converts UserMessageContent::Mention with SlashCommand URIs into expanded text content.
+    fn expand_slash_commands(
+        &self,
+        commands_context: &Entity<CommandsContext>,
+        cx: &App,
+    ) -> Vec<UserMessageContent> {
+        let mut expanded = Vec::with_capacity(self.content.len());
+        let mut i = 0;
+
+        while i < self.content.len() {
+            match &self.content[i] {
+                UserMessageContent::Mention { uri, .. } => {
+                    if let MentionUri::SlashCommand { name } = uri {
+                        // Try to look up as custom command
+                        if let Some(cmd) = commands_context.read(cx).get(name) {
+                            // Look at next content item for args
+                            let args_text = if i + 1 < self.content.len() {
+                                if let UserMessageContent::Text(text) = &self.content[i + 1] {
+                                    // Skip leading whitespace and get args
+                                    text.trim_start().to_string()
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
+                            // Parse args into Vec<String>
+                            let parsed_args: Vec<String> = if args_text.is_empty() {
+                                Vec::new()
+                            } else {
+                                args_text.split_whitespace().map(String::from).collect()
+                            };
+
+                            // Expand template
+                            let expanded_text = cmd.process(&parsed_args);
+                            expanded.push(UserMessageContent::Text(expanded_text));
+
+                            // Skip the next item if it was text containing our args
+                            if i + 1 < self.content.len() {
+                                if let UserMessageContent::Text(_) = &self.content[i + 1] {
+                                    i += 1; // Skip the args text
+                                }
+                            }
+                        } else {
+                            // Not a custom command, keep original mention
+                            expanded.push(self.content[i].clone());
+                        }
+                    } else {
+                        // Not a slash command, keep original
+                        expanded.push(self.content[i].clone());
+                    }
+                }
+                _ => {
+                    expanded.push(self.content[i].clone());
+                }
+            }
+            i += 1;
+        }
+
+        expanded
     }
 }
 
@@ -886,6 +977,8 @@ pub struct Thread {
     pub(crate) templates: Arc<Templates>,
     /// Formatted available skills for the system prompt.
     available_skills: Entity<SkillsContext>,
+    /// Custom commands discovered from .agents/commands
+    commands_context: Entity<CommandsContext>,
     model: Option<Arc<dyn LanguageModel>>,
     summarization_model: Option<Arc<dyn LanguageModel>>,
     thinking_enabled: bool,
@@ -984,7 +1077,8 @@ impl Thread {
             .visible_worktrees(cx)
             .map(|worktree| worktree.read(cx).abs_path().as_ref().to_path_buf())
             .collect();
-        let available_skills = SkillsContext::new(worktree_roots, templates.clone(), cx);
+        let available_skills = SkillsContext::new(worktree_roots.clone(), templates.clone(), cx);
+        let commands_context = CommandsContext::new(worktree_roots, cx);
         Self {
             id: acp::SessionId::new(uuid::Uuid::new_v4().to_string()),
             prompt_id: PromptId::new(),
@@ -1012,6 +1106,7 @@ impl Thread {
             project_context,
             templates,
             available_skills,
+            commands_context,
             model,
             summarization_model: None,
             thinking_enabled: enable_thinking,
@@ -1207,7 +1302,8 @@ impl Thread {
             .visible_worktrees(cx)
             .map(|worktree| worktree.read(cx).abs_path().as_ref().to_path_buf())
             .collect();
-        let available_skills = SkillsContext::new(worktree_roots, templates.clone(), cx);
+        let available_skills = SkillsContext::new(worktree_roots.clone(), templates.clone(), cx);
+        let commands_context = CommandsContext::new(worktree_roots, cx);
 
         Self {
             id,
@@ -1234,6 +1330,7 @@ impl Thread {
             project_context,
             templates,
             available_skills,
+            commands_context,
             model,
             summarization_model: None,
             thinking_enabled: db_thread.thinking_enabled,
@@ -2429,7 +2526,9 @@ impl Thread {
         };
 
         for message in &self.messages {
-            request.messages.extend(message.to_request());
+            request
+                .messages
+                .extend(message.to_request(&self.commands_context, cx));
         }
 
         request.messages.push(LanguageModelRequestMessage {
@@ -2487,7 +2586,9 @@ impl Thread {
         };
 
         for message in &self.messages {
-            request.messages.extend(message.to_request());
+            request
+                .messages
+                .extend(message.to_request(&self.commands_context, cx));
         }
 
         request.messages.push(LanguageModelRequestMessage {
@@ -2825,7 +2926,7 @@ impl Thread {
             reasoning_details: None,
         }];
         for message in &self.messages {
-            messages.extend(message.to_request());
+            messages.extend(message.to_request(&self.commands_context, cx));
         }
 
         if let Some(last_message) = messages.last_mut() {

@@ -186,7 +186,8 @@ fn open_mention_uri(
         | MentionUri::Diagnostics { .. }
         | MentionUri::TerminalSelection { .. }
         | MentionUri::GitDiff { .. }
-        | MentionUri::Rule { .. } => {}
+        | MentionUri::Rule { .. }
+        | MentionUri::SlashCommand { .. } => {}
     });
 }
 

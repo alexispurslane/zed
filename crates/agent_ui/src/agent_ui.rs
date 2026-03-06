@@ -5,6 +5,7 @@ mod agent_panel;
 mod agent_registry_ui;
 mod branch_names;
 mod buffer_codegen;
+mod commands_set;
 mod completion_provider;
 mod config_options;
 pub(crate) mod connection_view;

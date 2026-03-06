@@ -150,7 +150,8 @@ impl MentionSet {
             MentionUri::PastedImage
             | MentionUri::Selection { .. }
             | MentionUri::TerminalSelection { .. }
-            | MentionUri::GitDiff { .. } => {
+            | MentionUri::GitDiff { .. }
+            | MentionUri::SlashCommand { .. } => {
                 Task::ready(Err(anyhow!("Unsupported mention URI type for paste")))
             }
         }
@@ -300,6 +301,10 @@ impl MentionSet {
             MentionUri::GitDiff { .. } => {
                 debug_panic!("unexpected git diff URI");
                 Task::ready(Err(anyhow!("unexpected git diff URI")))
+            }
+            MentionUri::SlashCommand { .. } => {
+                debug_panic!("unexpected slash command URI");
+                Task::ready(Err(anyhow!("unexpected slash command URI")))
             }
         };
         let task = cx
@@ -1229,10 +1234,10 @@ pub(crate) fn insert_crease_for_slash_command(
     range: Range<Anchor>,
     command_name: SharedString,
     argument_hint: Option<SharedString>,
-    editor: Entity<Editor>,
+    editor: &mut Editor,
     window: &mut Window,
-    cx: &mut App,
-) -> Option<CreaseId> {
+    cx: &mut Context<Editor>,
+) -> Option<(CreaseId, Anchor)> {
     let placeholder = FoldPlaceholder {
         render: Arc::new(move |_fold_id, _range, _cx: &mut App| {
             SlashCommandCrease::new(command_name.clone(), command_name.clone())
@@ -1243,18 +1248,18 @@ pub(crate) fn insert_crease_for_slash_command(
         ..Default::default()
     };
 
-    let crease = editor.update(cx, |editor, cx| {
-        let crease = Crease::Inline {
-            range,
-            placeholder,
-            render_toggle: None,
-            render_trailer: None,
-            metadata: None,
-        };
+    // Clone end anchor before range is moved
+    let end_anchor = range.end.clone();
 
-        let ids = editor.insert_creases(vec![crease.clone()], cx);
-        editor.fold_creases(vec![crease], false, window, cx);
-        ids.get(0).copied()
-    });
-    crease
+    let crease = Crease::Inline {
+        range,
+        placeholder,
+        render_toggle: None,
+        render_trailer: None,
+        metadata: None,
+    };
+    let ids = editor.insert_creases(vec![crease.clone()], cx);
+    editor.fold_creases(vec![crease], false, window, cx);
+
+    ids.get(0).copied().map(|id| (id, end_anchor))
 }
