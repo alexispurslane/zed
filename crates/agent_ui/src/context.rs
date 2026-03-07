@@ -56,6 +56,10 @@ pub fn load_context(mention_set: &Entity<MentionSet>, cx: &mut App) -> Task<Opti
                     ..LanguageModelImage::empty()
                 }),
                 Mention::Link => {}
+                Mention::SlashCommand => {
+                    // Slash commands are expanded at request time via CommandsContext,
+                    // not during context loading.
+                }
             }
         }
         Some(loaded_context)

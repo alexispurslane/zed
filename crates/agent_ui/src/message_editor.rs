@@ -2,7 +2,6 @@ use crate::SendImmediately;
 use crate::ThreadHistory;
 use crate::{
     ChatWithFollow,
-    commands_set::CommandsSet,
     completion_provider::{
         PromptCompletionProvider, PromptCompletionProviderDelegate, PromptContextAction,
         PromptContextType, SlashCommandCompletion,
@@ -45,7 +44,6 @@ use zed_actions::agent::{Chat, PasteRaw};
 
 pub struct MessageEditor {
     mention_set: Entity<MentionSet>,
-    commands_set: Entity<CommandsSet>,
     commands_context: Entity<CommandsContext>,
     editor: Entity<Editor>,
     workspace: WeakEntity<Workspace>,
@@ -185,7 +183,6 @@ impl MessageEditor {
                 prompt_store.clone(),
             )
         });
-        let commands_set = cx.new(|_cx| CommandsSet::new());
 
         // Create CommandsContext to discover custom commands
         let worktree_roots: Vec<PathBuf> = project
@@ -203,7 +200,6 @@ impl MessageEditor {
             cx.entity(),
             editor.downgrade(),
             mention_set.clone(),
-            commands_set.clone(),
             history,
             prompt_store.clone(),
             workspace.clone(),
@@ -273,7 +269,6 @@ impl MessageEditor {
         Self {
             editor,
             mention_set,
-            commands_set,
             commands_context,
             workspace,
             prompt_capabilities,
@@ -392,10 +387,13 @@ impl MessageEditor {
             cx,
         );
 
-        // Store in commands_set for persistence and defer cursor movement
+        // Store in mention_set for persistence and defer cursor movement
         if let Some((crease_id, end_anchor)) = crease_result {
-            self.commands_set.update(cx, |set, _cx| {
-                set.insert(crease_id, SharedString::from(command_name.clone()));
+            let uri = MentionUri::SlashCommand {
+                name: command_name.clone(),
+            };
+            self.mention_set.update(cx, |set, _cx| {
+                set.insert_slash_command(crease_id, uri);
             });
             // Defer cursor movement to avoid double-borrow during completion
             // Move cursor after the trailing space (1 character past the crease)
@@ -577,12 +575,6 @@ impl MessageEditor {
         let contents = self
             .mention_set
             .update(cx, |store, cx| store.contents(full_mention_content, cx));
-        let slash_commands: HashMap<CreaseId, SharedString> = self
-            .commands_set
-            .read(cx)
-            .iter()
-            .map(|(id, info)| (*id, info.name.clone()))
-            .collect();
         let editor = self.editor.clone();
         let supports_embedded_context = self.prompt_capabilities.borrow().embedded_context;
 
@@ -600,26 +592,6 @@ impl MessageEditor {
                 editor.display_map.update(cx, |map, cx| {
                     let snapshot = map.snapshot(cx);
                     for (crease_id, crease) in snapshot.crease_snapshot.creases() {
-                        // Check for slash command first (before regular mentions)
-                        if let Some(command_name) = slash_commands.get(&crease_id) {
-                            let crease_range =
-                                crease.range().to_offset(&snapshot.buffer_snapshot());
-                            if crease_range.start.0 > ix {
-                                let chunk = text[ix..crease_range.start.0].into();
-                                chunks.push(chunk);
-                            }
-                            // Emit slash command as ResourceLink
-                            let uri = MentionUri::SlashCommand {
-                                name: command_name.to_string(),
-                            };
-                            chunks.push(acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
-                                uri.name(),
-                                uri.to_uri().to_string(),
-                            )));
-                            ix = crease_range.end.0;
-                            continue;
-                        }
-
                         let Some((uri, mention)) = contents.get(&crease_id) else {
                             continue;
                         };
@@ -671,6 +643,13 @@ impl MessageEditor {
                             Mention::Link => acp::ContentBlock::ResourceLink(
                                 acp::ResourceLink::new(uri.name(), uri.to_uri().to_string()),
                             ),
+                            Mention::SlashCommand => {
+                                // Emit slash command as ResourceLink
+                                acp::ContentBlock::ResourceLink(acp::ResourceLink::new(
+                                    uri.name(),
+                                    uri.to_uri().to_string(),
+                                ))
+                            }
                         };
                         chunks.push(chunk);
                         ix = crease_range.end.0;
@@ -690,17 +669,9 @@ impl MessageEditor {
     }
 
     pub fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Collect slash command crease IDs to remove
-        let command_crease_ids = self.commands_set.update(cx, |commands_set, _cx| {
-            commands_set
-                .clear()
-                .map(|(crease_id, _)| crease_id)
-                .collect::<Vec<_>>()
-        });
-
         self.editor.update(cx, |editor, cx| {
             editor.clear(window, cx);
-            // Remove mention creases
+            // Remove all creases (mentions and slash commands)
             editor.remove_creases(
                 self.mention_set.update(cx, |mention_set, _cx| {
                     mention_set
@@ -710,8 +681,6 @@ impl MessageEditor {
                 }),
                 cx,
             );
-            // Remove slash command creases
-            editor.remove_creases(command_crease_ids, cx);
         });
     }
 
@@ -1463,41 +1432,41 @@ impl MessageEditor {
                         continue;
                     };
                     let start = text.len();
-                    match &mention_uri {
+                    let mention = match &mention_uri {
                         MentionUri::SlashCommand { .. } => {
                             // For slash commands, just write the name, not a markdown link
                             write!(&mut text, "{}", mention_uri.name()).ok();
+                            Mention::SlashCommand
                         }
                         _ => {
                             write!(&mut text, "{}", mention_uri.as_link()).ok();
+                            Mention::Text {
+                                content: resource.text,
+                                tracked_buffers: Vec::new(),
+                            }
                         }
-                    }
+                    };
                     let end = text.len();
-                    mentions.push((
-                        start..end,
-                        mention_uri,
-                        Mention::Text {
-                            content: resource.text,
-                            tracked_buffers: Vec::new(),
-                        },
-                    ));
+                    mentions.push((start..end, mention_uri, mention));
                 }
                 acp::ContentBlock::ResourceLink(resource) => {
                     if let Some(mention_uri) =
                         MentionUri::parse(&resource.uri, path_style).log_err()
                     {
                         let start = text.len();
-                        match &mention_uri {
+                        let mention = match &mention_uri {
                             MentionUri::SlashCommand { .. } => {
-                                // For slash commands, just write the name, not a markdown link
-                                write!(&mut text, "{}", mention_uri.name()).ok();
+                                // For slash commands, write the name with trailing space
+                                write!(&mut text, "{} ", mention_uri.name()).ok();
+                                Mention::SlashCommand
                             }
                             _ => {
                                 write!(&mut text, "{}", mention_uri.as_link()).ok();
+                                Mention::Link
                             }
-                        }
+                        };
                         let end = text.len();
-                        mentions.push((start..end, mention_uri, Mention::Link));
+                        mentions.push((start..end, mention_uri, mention));
                     }
                 }
                 acp::ContentBlock::Image(acp::ImageContent {
@@ -1561,15 +1530,23 @@ impl MessageEditor {
             let anchor = snapshot.anchor_before(MultiBufferOffset(adjusted_start));
 
             match &mention_uri {
-                MentionUri::SlashCommand { name } => {
+                MentionUri::SlashCommand { .. } => {
                     // Slash commands use their own crease insertion and tracking
-                    // Only crease the command name (/name), not the arguments
-                    let command_end = adjusted_start + 1 + name.len();
+                    // Only crease the command name (/name), not the trailing space
+                    let name = mention_uri.name().to_string();
+                    let command_end = adjusted_start + name.len();
                     let end_anchor = snapshot.anchor_after(MultiBufferOffset(command_end));
+                    // Strip leading slash for display (crease shows icon + name, not icon + /name)
+                    let display_name: SharedString = if name.starts_with('/') {
+                        name[1..].to_string()
+                    } else {
+                        name
+                    }
+                    .into();
                     let crease_result = self.editor.update(cx, |editor, cx| {
                         insert_crease_for_slash_command(
                             anchor..end_anchor,
-                            name.clone().into(),
+                            display_name,
                             None, // args are separate text, not stored in crease
                             editor,
                             window,
@@ -1577,8 +1554,8 @@ impl MessageEditor {
                         )
                     });
                     if let Some((crease_id, end_anchor)) = crease_result {
-                        self.commands_set.update(cx, |set, _cx| {
-                            set.insert(crease_id, name.clone().into());
+                        self.mention_set.update(cx, |set, _cx| {
+                            set.insert_slash_command(crease_id, mention_uri.clone());
                         });
                         // Defer cursor movement to avoid double-borrow during completion
                         // Move cursor after the trailing space (1 character past the crease)

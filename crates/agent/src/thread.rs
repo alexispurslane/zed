@@ -286,6 +286,12 @@ impl UserMessage {
 
                                 // Expand template with worktree context
                                 let expanded_text = cmd.process(&parsed_args, worktree_root);
+                                log::debug!(
+                                    "Slash command expansion: /{} {:?} -> {:?}",
+                                    name,
+                                    parsed_args,
+                                    expanded_text
+                                );
 
                                 // Consume the args text if we used it
                                 if iter

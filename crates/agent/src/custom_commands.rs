@@ -45,21 +45,24 @@ impl CustomCommand {
     pub fn process(&self, args: &[String], worktree_root: Option<&Path>) -> String {
         let mut result = self.template.clone();
 
-        // Process shell command substitutions !`...`
-        result = self.substitute_shell_commands(&result, worktree_root);
-
-        // Process file substitutions @path
-        result = self.substitute_file_contents(&result, worktree_root);
-
-        // Replace `$ARGUMENTS` with all args joined by spaces.
-        let all_args = args.join(" ");
-        result = result.replace("$ARGUMENTS", &all_args);
-
-        // Replace positional placeholders `$1`, `$2`, etc.
+        // Replace positional placeholders `$1`, `$2`, etc. first
+        // (so they can be used within shell commands)
         for (index, arg) in args.iter().enumerate() {
             let placeholder = format!("${}", index + 1);
             result = result.replace(&placeholder, arg);
         }
+
+        // Replace `$ARGUMENTS` with all args joined by spaces, quoted for safety.
+        // This happens before shell commands so $ARGUMENTS can be used inside !`...`
+        let all_args = args.join(" ");
+        result = result.replace("$ARGUMENTS", &format!("\"{}\"", all_args));
+
+        // Process shell command substitutions !`...`
+        // (now that $ARGUMENTS and $N have been substituted)
+        result = self.substitute_shell_commands(&result, worktree_root);
+
+        // Process file substitutions @path
+        result = self.substitute_file_contents(&result, worktree_root);
 
         result
     }
@@ -74,11 +77,11 @@ impl CustomCommand {
                     Ok(output) => output,
                     Err(e) => {
                         log::warn!(
-                            "Shell command failed in custom command '{}': {}",
+                            "Shell command execution issue in custom command '{}': {}",
                             self.name,
                             e
                         );
-                        format!("[error executing command: {}]", command)
+                        format!("[command execution failed: {}]", command)
                     }
                 }
             })
@@ -86,6 +89,8 @@ impl CustomCommand {
     }
 
     /// Execute a shell command and return its stdout.
+    /// Note: Non-zero exit codes are reported neutrally since many commands
+    /// (like rg, grep, diff) use them for normal conditions like "no matches found".
     fn execute_shell_command(&self, command: &str, worktree_root: Option<&Path>) -> Result<String> {
         let cwd = worktree_root
             .or_else(|| self.source_path.parent())
@@ -97,14 +102,32 @@ impl CustomCommand {
             .output()
             .context("failed to execute shell command")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("command exited with status {}: {}", output.status, stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let trimmed_output = stdout.trim_end();
+
+        // Report exit code neutrally - non-zero doesn't always mean error
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                let result = if trimmed_output.is_empty() && stderr.is_empty() {
+                    format!("[exit code {}]", code)
+                } else if stderr.is_empty() {
+                    format!("{}\n[exit code {}]", trimmed_output, code)
+                } else if trimmed_output.is_empty() {
+                    format!("{}\n[exit code {}]", stderr.trim_end(), code)
+                } else {
+                    format!(
+                        "{}\n{}\n[exit code {}]",
+                        trimmed_output,
+                        stderr.trim_end(),
+                        code
+                    )
+                };
+                return Ok(result);
+            }
         }
 
-        String::from_utf8(output.stdout)
-            .map(|s| s.trim_end().to_string())
-            .context("command output is not valid UTF-8")
+        Ok(trimmed_output.to_string())
     }
 
     /// Substitute `@file_path` patterns with file contents.
@@ -494,8 +517,8 @@ Run tests with `cargo test $ARGUMENTS`.
         };
 
         let result = command.process(&[], None);
-        // Should show error message, not panic
-        assert!(result.contains("[error executing command"));
+        // Should show exit code neutrally, not panic
+        assert!(result.contains("[exit code 1]"));
     }
 
     #[test]

@@ -37,7 +37,7 @@ use zed_actions::{
 
 use crate::agent_model_selector::AgentModelSelector;
 use crate::buffer_codegen::{BufferCodegen, CodegenAlternative};
-use crate::commands_set::CommandsSet;
+
 use crate::completion_provider::{
     PromptCompletionProvider, PromptCompletionProviderDelegate, PromptContextType,
 };
@@ -65,7 +65,7 @@ pub struct PromptEditor<T> {
     pub editor: Entity<Editor>,
     mode: PromptEditorMode,
     mention_set: Entity<MentionSet>,
-    commands_set: Entity<CommandsSet>,
+
     history: WeakEntity<ThreadHistory>,
     prompt_store: Option<Entity<PromptStore>>,
     workspace: WeakEntity<Workspace>,
@@ -337,7 +337,6 @@ impl<T: 'static> PromptEditor<T> {
                 PromptEditorCompletionProviderDelegate,
                 cx.weak_entity(),
                 self.mention_set.clone(),
-                self.commands_set.clone(),
                 self.history.clone(),
                 self.prompt_store.clone(),
                 self.workspace.clone(),
@@ -1276,14 +1275,12 @@ impl PromptEditor<BufferCodegen> {
 
         let mention_set = cx
             .new(|_cx| MentionSet::new(project, Some(thread_store.clone()), prompt_store.clone()));
-        let commands_set = cx.new(|_cx| CommandsSet::new());
 
         let model_selector_menu_handle = PopoverMenuHandle::default();
 
         let mut this: PromptEditor<BufferCodegen> = PromptEditor {
             editor: prompt_editor.clone(),
             mention_set,
-            commands_set,
             history,
             prompt_store,
             workspace,
@@ -1432,14 +1429,12 @@ impl PromptEditor<TerminalCodegen> {
 
         let mention_set = cx
             .new(|_cx| MentionSet::new(project, Some(thread_store.clone()), prompt_store.clone()));
-        let commands_set = cx.new(|_cx| CommandsSet::new());
 
         let model_selector_menu_handle = PopoverMenuHandle::default();
 
         let mut this = Self {
             editor: prompt_editor.clone(),
             mention_set,
-            commands_set,
             history,
             prompt_store,
             workspace,

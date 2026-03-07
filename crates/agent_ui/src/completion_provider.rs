@@ -41,7 +41,6 @@ use workspace::Workspace;
 use workspace::dock::DockPosition;
 
 use crate::AgentPanel;
-use crate::commands_set::CommandsSet;
 use crate::mention_set::MentionSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,7 +211,6 @@ pub struct PromptCompletionProvider<T: PromptCompletionProviderDelegate> {
     source: Arc<T>,
     editor: WeakEntity<Editor>,
     mention_set: Entity<MentionSet>,
-    commands_set: Entity<CommandsSet>,
     history: WeakEntity<ThreadHistory>,
     prompt_store: Option<Entity<PromptStore>>,
     workspace: WeakEntity<Workspace>,
@@ -223,7 +221,6 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
         source: T,
         editor: WeakEntity<Editor>,
         mention_set: Entity<MentionSet>,
-        commands_set: Entity<CommandsSet>,
         history: WeakEntity<ThreadHistory>,
         prompt_store: Option<Entity<PromptStore>>,
         workspace: WeakEntity<Workspace>,
@@ -232,7 +229,6 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
             source: Arc::new(source),
             editor,
             mention_set,
-            commands_set,
             workspace,
             history,
             prompt_store,

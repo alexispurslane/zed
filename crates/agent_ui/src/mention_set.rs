@@ -50,6 +50,7 @@ pub enum Mention {
     },
     Image(MentionImage),
     Link,
+    SlashCommand,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -115,6 +116,13 @@ impl MentionSet {
     }
 
     pub fn insert_mention(&mut self, crease_id: CreaseId, uri: MentionUri, task: MentionTask) {
+        self.mentions.insert(crease_id, (uri, task));
+    }
+
+    /// Insert a slash command. Unlike mentions, slash commands don't require async resolution—
+    /// they're expanded at request time via CommandsContext.
+    pub fn insert_slash_command(&mut self, crease_id: CreaseId, uri: MentionUri) {
+        let task = Task::ready(Ok(Mention::SlashCommand)).shared();
         self.mentions.insert(crease_id, (uri, task));
     }
 
