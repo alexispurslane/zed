@@ -1,10 +1,10 @@
 use crate::{
-    CommandsContext, ContextServerRegistry, CopyPathTool, CreateDirectoryTool, DbLanguageModel,
-    DbThread, DeletePathTool, DiagnosticsTool, EditFileTool, FetchTool, FindPathTool, GrepTool,
-    ListDirectoryTool, MovePathTool, NowTool, OpenTool, ProjectSnapshot, ReadFileTool,
-    RestoreFileFromDiskTool, SaveFileTool, SkillsContext, SpawnAgentTool, StreamingEditFileTool,
-    SystemPromptTemplate, Template, Templates, TerminalTool, ToolPermissionDecision, WebSearchTool,
-    decide_permission_from_settings,
+    CommandSummary, CommandsContext, ContextServerRegistry, CopyPathTool, CreateDirectoryTool,
+    DbLanguageModel, DbThread, DeletePathTool, DiagnosticsTool, EditFileTool, FetchTool,
+    FindPathTool, GrepTool, ListDirectoryTool, MovePathTool, NowTool, OpenTool, ProjectSnapshot,
+    ReadFileTool, RestoreFileFromDiskTool, SaveFileTool, SkillsContext, SpawnAgentTool,
+    StreamingEditFileTool, SystemPromptTemplate, Template, Templates, TerminalTool,
+    ToolPermissionDecision, WebSearchTool, decide_permission_from_settings,
 };
 use acp_thread::{MentionUri, UserMessageId};
 use action_log::ActionLog;
@@ -458,25 +458,24 @@ impl UserMessage {
         cx: &App,
     ) -> Vec<UserMessageContent> {
         let mut expanded = Vec::with_capacity(self.content.len());
-        let mut i = 0;
+        let mut iter = self.content.iter().peekable();
 
-        while i < self.content.len() {
-            match &self.content[i] {
+        while let Some(chunk) = iter.next() {
+            match chunk {
                 UserMessageContent::Mention { uri, .. } => {
                     if let MentionUri::SlashCommand { name } = uri {
                         // Try to look up as custom command
                         if let Some(cmd) = commands_context.read(cx).get(name) {
-                            // Look at next content item for args
-                            let args_text = if i + 1 < self.content.len() {
-                                if let UserMessageContent::Text(text) = &self.content[i + 1] {
-                                    // Skip leading whitespace and get args
-                                    text.trim_start().to_string()
-                                } else {
-                                    String::new()
-                                }
-                            } else {
-                                String::new()
-                            };
+                            // Peek at next content item for args
+                            let args_text = iter
+                                .peek()
+                                .and_then(|next| match next {
+                                    UserMessageContent::Text(text) => {
+                                        Some(text.trim_start().to_string())
+                                    }
+                                    _ => None,
+                                })
+                                .unwrap_or_default();
 
                             // Parse args into Vec<String>
                             let parsed_args: Vec<String> = if args_text.is_empty() {
@@ -489,26 +488,27 @@ impl UserMessage {
                             let expanded_text = cmd.process(&parsed_args);
                             expanded.push(UserMessageContent::Text(expanded_text));
 
-                            // Skip the next item if it was text containing our args
-                            if i + 1 < self.content.len() {
-                                if let UserMessageContent::Text(_) = &self.content[i + 1] {
-                                    i += 1; // Skip the args text
-                                }
+                            // Consume the args text if we used it
+                            if iter
+                                .peek()
+                                .map(|next| matches!(next, UserMessageContent::Text(_)))
+                                .unwrap_or(false)
+                            {
+                                iter.next();
                             }
                         } else {
                             // Not a custom command, keep original mention
-                            expanded.push(self.content[i].clone());
+                            expanded.push(chunk.clone());
                         }
                     } else {
                         // Not a slash command, keep original
-                        expanded.push(self.content[i].clone());
+                        expanded.push(chunk.clone());
                     }
                 }
                 _ => {
-                    expanded.push(self.content[i].clone());
+                    expanded.push(chunk.clone());
                 }
             }
-            i += 1;
         }
 
         expanded
@@ -2910,11 +2910,26 @@ impl Thread {
             self.messages.len()
         );
 
+        let custom_commands = self
+            .commands_context
+            .read(cx)
+            .commands()
+            .map(|cmds| {
+                cmds.values()
+                    .map(|cmd| CommandSummary {
+                        name: cmd.name.clone(),
+                        description: cmd.description.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let system_prompt = SystemPromptTemplate {
             project: self.project_context.read(cx),
             available_tools,
             available_skills: self.available_skills.read(cx).formatted().to_string(),
             model_name: self.model.as_ref().map(|m| m.name().0.to_string()),
+            custom_commands,
         }
         .render(&self.templates)
         .context("failed to build system prompt")

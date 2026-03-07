@@ -161,6 +161,16 @@ You are powered by the model named {{model_name}}.
 {{{available_skills}}}
 
 {{/if}}
+{{#if custom_commands}}
+## Available Custom Slash Commands
+
+The user has defined the following custom slash commands that can be invoked with `/command-name`:
+
+{{#each custom_commands}}
+- `/{{this.name}}` - {{this.description}}
+{{/each}}
+
+{{/if}}
 {{#if (or has_rules has_user_rules has_global_agents)}}
 ## User's Custom Instructions
 

@@ -86,7 +86,14 @@ fn discover_commands_sync(
 
     let entries = match std::fs::read_dir(commands_dir) {
         Ok(entries) => entries,
-        Err(_) => return commands, // Directory doesn't exist or isn't readable.
+        Err(e) => {
+            log::debug!(
+                "Commands directory not readable ({}): {}",
+                commands_dir.display(),
+                e
+            );
+            return commands;
+        }
     };
 
     for entry in entries.filter_map(Result::ok) {
@@ -107,14 +114,29 @@ fn discover_commands_sync(
 
         let content = match std::fs::read_to_string(&path) {
             Ok(content) => content,
-            Err(_) => continue,
+            Err(e) => {
+                log::debug!("Failed to read command file ({}): {}", path.display(), e);
+                continue;
+            }
         };
 
         let command = match parse_command_file(&name, &content, path.clone(), is_global) {
             Ok(command) => command,
-            Err(_) => continue, // Skip malformed files.
+            Err(e) => {
+                log::debug!(
+                    "Failed to parse command file ({}): {}. Skipping.",
+                    path.display(),
+                    e
+                );
+                continue;
+            }
         };
 
+        log::debug!(
+            "Loaded custom command '{}' from {}",
+            command.name,
+            path.display()
+        );
         commands.insert(name, Arc::new(command));
     }
 

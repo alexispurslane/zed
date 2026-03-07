@@ -33,6 +33,13 @@ pub trait Template: Sized {
     }
 }
 
+/// Summary of a custom slash command for the system prompt.
+#[derive(Serialize)]
+pub struct CommandSummary {
+    pub name: String,
+    pub description: String,
+}
+
 #[derive(Serialize)]
 pub struct SystemPromptTemplate<'a> {
     #[serde(flatten)]
@@ -40,6 +47,7 @@ pub struct SystemPromptTemplate<'a> {
     pub available_tools: Vec<SharedString>,
     pub model_name: Option<String>,
     pub available_skills: String,
+    pub custom_commands: Vec<CommandSummary>,
 }
 
 impl Template for SystemPromptTemplate<'_> {
@@ -102,6 +110,7 @@ mod tests {
             available_tools: vec!["echo".into()],
             available_skills: String::new(),
             model_name: Some("test-model".to_string()),
+            custom_commands: vec![],
         };
         let templates = Templates::new();
         let rendered = template.render(&templates).unwrap();
