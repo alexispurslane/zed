@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result};
 use collections::HashMap;
 use gpui::{App, AppContext, Context, Entity};
+use regex::Regex;
 use serde::Deserialize;
 
 /// A custom slash command loaded from a markdown file.
@@ -36,9 +37,19 @@ struct CommandFrontmatter {
 
 impl CustomCommand {
     /// Process the template with the provided arguments.
-    /// Substitutes `$ARGUMENTS` with all args joined, and `$1`, `$2`, etc. with positional args.
-    pub fn process(&self, args: &[String]) -> String {
+    /// Substitutes:
+    /// - `` !`shell_command` `` with the output of the shell command (run in worktree)
+    /// - `@file_path` with the contents of the file (relative to worktree)
+    /// - `$ARGUMENTS` with all args joined by spaces
+    /// - `$1`, `$2`, etc. with positional args
+    pub fn process(&self, args: &[String], worktree_root: Option<&Path>) -> String {
         let mut result = self.template.clone();
+
+        // Process shell command substitutions !`...`
+        result = self.substitute_shell_commands(&result, worktree_root);
+
+        // Process file substitutions @path
+        result = self.substitute_file_contents(&result, worktree_root);
 
         // Replace `$ARGUMENTS` with all args joined by spaces.
         let all_args = args.join(" ");
@@ -51,6 +62,90 @@ impl CustomCommand {
         }
 
         result
+    }
+
+    /// Substitute `` !`shell_command` `` patterns with command output.
+    fn substitute_shell_commands(&self, template: &str, worktree_root: Option<&Path>) -> String {
+        let shell_regex = Regex::new(r"!`([^`]+)`").expect("valid regex");
+        shell_regex
+            .replace_all(template, |caps: &regex::Captures| {
+                let command = caps[1].trim();
+                match self.execute_shell_command(command, worktree_root) {
+                    Ok(output) => output,
+                    Err(e) => {
+                        log::warn!(
+                            "Shell command failed in custom command '{}': {}",
+                            self.name,
+                            e
+                        );
+                        format!("[error executing command: {}]", command)
+                    }
+                }
+            })
+            .into_owned()
+    }
+
+    /// Execute a shell command and return its stdout.
+    fn execute_shell_command(&self, command: &str, worktree_root: Option<&Path>) -> Result<String> {
+        let cwd = worktree_root
+            .or_else(|| self.source_path.parent())
+            .unwrap_or(Path::new("/"));
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .current_dir(cwd)
+            .output()
+            .context("failed to execute shell command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("command exited with status {}: {}", output.status, stderr);
+        }
+
+        String::from_utf8(output.stdout)
+            .map(|s| s.trim_end().to_string())
+            .context("command output is not valid UTF-8")
+    }
+
+    /// Substitute `@file_path` patterns with file contents.
+    fn substitute_file_contents(&self, template: &str, worktree_root: Option<&Path>) -> String {
+        // Match @ followed by a path (non-whitespace characters, or quoted path)
+        // Supports: @/absolute/path, @relative/path, @"path with spaces", @'path with spaces'
+        let file_regex = Regex::new(r#"@(?:"([^"]+)"|'([^']+)'|(\S+))"#).expect("valid regex");
+        file_regex
+            .replace_all(template, |caps: &regex::Captures| {
+                // Get the matched path from whichever group matched
+                let file_path = caps
+                    .get(1)
+                    .or_else(|| caps.get(2))
+                    .or_else(|| caps.get(3))
+                    .map(|m| m.as_str())
+                    .unwrap_or("")
+                    .trim();
+                match self.read_file_content(file_path, worktree_root) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        log::warn!("File read failed in custom command '{}': {}", self.name, e);
+                        format!("[error reading file: {}]", file_path)
+                    }
+                }
+            })
+            .into_owned()
+    }
+
+    /// Read file content relative to the worktree root.
+    fn read_file_content(&self, file_path: &str, worktree_root: Option<&Path>) -> Result<String> {
+        let path = if Path::new(file_path).is_absolute() {
+            PathBuf::from(file_path)
+        } else {
+            worktree_root
+                .or_else(|| self.source_path.parent())
+                .unwrap_or(Path::new("/"))
+                .join(file_path)
+        };
+
+        std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read file: {}", path.display()))
     }
 }
 
@@ -269,7 +364,7 @@ mod tests {
             allowed_tools: None,
         };
 
-        let result = command.process(&["--release".to_string(), "--verbose".to_string()]);
+        let result = command.process(&["--release".to_string(), "--verbose".to_string()], None);
         assert_eq!(result, "Run tests with: --release --verbose");
     }
 
@@ -285,7 +380,7 @@ mod tests {
             allowed_tools: None,
         };
 
-        let result = command.process(&["alpha".to_string(), "beta".to_string()]);
+        let result = command.process(&["alpha".to_string(), "beta".to_string()], None);
         assert_eq!(result, "First: alpha, Second: beta, First again: alpha");
     }
 
@@ -301,7 +396,7 @@ mod tests {
             allowed_tools: None,
         };
 
-        let result = command.process(&[]);
+        let result = command.process(&[], None);
         assert_eq!(result, "Just a template");
     }
 
@@ -323,5 +418,181 @@ Run tests with `cargo test $ARGUMENTS`.
     fn test_parse_frontmatter_missing_delimiter() {
         let content = "No frontmatter here";
         assert!(split_frontmatter(content).is_err());
+    }
+
+    #[test]
+    fn test_shell_command_substitution() {
+        let command = CustomCommand {
+            name: "shell-test".to_string(),
+            description: "Test shell substitution".to_string(),
+            argument_hint: None,
+            template: "Current dir: !`pwd`".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], None);
+        // Should contain the current directory path
+        assert!(result.starts_with("Current dir: /"));
+    }
+
+    #[test]
+    fn test_shell_command_substitution_multiple() {
+        let command = CustomCommand {
+            name: "multi-shell".to_string(),
+            description: "Test multiple shell substitutions".to_string(),
+            argument_hint: None,
+            template: "!`echo hello` and !`echo world`".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], None);
+        assert_eq!(result, "hello and world");
+    }
+
+    #[test]
+    fn test_file_substitution() {
+        use std::io::Write;
+
+        // Create a temp file with known content
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_command_file.txt");
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        writeln!(file, "Hello from file!").unwrap();
+        drop(file);
+
+        let command = CustomCommand {
+            name: "file-test".to_string(),
+            description: "Test file substitution".to_string(),
+            argument_hint: None,
+            template: format!("Content: @{}", temp_file.display()),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], None);
+        assert!(result.contains("Hello from file!"));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_shell_error_handling() {
+        let command = CustomCommand {
+            name: "error-test".to_string(),
+            description: "Test shell error handling".to_string(),
+            argument_hint: None,
+            template: "Result: !`exit 1`".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], None);
+        // Should show error message, not panic
+        assert!(result.contains("[error executing command"));
+    }
+
+    #[test]
+    fn test_file_error_handling() {
+        let command = CustomCommand {
+            name: "file-error-test".to_string(),
+            description: "Test file error handling".to_string(),
+            argument_hint: None,
+            template: "Result: @/nonexistent/path/file.txt".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], None);
+        // Should show error message, not panic
+        assert!(result.contains("[error reading file"));
+    }
+
+    #[test]
+    fn test_combined_substitutions() {
+        let command = CustomCommand {
+            name: "combined-test".to_string(),
+            description: "Test all substitutions together".to_string(),
+            argument_hint: None,
+            template: "!`echo prefix` $1 @/etc/hostname $ARGUMENTS".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&["arg1".to_string(), "arg2".to_string()], None);
+        // Shell substitution happens first, then args
+        assert!(result.starts_with("prefix "));
+        assert!(result.contains("arg1"));
+        // hostname should be readable on most systems
+        assert!(!result.contains("@/")); // Should be substituted
+    }
+
+    #[test]
+    fn test_file_substitution_with_spaces() {
+        use std::io::Write;
+
+        // Create a temp file with spaces in name
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test file with spaces.txt");
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        writeln!(file, "Content with spaces!").unwrap();
+        drop(file);
+
+        // Test with quoted path
+        let command = CustomCommand {
+            name: "file-spaces-test".to_string(),
+            description: "Test file substitution with spaces".to_string(),
+            argument_hint: None,
+            template: r#"Content: @"test file with spaces.txt""#.to_string(),
+            source_path: temp_dir.clone(),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        let result = command.process(&[], Some(&temp_dir));
+        assert!(result.contains("Content with spaces!"));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_file);
+    }
+
+    #[test]
+    fn test_worktree_root_resolution() {
+        use std::io::Write;
+
+        // Create a temp worktree with a file
+        let temp_dir = std::env::temp_dir();
+        let worktree = temp_dir.join("test_worktree");
+        let _ = std::fs::create_dir_all(&worktree);
+        let temp_file = worktree.join("worktree_file.txt");
+        let mut file = std::fs::File::create(&temp_file).unwrap();
+        writeln!(file, "Worktree content!").unwrap();
+        drop(file);
+
+        let command = CustomCommand {
+            name: "worktree-test".to_string(),
+            description: "Test worktree root resolution".to_string(),
+            argument_hint: None,
+            template: "Content: @worktree_file.txt".to_string(),
+            source_path: PathBuf::from("/tmp/test.md"),
+            is_global: true,
+            allowed_tools: None,
+        };
+
+        // Pass worktree as parameter
+        let result = command.process(&[], Some(&worktree));
+        assert!(result.contains("Worktree content!"));
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_file);
+        let _ = std::fs::remove_dir(&worktree);
     }
 }
