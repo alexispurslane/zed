@@ -3,7 +3,7 @@ mod agent_profile;
 use std::path::{Component, Path};
 use std::sync::{Arc, LazyLock};
 
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use collections::{HashSet, IndexMap};
 use fs::Fs;
 use futures::channel::oneshot;
@@ -204,10 +204,10 @@ impl AgentSettings {
         self.message_editor_min_lines * 2
     }
 
-    pub fn favorite_model_ids(&self) -> HashSet<acp::ModelId> {
+    pub fn favorite_model_ids(&self) -> HashSet<schema::ModelId> {
         self.favorite_models
             .iter()
-            .map(|sel| acp::ModelId::new(format!("{}/{}", sel.provider.0, sel.model)))
+            .map(|sel| schema::ModelId::new(format!("{}/{}", sel.provider.0, sel.model)))
             .collect()
     }
 }

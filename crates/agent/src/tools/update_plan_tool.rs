@@ -1,5 +1,5 @@
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use gpui::{App, SharedString, Task};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -17,12 +17,12 @@ pub enum PlanEntryStatus {
     Completed,
 }
 
-impl From<PlanEntryStatus> for acp::PlanEntryStatus {
+impl From<PlanEntryStatus> for schema::PlanEntryStatus {
     fn from(value: PlanEntryStatus) -> Self {
         match value {
-            PlanEntryStatus::Pending => acp::PlanEntryStatus::Pending,
-            PlanEntryStatus::InProgress => acp::PlanEntryStatus::InProgress,
-            PlanEntryStatus::Completed => acp::PlanEntryStatus::Completed,
+            PlanEntryStatus::Pending => schema::PlanEntryStatus::Pending,
+            PlanEntryStatus::InProgress => schema::PlanEntryStatus::InProgress,
+            PlanEntryStatus::Completed => schema::PlanEntryStatus::Completed,
         }
     }
 }
@@ -35,11 +35,11 @@ pub struct PlanItem {
     pub status: PlanEntryStatus,
 }
 
-impl From<PlanItem> for acp::PlanEntry {
+impl From<PlanItem> for schema::PlanEntry {
     fn from(value: PlanItem) -> Self {
-        acp::PlanEntry::new(
+        schema::PlanEntry::new(
             value.step,
-            acp::PlanEntryPriority::Medium,
+            schema::PlanEntryPriority::Medium,
             value.status.into(),
         )
     }
@@ -57,8 +57,8 @@ pub struct UpdatePlanToolInput {
 pub struct UpdatePlanTool;
 
 impl UpdatePlanTool {
-    fn to_plan(input: UpdatePlanToolInput) -> acp::Plan {
-        acp::Plan::new(input.plan.into_iter().map(Into::into).collect())
+    fn to_plan(input: UpdatePlanToolInput) -> schema::Plan {
+        schema::Plan::new(input.plan.into_iter().map(Into::into).collect())
     }
 }
 
@@ -68,8 +68,8 @@ impl AgentTool for UpdatePlanTool {
 
     const NAME: &'static str = "update_plan";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Think
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Think
     }
 
     fn initial_title(
@@ -152,21 +152,21 @@ mod tests {
         let plan = event_rx.expect_plan().await;
         assert_eq!(
             plan,
-            acp::Plan::new(vec![
-                acp::PlanEntry::new(
+            schema::Plan::new(vec![
+                schema::PlanEntry::new(
                     "Inspect the existing tool wiring",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::Completed,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::Completed,
                 ),
-                acp::PlanEntry::new(
+                schema::PlanEntry::new(
                     "Implement the update_plan tool",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::InProgress,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::InProgress,
                 ),
-                acp::PlanEntry::new(
+                schema::PlanEntry::new(
                     "Add tests",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::Pending,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::Pending,
                 ),
             ])
         );
@@ -187,21 +187,21 @@ mod tests {
         let plan = event_rx.expect_plan().await;
         assert_eq!(
             plan,
-            acp::Plan::new(vec![
-                acp::PlanEntry::new(
+            schema::Plan::new(vec![
+                schema::PlanEntry::new(
                     "Inspect the existing tool wiring",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::Completed,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::Completed,
                 ),
-                acp::PlanEntry::new(
+                schema::PlanEntry::new(
                     "Implement the update_plan tool",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::InProgress,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::InProgress,
                 ),
-                acp::PlanEntry::new(
+                schema::PlanEntry::new(
                     "Add tests",
-                    acp::PlanEntryPriority::Medium,
-                    acp::PlanEntryStatus::Pending,
+                    schema::PlanEntryPriority::Medium,
+                    schema::PlanEntryStatus::Pending,
                 ),
             ])
         );

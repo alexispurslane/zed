@@ -1,5 +1,5 @@
 use crate::{AgentToolOutput, AnyAgentTool, ToolCallEventStream, ToolInput};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::Result;
 use collections::{BTreeMap, HashMap};
 use context_server::{ContextServerId, client::NotificationSubscription};
@@ -305,8 +305,8 @@ impl AnyAgentTool for ContextServerTool {
         self.tool.description.clone().unwrap_or_default().into()
     }
 
-    fn kind(&self) -> acp::ToolKind {
-        acp::ToolKind::Other
+    fn kind(&self) -> schema::ToolKind {
+        schema::ToolKind::Other
     }
 
     fn initial_title(&self, _input: serde_json::Value, _cx: &mut App) -> SharedString {

@@ -279,6 +279,7 @@ pub fn render_modifiers(
         Icon(IconName),
     }
 
+    #[allow(dead_code)]
     struct Modifier {
         enabled: bool,
         mac: KeyOrIcon,

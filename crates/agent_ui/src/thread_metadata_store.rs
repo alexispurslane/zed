@@ -4,7 +4,7 @@ use std::{
 };
 
 use agent::{ThreadStore, XENOMORPHIC_AGENT_ID};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use collections::{HashMap, HashSet};
@@ -297,12 +297,12 @@ fn migrate_thread_ids(cx: &mut App) {
 struct GlobalThreadMetadataStore(Entity<ThreadMetadataStore>);
 impl Global for GlobalThreadMetadataStore {}
 
-/// Lightweight metadata for any thread (native or ACP), enough to populate
+/// Lightweight metadata for any thread (native or external), enough to populate
 /// the sidebar list and route to the correct load path when clicked.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThreadMetadata {
     pub thread_id: ThreadId,
-    pub session_id: Option<acp::SessionId>,
+    pub session_id: Option<schema::SessionId>,
     pub agent_id: AgentId,
     pub title: Option<SharedString>,
     pub updated_at: DateTime<Utc>,
@@ -402,12 +402,12 @@ pub fn worktree_info_from_thread_paths<S: std::hash::BuildHasher>(
     infos
 }
 
-impl From<&ThreadMetadata> for acp_thread::AgentSessionInfo {
+impl From<&ThreadMetadata> for agent_thread::AgentSessionInfo {
     fn from(meta: &ThreadMetadata) -> Self {
         let session_id = meta
             .session_id
             .clone()
-            .unwrap_or_else(|| acp::SessionId::new(meta.thread_id.0.to_string()));
+            .unwrap_or_else(|| schema::SessionId::new(meta.thread_id.0.to_string()));
         Self {
             session_id,
             work_dirs: Some(meta.folder_paths().clone()),
@@ -469,7 +469,7 @@ pub struct ThreadMetadataStore {
     threads: HashMap<ThreadId, ThreadMetadata>,
     threads_by_paths: HashMap<PathList, HashSet<ThreadId>>,
     threads_by_main_paths: HashMap<PathList, HashSet<ThreadId>>,
-    threads_by_session: HashMap<acp::SessionId, ThreadId>,
+    threads_by_session: HashMap<schema::SessionId, ThreadId>,
     reload_task: Option<Shared<Task<()>>>,
     conversation_subscriptions: HashMap<gpui::EntityId, Subscription>,
     pending_thread_ops_tx: async_channel::Sender<DbOperation>,
@@ -557,8 +557,8 @@ impl ThreadMetadataStore {
         self.threads.get(&thread_id)
     }
 
-    /// Returns the metadata for a thread identified by its ACP session ID.
-    pub fn entry_by_session(&self, session_id: &acp::SessionId) -> Option<&ThreadMetadata> {
+    /// Returns the metadata for a thread identified by its session ID.
+    pub fn entry_by_session(&self, session_id: &schema::SessionId) -> Option<&ThreadMetadata> {
         let thread_id = self.threads_by_session.get(session_id)?;
         self.threads.get(thread_id)
     }
@@ -1651,7 +1651,7 @@ impl Column for ThreadMetadata {
         Ok((
             ThreadMetadata {
                 thread_id,
-                session_id: id.map(acp::SessionId::new),
+                session_id: id.map(schema::SessionId::new),
                 agent_id,
                 title: if title.is_empty() || title == DEFAULT_THREAD_TITLE {
                     None
@@ -1698,10 +1698,10 @@ impl Column for ArchivedGitWorktree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use acp_thread::StubAgentConnection;
+    use agent_thread::StubAgentConnection;
     use action_log::ActionLog;
     use agent::DbThread;
-    use agent_client_protocol::schema as acp;
+    use agent_thread::schema;
     use gpui::{TestAppContext, VisualTestContext};
     use project::FakeFs;
     use project::Project;
@@ -1740,7 +1740,7 @@ mod tests {
         ThreadMetadata {
             thread_id: ThreadId::new(),
             archived: false,
-            session_id: Some(acp::SessionId::new(session_id)),
+            session_id: Some(schema::SessionId::new(session_id)),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: if title.is_empty() {
                 None
@@ -1849,12 +1849,12 @@ mod tests {
             assert_eq!(store.entry_ids().count(), 2);
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-1"))
+                    .entry_by_session(&schema::SessionId::new("session-1"))
                     .is_some()
             );
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-2"))
+                    .entry_by_session(&schema::SessionId::new("session-2"))
                     .is_some()
             );
 
@@ -1926,7 +1926,7 @@ mod tests {
 
         let moved_metadata = ThreadMetadata {
             thread_id: session1_thread_id,
-            session_id: Some(acp::SessionId::new("session-1")),
+            session_id: Some(schema::SessionId::new("session-1")),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: Some("First Thread".into()),
             updated_at: updated_time,
@@ -1953,12 +1953,12 @@ mod tests {
             assert_eq!(store.entry_ids().count(), 2);
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-1"))
+                    .entry_by_session(&schema::SessionId::new("session-1"))
                     .is_some()
             );
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-2"))
+                    .entry_by_session(&schema::SessionId::new("session-2"))
                     .is_some()
             );
 
@@ -2010,7 +2010,7 @@ mod tests {
 
         let existing_metadata = ThreadMetadata {
             thread_id: ThreadId::new(),
-            session_id: Some(acp::SessionId::new("a-session-0")),
+            session_id: Some(schema::SessionId::new("a-session-0")),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: Some("Existing Metadata".into()),
             updated_at: now - chrono::Duration::seconds(10),
@@ -2064,7 +2064,7 @@ mod tests {
                 let paths = paths.clone();
                 thread_store.update(cx, |store, cx| {
                     store.save_thread(
-                        acp::SessionId::new(session_id),
+                        schema::SessionId::new(session_id),
                         make_db_thread(&title, *updated_at),
                         paths,
                         cx,
@@ -2135,7 +2135,7 @@ mod tests {
 
         let existing_metadata = ThreadMetadata {
             thread_id: ThreadId::new(),
-            session_id: Some(acp::SessionId::new("existing-session")),
+            session_id: Some(schema::SessionId::new("existing-session")),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: Some("Existing Metadata".into()),
             updated_at: existing_updated_at,
@@ -2158,7 +2158,7 @@ mod tests {
             let thread_store = ThreadStore::global(cx);
             thread_store.update(cx, |store, cx| {
                 store.save_thread(
-                    acp::SessionId::new("existing-session"),
+                    schema::SessionId::new("existing-session"),
                     make_db_thread(
                         "Updated Native Thread Title",
                         existing_updated_at + chrono::Duration::seconds(1),
@@ -2247,7 +2247,7 @@ mod tests {
             let store = ThreadMetadataStore::global(cx);
             store
                 .read(cx)
-                .entry_by_session(&acp::SessionId::new("remote-session"))
+                .entry_by_session(&schema::SessionId::new("remote-session"))
                 .cloned()
                 .expect("expected migrated metadata row")
         });
@@ -2298,7 +2298,7 @@ mod tests {
                 let paths = paths.clone();
                 thread_store.update(cx, |store, cx| {
                     store.save_thread(
-                        acp::SessionId::new(session_id),
+                        schema::SessionId::new(session_id),
                         make_db_thread(&title, *updated_at),
                         paths,
                         cx,
@@ -2377,7 +2377,7 @@ mod tests {
                 let paths = project_paths.clone();
                 thread_store.update(cx, |store, cx| {
                     store.save_thread(
-                        acp::SessionId::new(session_id),
+                        schema::SessionId::new(session_id),
                         make_db_thread(&title, updated_at),
                         paths,
                         cx,
@@ -2599,15 +2599,15 @@ mod tests {
         });
         vcx.run_until_parked();
 
-        // Create a standalone subagent AcpThread (not wrapped in a
+        // Create a standalone subagent AgentThread (not wrapped in a
         // ConversationView). The ThreadMetadataStore only observes
         // ConversationView events, so this thread's events should
         // have no effect on sidebar metadata.
-        let subagent_session_id = acp::SessionId::new("subagent-session");
+        let subagent_session_id = schema::SessionId::new("subagent-session");
         let subagent_thread = cx.update(|cx| {
             let action_log = cx.new(|_| ActionLog::new(project.clone()));
             cx.new(|cx| {
-                acp_thread::AcpThread::new(
+                agent_thread::AgentThread::new(
                     Some(regular_session_id.clone()),
                     Some("Subagent Thread".into()),
                     None,
@@ -2615,7 +2615,7 @@ mod tests {
                     project.clone(),
                     action_log,
                     subagent_session_id.clone(),
-                    watch::Receiver::constant(acp::PromptCapabilities::new()),
+                    watch::Receiver::constant(schema::PromptCapabilities::new()),
                     cx,
                 )
             })
@@ -2874,7 +2874,7 @@ mod tests {
         let local_linked_thread = ThreadMetadata {
             thread_id: ThreadId::new(),
             archived: false,
-            session_id: Some(acp::SessionId::new("local-linked")),
+            session_id: Some(schema::SessionId::new("local-linked")),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: Some("Local Linked".into()),
             updated_at: now,
@@ -2887,7 +2887,7 @@ mod tests {
         let remote_linked_thread = ThreadMetadata {
             thread_id: ThreadId::new(),
             archived: false,
-            session_id: Some(acp::SessionId::new("remote-linked")),
+            session_id: Some(schema::SessionId::new("remote-linked")),
             agent_id: agent::XENOMORPHIC_AGENT_ID.clone(),
             title: Some("Remote Linked".into()),
             updated_at: now - chrono::Duration::seconds(1),
@@ -2987,17 +2987,17 @@ mod tests {
             assert_eq!(store.entries().count(), 3);
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-1"))
+                    .entry_by_session(&schema::SessionId::new("session-1"))
                     .is_some()
             );
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-2"))
+                    .entry_by_session(&schema::SessionId::new("session-2"))
                     .is_some()
             );
             assert!(
                 store
-                    .entry_by_session(&acp::SessionId::new("session-3"))
+                    .entry_by_session(&schema::SessionId::new("session-3"))
                     .is_some()
             );
 
@@ -3046,7 +3046,7 @@ mod tests {
             let store = store.read(cx);
 
             let thread = store
-                .entry_by_session(&acp::SessionId::new("session-1"))
+                .entry_by_session(&schema::SessionId::new("session-1"))
                 .expect("thread should exist after reload");
             assert!(thread.archived);
 

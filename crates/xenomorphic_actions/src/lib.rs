@@ -105,12 +105,7 @@ pub struct Extensions {
     pub id: Option<String>,
 }
 
-/// Opens the ACP registry.
-#[derive(PartialEq, Clone, Default, Debug, Deserialize, JsonSchema, Action)]
-#[action(namespace = zed)]
-#[serde(deny_unknown_fields)]
-pub struct AcpRegistry;
-
+/// Opens the agent registry.
 /// Show call diagnostics and connection quality statistics.
 #[derive(PartialEq, Clone, Default, Debug, Deserialize, JsonSchema, Action)]
 #[action(namespace = collab)]
@@ -503,8 +498,6 @@ pub mod agent {
             /// Toggles the language model selector dropdown.
             #[action(deprecated_aliases = ["assistant::ToggleModelSelector", "assistant2::ToggleModelSelector"])]
             ToggleModelSelector,
-            /// Triggers re-authentication on Gemini
-            ReauthenticateAgent,
             /// Add the current selection as context for threads in the agent panel.
             #[action(deprecated_aliases = ["assistant::QuoteSelection", "agent::QuoteSelection"])]
             AddSelectionToThread,

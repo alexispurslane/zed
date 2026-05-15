@@ -94,8 +94,8 @@ fn main() {
 // All macOS-specific imports grouped together
 #[cfg(target_os = "macos")]
 use {
-    acp_thread::{AgentConnection, StubAgentConnection},
-    agent_client_protocol::schema as acp,
+    agent_thread::{AgentConnection, StubAgentConnection},
+    agent_thread::schema,
     agent_servers::{AgentServer, AgentServerDelegate},
     anyhow::{Context as _, Result},
     assets::Assets,
@@ -209,11 +209,6 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
         );
         language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
         git_ui::init(cx);
-        project::AgentRegistryStore::init_global(
-            cx,
-            app_state.fs.clone(),
-            app_state.client.http_client(),
-        );
         agent_ui::init(
             app_state.fs.clone(),
             prompt_builder,
@@ -2085,11 +2080,11 @@ fn run_agent_thread_view_test(
     cx.run_until_parked();
 
     // Collect the events from the tool execution
-    let mut tool_content: Vec<acp::ToolCallContent> = Vec::new();
-    let mut tool_locations: Vec<acp::ToolCallLocation> = Vec::new();
+    let mut tool_content: Vec<schema::ToolCallContent> = Vec::new();
+    let mut tool_locations: Vec<schema::ToolCallLocation> = Vec::new();
 
     while let Ok(event) = event_receiver.try_recv() {
-        if let Ok(agent::ThreadEvent::ToolCallUpdate(acp_thread::ToolCallUpdate::UpdateFields(
+        if let Ok(agent::ThreadEvent::ToolCallUpdate(agent_thread::ToolCallUpdate::UpdateFields(
             update,
         ))) = event
         {
@@ -2108,13 +2103,13 @@ fn run_agent_thread_view_test(
 
     // Create stub connection with the real tool output
     let connection = StubAgentConnection::new();
-    connection.set_next_prompt_updates(vec![acp::SessionUpdate::ToolCall(
-        acp::ToolCall::new(
+    connection.set_next_prompt_updates(vec![schema::SessionUpdate::ToolCall(
+        schema::ToolCall::new(
             "read_file",
             format!("Read file `{}/test-image.png`", worktree_name),
         )
-        .kind(acp::ToolKind::Read)
-        .status(acp::ToolCallStatus::Completed)
+        .kind(schema::ToolKind::Read)
+        .status(schema::ToolCallStatus::Completed)
         .locations(tool_locations)
         .content(tool_content),
     )]);
@@ -2212,7 +2207,7 @@ fn run_agent_thread_view_test(
     let tool_call_id = cx
         .read(|cx| {
             thread.read(cx).entries().iter().find_map(|entry| {
-                if let acp_thread::AgentThreadEntry::ToolCall(tool_call) = entry {
+                if let agent_thread::AgentThreadEntry::ToolCall(tool_call) = entry {
                     Some(tool_call.id.clone())
                 } else {
                     None
@@ -2716,7 +2711,7 @@ fn run_multi_workspace_sidebar_visual_tests(
 
                 let task = thread_store.update(cx, |store, cx| {
                     store.save_thread(
-                        acp::SessionId::new(Arc::from(session_id)),
+                        schema::SessionId::new(Arc::from(session_id)),
                         agent::DbThread {
                             title: title.to_string().into(),
                             messages: Vec::new(),

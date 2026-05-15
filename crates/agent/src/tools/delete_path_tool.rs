@@ -7,7 +7,7 @@ use crate::{
     authorize_with_sensitive_settings, decide_permission_for_path,
 };
 use action_log::ActionLog;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::AgentSettings;
 use futures::{FutureExt as _, SinkExt, StreamExt, channel::mpsc};
 use gpui::{App, AppContext, Entity, SharedString, Task};
@@ -56,8 +56,8 @@ impl AgentTool for DeletePathTool {
 
     const NAME: &'static str = "delete_path";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Delete
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Delete
     }
 
     fn initial_title(
@@ -297,9 +297,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -427,9 +427,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 

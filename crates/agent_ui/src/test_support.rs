@@ -1,5 +1,5 @@
-use acp_thread::{AgentConnection, StubAgentConnection};
-use agent_client_protocol::schema as acp;
+use agent_thread::{AgentConnection, StubAgentConnection};
+use agent_thread::schema;
 use agent_servers::{AgentServer, AgentServerDelegate};
 use gpui::{Entity, Task, TestAppContext, VisualTestContext};
 use project::AgentId;
@@ -61,8 +61,8 @@ where
 impl StubAgentServer<StubAgentConnection> {
     pub fn default_response() -> Self {
         let conn = StubAgentConnection::new();
-        conn.set_next_prompt_updates(vec![acp::SessionUpdate::AgentMessageChunk(
-            acp::ContentChunk::new("Default response".into()),
+        conn.set_next_prompt_updates(vec![schema::SessionUpdate::AgentMessageChunk(
+            schema::ContentChunk::new("Default response".into()),
         )]);
         Self::new(conn)
     }
@@ -98,7 +98,7 @@ pub fn init_test(cx: &mut TestAppContext) {
     cx.update(|cx| {
         let settings_store = SettingsStore::test(cx);
         cx.set_global(settings_store);
-        cx.set_global(acp_thread::StubSessionCounter(
+        cx.set_global(agent_thread::StubSessionCounter(
             std::sync::atomic::AtomicUsize::new(0),
         ));
         theme_settings::init(theme::LoadThemes::JustBase, cx);
@@ -150,7 +150,7 @@ pub fn send_message(panel: &Entity<AgentPanel>, cx: &mut VisualTestContext) {
     cx.run_until_parked();
 }
 
-pub fn active_session_id(panel: &Entity<AgentPanel>, cx: &VisualTestContext) -> acp::SessionId {
+pub fn active_session_id(panel: &Entity<AgentPanel>, cx: &VisualTestContext) -> schema::SessionId {
     panel.read_with(cx, |panel, cx| {
         let thread = panel.active_agent_thread(cx).unwrap();
         thread.read(cx).session_id().clone()

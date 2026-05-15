@@ -7,11 +7,11 @@ use crate::{
     ToolPermissionDecision, UpdatePlanTool, WebSearchTool, WriteFileTool,
     decide_permission_from_settings,
 };
-use acp_thread::{MentionUri, UserMessageId};
+use agent_thread::{MentionUri, UserMessageId};
 use action_log::ActionLog;
 use feature_flags::{FeatureFlagAppExt as _, LspToolFeatureFlag, UpdatePlanToolFeatureFlag};
 
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::{
     AgentProfileId, AgentSettings, SUMMARIZE_THREAD_DETAILED_PROMPT, SUMMARIZE_THREAD_PROMPT,
 };
@@ -81,7 +81,7 @@ impl std::error::Error for NoModelConfiguredError {}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubagentContext {
     /// ID of the parent thread
-    pub parent_thread_id: acp::SessionId,
+    pub parent_thread_id: schema::SessionId,
 
     /// Current depth level (0 = root agent, 1 = first-level subagent, etc.)
     pub depth: u8,
@@ -627,16 +627,16 @@ pub enum AgentMessageContent {
 }
 
 pub trait TerminalHandle {
-    fn id(&self, cx: &AsyncApp) -> Result<acp::TerminalId>;
-    fn current_output(&self, cx: &AsyncApp) -> Result<acp::TerminalOutputResponse>;
-    fn wait_for_exit(&self, cx: &AsyncApp) -> Result<Shared<Task<acp::TerminalExitStatus>>>;
+    fn id(&self, cx: &AsyncApp) -> Result<schema::TerminalId>;
+    fn current_output(&self, cx: &AsyncApp) -> Result<schema::TerminalOutputResponse>;
+    fn wait_for_exit(&self, cx: &AsyncApp) -> Result<Shared<Task<schema::TerminalExitStatus>>>;
     fn kill(&self, cx: &AsyncApp) -> Result<()>;
     fn was_stopped_by_user(&self, cx: &AsyncApp) -> Result<bool>;
 }
 
 pub trait SubagentHandle {
     /// The session ID of this subagent thread
-    fn id(&self) -> acp::SessionId;
+    fn id(&self) -> schema::SessionId;
     /// The current number of entries in the thread.
     /// Useful for knowing where the next turn will begin
     fn num_entries(&self, cx: &App) -> usize;
@@ -657,7 +657,7 @@ pub trait ThreadEnvironment {
 
     fn resume_subagent(
         &self,
-        _session_id: acp::SessionId,
+        _session_id: schema::SessionId,
         _cx: &mut App,
     ) -> Result<Rc<dyn SubagentHandle>> {
         Err(anyhow::anyhow!(
@@ -671,13 +671,13 @@ pub enum ThreadEvent {
     UserMessage(UserMessage),
     AgentText(String),
     AgentThinking(String),
-    ToolCall(acp::ToolCall),
-    ToolCallUpdate(acp_thread::ToolCallUpdate),
-    Plan(acp::Plan),
+    ToolCall(schema::ToolCall),
+    ToolCallUpdate(agent_thread::ToolCallUpdate),
+    Plan(schema::Plan),
     ToolCallAuthorization(ToolCallAuthorization),
-    SubagentSpawned(acp::SessionId),
-    Retry(acp_thread::RetryStatus),
-    Stop(acp::StopReason),
+    SubagentSpawned(schema::SessionId),
+    Retry(agent_thread::RetryStatus),
+    Stop(schema::StopReason),
 }
 
 #[derive(Debug)]
@@ -685,7 +685,7 @@ pub struct NewTerminal {
     pub command: String,
     pub output_byte_limit: Option<u64>,
     pub cwd: Option<PathBuf>,
-    pub response: oneshot::Sender<Result<Entity<acp_thread::Terminal>>>,
+    pub response: oneshot::Sender<Result<Entity<agent_thread::Terminal>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -742,23 +742,23 @@ impl ToolPermissionContext {
     /// For unsupported shells, we hide the "Always allow" UI options entirely, and if
     /// the user has `always_allow` rules configured in settings, `ToolPermissionDecision::from_input`
     /// will return a `Deny` with an explanatory error message.
-    pub fn build_permission_options(&self) -> acp_thread::PermissionOptions {
+    pub fn build_permission_options(&self) -> agent_thread::PermissionOptions {
         use crate::pattern_extraction::*;
         use util::shell::ShellKind;
 
         let tool_name = &self.tool_name;
         let input_values = &self.input_values;
         if self.scope == ToolPermissionScope::SymlinkTarget {
-            return acp_thread::PermissionOptions::Flat(vec![
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("allow"),
+            return agent_thread::PermissionOptions::Flat(vec![
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("allow"),
                     "Yes",
-                    acp::PermissionOptionKind::AllowOnce,
+                    schema::PermissionOptionKind::AllowOnce,
                 ),
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("deny"),
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("deny"),
                     "No",
-                    acp::PermissionOptionKind::RejectOnce,
+                    schema::PermissionOptionKind::RejectOnce,
                 ),
             ]);
         }
@@ -778,33 +778,33 @@ impl ToolPermissionContext {
                 let all_patterns = extract_all_terminal_patterns(input);
                 if all_patterns.len() > 1 {
                     let mut choices = Vec::new();
-                    choices.push(acp_thread::PermissionOptionChoice {
-                        allow: acp::PermissionOption::new(
-                            acp::PermissionOptionId::new(format!("always_allow:{}", tool_name)),
+                    choices.push(agent_thread::PermissionOptionChoice {
+                        allow: schema::PermissionOption::new(
+                            schema::PermissionOptionId::new(format!("always_allow:{}", tool_name)),
                             format!("Always for {}", tool_name.replace('_', " ")),
-                            acp::PermissionOptionKind::AllowAlways,
+                            schema::PermissionOptionKind::AllowAlways,
                         ),
-                        deny: acp::PermissionOption::new(
-                            acp::PermissionOptionId::new(format!("always_deny:{}", tool_name)),
+                        deny: schema::PermissionOption::new(
+                            schema::PermissionOptionId::new(format!("always_deny:{}", tool_name)),
                             format!("Always for {}", tool_name.replace('_', " ")),
-                            acp::PermissionOptionKind::RejectAlways,
+                            schema::PermissionOptionKind::RejectAlways,
                         ),
                         sub_patterns: vec![],
                     });
-                    choices.push(acp_thread::PermissionOptionChoice {
-                        allow: acp::PermissionOption::new(
-                            acp::PermissionOptionId::new("allow"),
+                    choices.push(agent_thread::PermissionOptionChoice {
+                        allow: schema::PermissionOption::new(
+                            schema::PermissionOptionId::new("allow"),
                             "Only this time",
-                            acp::PermissionOptionKind::AllowOnce,
+                            schema::PermissionOptionKind::AllowOnce,
                         ),
-                        deny: acp::PermissionOption::new(
-                            acp::PermissionOptionId::new("deny"),
+                        deny: schema::PermissionOption::new(
+                            schema::PermissionOptionId::new("deny"),
                             "Only this time",
-                            acp::PermissionOptionKind::RejectOnce,
+                            schema::PermissionOptionKind::RejectOnce,
                         ),
                         sub_patterns: vec![],
                     });
-                    return acp_thread::PermissionOptions::DropdownWithPatterns {
+                    return agent_thread::PermissionOptions::DropdownWithPatterns {
                         choices,
                         patterns: all_patterns,
                         tool_name: tool_name.clone(),
@@ -863,14 +863,14 @@ impl ToolPermissionContext {
 
         let mut push_choice =
             |label: String, allow_id, deny_id, allow_kind, deny_kind, sub_patterns: Vec<String>| {
-                choices.push(acp_thread::PermissionOptionChoice {
-                    allow: acp::PermissionOption::new(
-                        acp::PermissionOptionId::new(allow_id),
+                choices.push(agent_thread::PermissionOptionChoice {
+                    allow: schema::PermissionOption::new(
+                        schema::PermissionOptionId::new(allow_id),
                         label.clone(),
                         allow_kind,
                     ),
-                    deny: acp::PermissionOption::new(
-                        acp::PermissionOptionId::new(deny_id),
+                    deny: schema::PermissionOption::new(
+                        schema::PermissionOptionId::new(deny_id),
                         label,
                         deny_kind,
                     ),
@@ -883,8 +883,8 @@ impl ToolPermissionContext {
                 format!("Always for {}", tool_name.replace('_', " ")),
                 format!("always_allow:{}", tool_name),
                 format!("always_deny:{}", tool_name),
-                acp::PermissionOptionKind::AllowAlways,
-                acp::PermissionOptionKind::RejectAlways,
+                schema::PermissionOptionKind::AllowAlways,
+                schema::PermissionOptionKind::RejectAlways,
                 vec![],
             );
 
@@ -898,8 +898,8 @@ impl ToolPermissionContext {
                     button_text,
                     format!("always_allow:{}", tool_name),
                     format!("always_deny:{}", tool_name),
-                    acp::PermissionOptionKind::AllowAlways,
-                    acp::PermissionOptionKind::RejectAlways,
+                    schema::PermissionOptionKind::AllowAlways,
+                    schema::PermissionOptionKind::RejectAlways,
                     vec![pattern],
                 );
             }
@@ -909,22 +909,22 @@ impl ToolPermissionContext {
             "Only this time".to_string(),
             "allow".to_string(),
             "deny".to_string(),
-            acp::PermissionOptionKind::AllowOnce,
-            acp::PermissionOptionKind::RejectOnce,
+            schema::PermissionOptionKind::AllowOnce,
+            schema::PermissionOptionKind::RejectOnce,
             vec![],
         );
 
-        acp_thread::PermissionOptions::Dropdown(choices)
+        agent_thread::PermissionOptions::Dropdown(choices)
     }
 }
 
 #[derive(Debug)]
 pub struct ToolCallAuthorization {
-    pub tool_call: acp::ToolCallUpdate,
-    pub options: acp_thread::PermissionOptions,
-    pub response: oneshot::Sender<acp_thread::SelectedPermissionOutcome>,
+    pub tool_call: schema::ToolCallUpdate,
+    pub options: agent_thread::PermissionOptions,
+    pub response: oneshot::Sender<agent_thread::SelectedPermissionOutcome>,
     pub context: Option<ToolPermissionContext>,
-    pub kind: acp_thread::AuthorizationKind,
+    pub kind: agent_thread::AuthorizationKind,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -938,7 +938,7 @@ enum CompletionError {
 }
 
 pub struct Thread {
-    id: acp::SessionId,
+    id: schema::SessionId,
     prompt_id: PromptId,
     updated_at: DateTime<Utc>,
     title: Option<SharedString>,
@@ -971,8 +971,8 @@ pub struct Thread {
     thinking_enabled: bool,
     thinking_effort: Option<String>,
     speed: Option<Speed>,
-    prompt_capabilities_tx: watch::Sender<acp::PromptCapabilities>,
-    pub(crate) prompt_capabilities_rx: watch::Receiver<acp::PromptCapabilities>,
+    prompt_capabilities_tx: watch::Sender<schema::PromptCapabilities>,
+    pub(crate) prompt_capabilities_rx: watch::Receiver<schema::PromptCapabilities>,
     pub(crate) project: Entity<Project>,
     pub(crate) action_log: Entity<ActionLog>,
     /// True if this thread was imported from a shared thread and can be synced.
@@ -980,7 +980,7 @@ pub struct Thread {
     /// If this is a subagent thread, contains context about the parent
     subagent_context: Option<SubagentContext>,
     /// The user's unsent prompt text, persisted so it can be restored when reloading the thread.
-    draft_prompt: Option<Vec<acp::ContentBlock>>,
+    draft_prompt: Option<Vec<schema::ContentBlock>>,
     ui_scroll_position: Option<gpui::ListOffset>,
     /// Weak references to running subagent threads for cancellation propagation
     running_subagents: Vec<WeakEntity<Thread>>,
@@ -988,9 +988,9 @@ pub struct Thread {
 }
 
 impl Thread {
-    fn prompt_capabilities(model: Option<&dyn LanguageModel>) -> acp::PromptCapabilities {
+    fn prompt_capabilities(model: Option<&dyn LanguageModel>) -> schema::PromptCapabilities {
         let image = model.map_or(true, |model| model.supports_images());
-        acp::PromptCapabilities::new()
+        schema::PromptCapabilities::new()
             .image(image)
             .embedded_context(true)
     }
@@ -1070,7 +1070,7 @@ impl Thread {
         let (prompt_capabilities_tx, prompt_capabilities_rx) =
             watch::channel(Self::prompt_capabilities(model.as_deref()));
         Self {
-            id: acp::SessionId::new(uuid::Uuid::new_v4().to_string()),
+            id: schema::SessionId::new(uuid::Uuid::new_v4().to_string()),
             prompt_id: PromptId::new(),
             updated_at: Utc::now(),
             title: None,
@@ -1150,7 +1150,7 @@ impl Thread {
             .log_err();
     }
 
-    pub fn id(&self) -> &acp::SessionId {
+    pub fn id(&self) -> &schema::SessionId {
         &self.id
     }
 
@@ -1206,11 +1206,11 @@ impl Thread {
             .and_then(|result| result.output.clone());
         let status = tool_result
             .as_ref()
-            .map_or(acp::ToolCallStatus::Failed, |result| {
+            .map_or(schema::ToolCallStatus::Failed, |result| {
                 if result.is_error {
-                    acp::ToolCallStatus::Failed
+                    schema::ToolCallStatus::Failed
                 } else {
-                    acp::ToolCallStatus::Completed
+                    schema::ToolCallStatus::Completed
                 }
             });
 
@@ -1235,14 +1235,14 @@ impl Thread {
             stream
                 .0
                 .unbounded_send(Ok(ThreadEvent::ToolCall(
-                    acp::ToolCall::new(tool_use.id.to_string(), tool_use.name.to_string())
+                    schema::ToolCall::new(tool_use.id.to_string(), tool_use.name.to_string())
                         .status(status)
                         .raw_input(tool_use.input.clone()),
                 )))
                 .ok();
             stream.update_tool_call_fields(
                 &tool_use.id,
-                acp::ToolCallUpdateFields::new()
+                schema::ToolCallUpdateFields::new()
                     .status(status)
                     .raw_output(output),
                 None,
@@ -1275,7 +1275,7 @@ impl Thread {
 
         stream.update_tool_call_fields(
             &tool_use.id,
-            acp::ToolCallUpdateFields::new()
+            schema::ToolCallUpdateFields::new()
                 .status(status)
                 .raw_output(output),
             None,
@@ -1283,7 +1283,7 @@ impl Thread {
     }
 
     pub fn from_db(
-        id: acp::SessionId,
+        id: schema::SessionId,
         db_thread: DbThread,
         project: Entity<Project>,
         project_context: Entity<ProjectContext>,
@@ -1439,11 +1439,11 @@ impl Thread {
         self.messages.is_empty() && self.title.is_none()
     }
 
-    pub fn draft_prompt(&self) -> Option<&[acp::ContentBlock]> {
+    pub fn draft_prompt(&self) -> Option<&[schema::ContentBlock]> {
         self.draft_prompt.as_deref()
     }
 
-    pub fn set_draft_prompt(&mut self, prompt: Option<Vec<acp::ContentBlock>>) {
+    pub fn set_draft_prompt(&mut self, prompt: Option<Vec<schema::ContentBlock>>) {
         self.draft_prompt = prompt;
     }
 
@@ -1747,10 +1747,10 @@ impl Thread {
         Some(*tokens)
     }
 
-    pub fn latest_token_usage(&self) -> Option<acp_thread::TokenUsage> {
+    pub fn latest_token_usage(&self) -> Option<agent_thread::TokenUsage> {
         let usage = self.latest_request_token_usage()?;
         let model = self.model.clone()?;
-        Some(acp_thread::TokenUsage {
+        Some(agent_thread::TokenUsage {
             max_tokens: model.max_token_count(),
             max_output_tokens: model.max_output_tokens(),
             used_tokens: usage.total_tokens(),
@@ -1861,7 +1861,7 @@ impl Thread {
     pub fn push_acp_user_block(
         &mut self,
         id: UserMessageId,
-        blocks: impl IntoIterator<Item = acp::ContentBlock>,
+        blocks: impl IntoIterator<Item = schema::ContentBlock>,
         path_style: PathStyle,
         cx: &mut Context<Self>,
     ) {
@@ -1874,18 +1874,18 @@ impl Thread {
         cx.notify();
     }
 
-    pub fn push_acp_agent_block(&mut self, block: acp::ContentBlock, cx: &mut Context<Self>) {
+    pub fn push_acp_agent_block(&mut self, block: schema::ContentBlock, cx: &mut Context<Self>) {
         let text = match block {
-            acp::ContentBlock::Text(text_content) => text_content.text,
-            acp::ContentBlock::Image(_) => "[image]".to_string(),
-            acp::ContentBlock::Audio(_) => "[audio]".to_string(),
-            acp::ContentBlock::ResourceLink(resource_link) => resource_link.uri,
-            acp::ContentBlock::Resource(resource) => match resource.resource {
-                acp::EmbeddedResourceResource::TextResourceContents(resource) => resource.uri,
-                acp::EmbeddedResourceResource::BlobResourceContents(resource) => resource.uri,
+            schema::ContentBlock::Text(text_content) => text_content.text,
+            schema::ContentBlock::Image(_) => "[image]".to_string(),
+            schema::ContentBlock::Audio(_) => "[audio]".to_string(),
+            schema::ContentBlock::ResourceLink(resource_link) => resource_link.uri,
+            schema::ContentBlock::Resource(resource) => match resource.resource {
+                schema::EmbeddedResourceResource::TextResourceContents(resource) => resource.uri,
+                schema::EmbeddedResourceResource::BlobResourceContents(resource) => resource.uri,
+                #[allow(unreachable_patterns)]
                 _ => "[resource]".to_string(),
             },
-            _ => "[unknown]".to_string(),
         };
 
         self.messages.push(Message::Agent(AgentMessage {
@@ -1935,17 +1935,17 @@ impl Thread {
                 match turn_result {
                     Ok(()) => {
                         log::debug!("Turn execution completed");
-                        event_stream.send_stop(acp::StopReason::EndTurn);
+                        event_stream.send_stop(schema::StopReason::EndTurn);
                     }
                     Err(error) => {
                         log::error!("Turn execution failed: {:?}", error);
                         match error.downcast::<CompletionError>() {
                             Ok(CompletionError::Refusal) => {
-                                event_stream.send_stop(acp::StopReason::Refusal);
+                                event_stream.send_stop(schema::StopReason::Refusal);
                                 _ = this.update(cx, |this, _| this.messages.truncate(message_ix));
                             }
                             Ok(CompletionError::MaxTokens) => {
-                                event_stream.send_stop(acp::StopReason::MaxTokens);
+                                event_stream.send_stop(schema::StopReason::MaxTokens);
                             }
                             Ok(CompletionError::Other(error)) | Err(error) => {
                                 event_stream.send_error(error);
@@ -2180,11 +2180,11 @@ impl Thread {
 
         event_stream.update_tool_call_fields(
             &tool_result.tool_use_id,
-            acp::ToolCallUpdateFields::new()
+            schema::ToolCallUpdateFields::new()
                 .status(if tool_result.is_error {
-                    acp::ToolCallStatus::Failed
+                    schema::ToolCallStatus::Failed
                 } else {
-                    acp::ToolCallStatus::Completed
+                    schema::ToolCallStatus::Completed
                 })
                 .raw_output(tool_result.output.clone()),
             None,
@@ -2202,7 +2202,7 @@ impl Thread {
         error: LanguageModelCompletionError,
         attempt: u8,
         plan: Option<Plan>,
-    ) -> Result<acp_thread::RetryStatus> {
+    ) -> Result<agent_thread::RetryStatus> {
         let Some(model) = self.model.as_ref() else {
             return Err(anyhow!(error));
         };
@@ -2239,7 +2239,7 @@ impl Thread {
         };
         log::debug!("Retry attempt {attempt} with delay {delay:?}");
 
-        Ok(acp_thread::RetryStatus {
+        Ok(agent_thread::RetryStatus {
             last_error: error.to_string().into(),
             attempt: attempt as usize,
             max_attempts: max_attempts as usize,
@@ -2379,7 +2379,7 @@ impl Thread {
 
         let tool = self.tool(tool_use.name.as_ref());
         let mut title = SharedString::from(&tool_use.name);
-        let mut kind = acp::ToolKind::Other;
+        let mut kind = schema::ToolKind::Other;
         if let Some(tool) = tool.as_ref() {
             title = tool.initial_title(tool_use.input.clone(), cx);
             kind = tool.kind();
@@ -2469,7 +2469,7 @@ impl Thread {
             cancellation_rx,
         );
         tool_event_stream.update_fields(
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+            schema::ToolCallUpdateFields::new().status(schema::ToolCallStatus::InProgress),
         );
         let supports_images = self.model().is_some_and(|model| model.supports_images());
         let tool_result = tool.run(tool_input, tool_event_stream, cx);
@@ -2548,7 +2548,7 @@ impl Thread {
         self.send_or_update_tool_use(
             &tool_use,
             SharedString::from(&tool_use.name),
-            acp::ToolKind::Other,
+            schema::ToolKind::Other,
             event_stream,
         );
 
@@ -2595,7 +2595,7 @@ impl Thread {
         &mut self,
         tool_use: &LanguageModelToolUse,
         title: SharedString,
-        kind: acp::ToolKind,
+        kind: schema::ToolKind,
         event_stream: &ThreadEventStream,
     ) {
         // Ensure the last message ends in the current tool use
@@ -2625,7 +2625,7 @@ impl Thread {
         } else {
             event_stream.update_tool_call_fields(
                 &tool_use.id,
-                acp::ToolCallUpdateFields::new()
+                schema::ToolCallUpdateFields::new()
                     .title(title.as_str())
                     .kind(kind)
                     .raw_input(tool_use.input.clone()),
@@ -3015,7 +3015,7 @@ impl Thread {
 
     pub(crate) fn unregister_running_subagent(
         &mut self,
-        subagent_session_id: &acp::SessionId,
+        subagent_session_id: &schema::SessionId,
         cx: &App,
     ) {
         self.running_subagents.retain(|s| {
@@ -3025,7 +3025,7 @@ impl Thread {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn running_subagent_ids(&self, cx: &App) -> Vec<acp::SessionId> {
+    pub fn running_subagent_ids(&self, cx: &App) -> Vec<schema::SessionId> {
         self.running_subagents
             .iter()
             .filter_map(|s| s.upgrade().map(|s| s.read(cx).id().clone()))
@@ -3036,7 +3036,7 @@ impl Thread {
         self.subagent_context.is_some()
     }
 
-    pub fn parent_thread_id(&self) -> Option<acp::SessionId> {
+    pub fn parent_thread_id(&self) -> Option<schema::SessionId> {
         self.subagent_context
             .as_ref()
             .map(|c| c.parent_thread_id.clone())
@@ -3253,7 +3253,7 @@ impl RunningTurn {
     }
 }
 
-pub struct TokenUsageUpdated(pub Option<acp_thread::TokenUsage>);
+pub struct TokenUsageUpdated(pub Option<agent_thread::TokenUsage>);
 
 impl EventEmitter<TokenUsageUpdated> for Thread {}
 
@@ -3411,7 +3411,7 @@ where
         )
     }
 
-    fn kind() -> acp::ToolKind;
+    fn kind() -> schema::ToolKind;
 
     /// The initial tool title to display. Can be updated during the tool run.
     fn initial_title(
@@ -3490,7 +3490,7 @@ impl From<anyhow::Error> for AgentToolOutput {
 pub trait AnyAgentTool {
     fn name(&self) -> SharedString;
     fn description(&self) -> SharedString;
-    fn kind(&self) -> acp::ToolKind;
+    fn kind(&self) -> schema::ToolKind;
     fn initial_title(&self, input: serde_json::Value, _cx: &mut App) -> SharedString;
     fn input_schema(&self, format: LanguageModelToolSchemaFormat) -> Result<serde_json::Value>;
     fn supports_input_streaming(&self) -> bool {
@@ -3527,7 +3527,7 @@ where
         T::description()
     }
 
-    fn kind(&self) -> acp::ToolKind {
+    fn kind(&self) -> schema::ToolKind {
         T::kind()
     }
 
@@ -3622,7 +3622,7 @@ impl ThreadEventStream {
         id: &LanguageModelToolUseId,
         tool_name: &str,
         title: SharedString,
-        kind: acp::ToolKind,
+        kind: schema::ToolKind,
         input: serde_json::Value,
     ) {
         self.0
@@ -3640,45 +3640,45 @@ impl ThreadEventStream {
         id: &LanguageModelToolUseId,
         tool_name: &str,
         title: String,
-        kind: acp::ToolKind,
+        kind: schema::ToolKind,
         input: serde_json::Value,
-    ) -> acp::ToolCall {
-        acp::ToolCall::new(id.to_string(), title)
+    ) -> schema::ToolCall {
+        schema::ToolCall::new(id.to_string(), title)
             .kind(kind)
             .raw_input(input)
-            .meta(acp_thread::meta_with_tool_name(tool_name))
+            .meta(agent_thread::meta_with_tool_name(tool_name))
     }
 
     fn update_tool_call_fields(
         &self,
         tool_use_id: &LanguageModelToolUseId,
-        fields: acp::ToolCallUpdateFields,
-        meta: Option<acp::Meta>,
+        fields: schema::ToolCallUpdateFields,
+        meta: Option<schema::Meta>,
     ) {
         self.0
             .unbounded_send(Ok(ThreadEvent::ToolCallUpdate(
-                acp::ToolCallUpdate::new(tool_use_id.to_string(), fields)
+                schema::ToolCallUpdate::new(tool_use_id.to_string(), fields)
                     .meta(meta)
                     .into(),
             )))
             .ok();
     }
 
-    fn send_plan(&self, plan: acp::Plan) {
+    fn send_plan(&self, plan: schema::Plan) {
         self.0.unbounded_send(Ok(ThreadEvent::Plan(plan))).ok();
     }
 
-    fn send_retry(&self, status: acp_thread::RetryStatus) {
+    fn send_retry(&self, status: agent_thread::RetryStatus) {
         self.0.unbounded_send(Ok(ThreadEvent::Retry(status))).ok();
     }
 
-    fn send_stop(&self, reason: acp::StopReason) {
+    fn send_stop(&self, reason: schema::StopReason) {
         self.0.unbounded_send(Ok(ThreadEvent::Stop(reason))).ok();
     }
 
     fn send_canceled(&self) {
         self.0
-            .unbounded_send(Ok(ThreadEvent::Stop(acp::StopReason::Cancelled)))
+            .unbounded_send(Ok(ThreadEvent::Stop(schema::StopReason::Cancelled)))
             .ok();
     }
 
@@ -3769,26 +3769,26 @@ impl ToolCallEventStream {
         &self.tool_use_id
     }
 
-    pub fn update_fields(&self, fields: acp::ToolCallUpdateFields) {
+    pub fn update_fields(&self, fields: schema::ToolCallUpdateFields) {
         self.stream
             .update_tool_call_fields(&self.tool_use_id, fields, None);
     }
 
     pub fn update_fields_with_meta(
         &self,
-        fields: acp::ToolCallUpdateFields,
-        meta: Option<acp::Meta>,
+        fields: schema::ToolCallUpdateFields,
+        meta: Option<schema::Meta>,
     ) {
         self.stream
             .update_tool_call_fields(&self.tool_use_id, fields, meta);
     }
 
-    pub fn update_diff(&self, diff: Entity<acp_thread::Diff>) {
+    pub fn update_diff(&self, diff: Entity<agent_thread::Diff>) {
         self.stream
             .0
             .unbounded_send(Ok(ThreadEvent::ToolCallUpdate(
-                acp_thread::ToolCallUpdateDiff {
-                    id: acp::ToolCallId::new(self.tool_use_id.to_string()),
+                agent_thread::ToolCallUpdateDiff {
+                    id: schema::ToolCallId::new(self.tool_use_id.to_string()),
                     diff,
                 }
                 .into(),
@@ -3796,14 +3796,14 @@ impl ToolCallEventStream {
             .ok();
     }
 
-    pub fn subagent_spawned(&self, id: acp::SessionId) {
+    pub fn subagent_spawned(&self, id: schema::SessionId) {
         self.stream
             .0
             .unbounded_send(Ok(ThreadEvent::SubagentSpawned(id)))
             .ok();
     }
 
-    pub fn update_plan(&self, plan: acp::Plan) {
+    pub fn update_plan(&self, plan: schema::Plan) {
         self.stream.send_plan(plan);
     }
 
@@ -3823,30 +3823,30 @@ impl ToolCallEventStream {
         cx: &mut App,
     ) -> Task<Result<()>> {
         let title = title.into();
-        let options = acp_thread::PermissionOptions::Dropdown(vec![
-            acp_thread::PermissionOptionChoice {
-                allow: acp::PermissionOption::new(
-                    acp::PermissionOptionId::new(format!("always_allow_mcp:{tool_id}")),
+        let options = agent_thread::PermissionOptions::Dropdown(vec![
+            agent_thread::PermissionOptionChoice {
+                allow: schema::PermissionOption::new(
+                    schema::PermissionOptionId::new(format!("always_allow_mcp:{tool_id}")),
                     format!("Always for {display_name} MCP tool"),
-                    acp::PermissionOptionKind::AllowAlways,
+                    schema::PermissionOptionKind::AllowAlways,
                 ),
-                deny: acp::PermissionOption::new(
-                    acp::PermissionOptionId::new(format!("always_deny_mcp:{tool_id}")),
+                deny: schema::PermissionOption::new(
+                    schema::PermissionOptionId::new(format!("always_deny_mcp:{tool_id}")),
                     format!("Always for {display_name} MCP tool"),
-                    acp::PermissionOptionKind::RejectAlways,
+                    schema::PermissionOptionKind::RejectAlways,
                 ),
                 sub_patterns: vec![],
             },
-            acp_thread::PermissionOptionChoice {
-                allow: acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("allow"),
+            agent_thread::PermissionOptionChoice {
+                allow: schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("allow"),
                     "Only this time",
-                    acp::PermissionOptionKind::AllowOnce,
+                    schema::PermissionOptionKind::AllowOnce,
                 ),
-                deny: acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("deny"),
+                deny: schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("deny"),
                     "Only this time",
-                    acp::PermissionOptionKind::RejectOnce,
+                    schema::PermissionOptionKind::RejectOnce,
                 ),
                 sub_patterns: vec![],
             },
@@ -3932,19 +3932,19 @@ impl ToolCallEventStream {
         &self,
         title: Option<String>,
         message: Option<String>,
-        options: Vec<acp::PermissionOption>,
+        options: Vec<schema::PermissionOption>,
         cx: &mut App,
-    ) -> Task<Result<acp::PermissionOptionId>> {
-        let options = acp_thread::PermissionOptions::Flat(options);
+    ) -> Task<Result<schema::PermissionOptionId>> {
+        let options = agent_thread::PermissionOptions::Flat(options);
         let stream = self.stream.clone();
         let tool_use_id = self.tool_use_id.clone();
         cx.spawn(async move |_cx| {
-            let mut fields = acp::ToolCallUpdateFields::new();
+            let mut fields = schema::ToolCallUpdateFields::new();
             if let Some(title) = title {
                 fields = fields.title(title);
             }
             if let Some(message) = message {
-                fields = fields.content(vec![acp::ToolCallContent::from(message)]);
+                fields = fields.content(vec![schema::ToolCallContent::from(message)]);
             }
 
             let (response_tx, response_rx) = oneshot::channel();
@@ -3952,11 +3952,11 @@ impl ToolCallEventStream {
                 .0
                 .unbounded_send(Ok(ThreadEvent::ToolCallAuthorization(
                     ToolCallAuthorization {
-                        tool_call: acp::ToolCallUpdate::new(tool_use_id.to_string(), fields),
+                        tool_call: schema::ToolCallUpdate::new(tool_use_id.to_string(), fields),
                         options,
                         response: response_tx,
                         context: None,
-                        kind: acp_thread::AuthorizationKind::ActionChoice,
+                        kind: agent_thread::AuthorizationKind::ActionChoice,
                     },
                 )))
             {
@@ -3986,7 +3986,7 @@ impl ToolCallEventStream {
     fn run_authorization_loop(
         &self,
         title: String,
-        options: acp_thread::PermissionOptions,
+        options: agent_thread::PermissionOptions,
         context: Option<ToolPermissionContext>,
         check_settings: Option<Box<dyn Fn(&App) -> ToolPermissionDecision>>,
         cx: &mut App,
@@ -4011,14 +4011,14 @@ impl ToolCallEventStream {
                 .0
                 .unbounded_send(Ok(ThreadEvent::ToolCallAuthorization(
                     ToolCallAuthorization {
-                        tool_call: acp::ToolCallUpdate::new(
+                        tool_call: schema::ToolCallUpdate::new(
                             tool_use_id.to_string(),
-                            acp::ToolCallUpdateFields::new().title(title),
+                            schema::ToolCallUpdateFields::new().title(title),
                         ),
                         options,
                         response: response_tx,
                         context,
-                        kind: acp_thread::AuthorizationKind::PermissionGrant,
+                        kind: agent_thread::AuthorizationKind::PermissionGrant,
                     },
                 )))
             {
@@ -4069,8 +4069,8 @@ impl ToolCallEventStream {
                                 drop(response_rx);
                                 stream.update_tool_call_fields(
                                     &tool_use_id,
-                                    acp::ToolCallUpdateFields::new()
-                                        .status(acp::ToolCallStatus::InProgress),
+                                    schema::ToolCallUpdateFields::new()
+                                        .status(schema::ToolCallStatus::InProgress),
                                     None,
                                 );
                                 return Ok(());
@@ -4079,8 +4079,8 @@ impl ToolCallEventStream {
                                 drop(response_rx);
                                 stream.update_tool_call_fields(
                                     &tool_use_id,
-                                    acp::ToolCallUpdateFields::new()
-                                        .status(acp::ToolCallStatus::Failed),
+                                    schema::ToolCallUpdateFields::new()
+                                        .status(schema::ToolCallStatus::Failed),
                                     None,
                                 );
                                 return Err(anyhow!(reason));
@@ -4096,7 +4096,7 @@ impl ToolCallEventStream {
     /// Interprets a `SelectedPermissionOutcome` and persists any settings changes.
     /// Returns `true` if the tool call should be allowed, `false` if denied.
     fn persist_permission_outcome(
-        outcome: &acp_thread::SelectedPermissionOutcome,
+        outcome: &agent_thread::SelectedPermissionOutcome,
         fs: Option<Arc<dyn Fs>>,
         cx: &AsyncApp,
     ) -> Result<()> {
@@ -4151,7 +4151,7 @@ impl ToolCallEventStream {
     fn persist_always_permission(
         tool: &str,
         mode: ToolPermissionMode,
-        params: Option<&acp_thread::SelectedPermissionParams>,
+        params: Option<&agent_thread::SelectedPermissionParams>,
         fs: Option<Arc<dyn Fs>>,
         cx: &AsyncApp,
     ) {
@@ -4160,7 +4160,7 @@ impl ToolCallEventStream {
         };
 
         match params {
-            Some(acp_thread::SelectedPermissionParams::Terminal {
+            Some(agent_thread::SelectedPermissionParams::Terminal {
                 patterns: sub_patterns,
             }) => {
                 debug_assert!(
@@ -4218,9 +4218,9 @@ impl ToolCallEventStreamReceiver {
         }
     }
 
-    pub async fn expect_update_fields(&mut self) -> acp::ToolCallUpdateFields {
+    pub async fn expect_update_fields(&mut self) -> schema::ToolCallUpdateFields {
         let event = self.0.next().await;
-        if let Some(Ok(ThreadEvent::ToolCallUpdate(acp_thread::ToolCallUpdate::UpdateFields(
+        if let Some(Ok(ThreadEvent::ToolCallUpdate(agent_thread::ToolCallUpdate::UpdateFields(
             update,
         )))) = event
         {
@@ -4230,9 +4230,9 @@ impl ToolCallEventStreamReceiver {
         }
     }
 
-    pub async fn expect_diff(&mut self) -> Entity<acp_thread::Diff> {
+    pub async fn expect_diff(&mut self) -> Entity<agent_thread::Diff> {
         let event = self.0.next().await;
-        if let Some(Ok(ThreadEvent::ToolCallUpdate(acp_thread::ToolCallUpdate::UpdateDiff(
+        if let Some(Ok(ThreadEvent::ToolCallUpdate(agent_thread::ToolCallUpdate::UpdateDiff(
             update,
         )))) = event
         {
@@ -4242,9 +4242,9 @@ impl ToolCallEventStreamReceiver {
         }
     }
 
-    pub async fn expect_terminal(&mut self) -> Entity<acp_thread::Terminal> {
+    pub async fn expect_terminal(&mut self) -> Entity<agent_thread::Terminal> {
         let event = self.0.next().await;
-        if let Some(Ok(ThreadEvent::ToolCallUpdate(acp_thread::ToolCallUpdate::UpdateTerminal(
+        if let Some(Ok(ThreadEvent::ToolCallUpdate(agent_thread::ToolCallUpdate::UpdateTerminal(
             update,
         )))) = event
         {
@@ -4254,7 +4254,7 @@ impl ToolCallEventStreamReceiver {
         }
     }
 
-    pub async fn expect_plan(&mut self) -> acp::Plan {
+    pub async fn expect_plan(&mut self) -> schema::Plan {
         let event = self.0.next().await;
         if let Some(Ok(ThreadEvent::Plan(plan))) = event {
             plan
@@ -4293,15 +4293,15 @@ impl From<String> for UserMessageContent {
 }
 
 impl UserMessageContent {
-    pub fn from_content_block(value: acp::ContentBlock, path_style: PathStyle) -> Self {
+    pub fn from_content_block(value: schema::ContentBlock, path_style: PathStyle) -> Self {
         match value {
-            acp::ContentBlock::Text(text_content) => Self::Text(text_content.text),
-            acp::ContentBlock::Image(image_content) => Self::Image(convert_image(image_content)),
-            acp::ContentBlock::Audio(_) => {
+            schema::ContentBlock::Text(text_content) => Self::Text(text_content.text),
+            schema::ContentBlock::Image(image_content) => Self::Image(convert_image(image_content)),
+            schema::ContentBlock::Audio(_) => {
                 // TODO
                 Self::Text("[audio]".to_string())
             }
-            acp::ContentBlock::ResourceLink(resource_link) => {
+            schema::ContentBlock::ResourceLink(resource_link) => {
                 match MentionUri::parse(&resource_link.uri, path_style) {
                     Ok(uri) => Self::Mention {
                         uri,
@@ -4313,8 +4313,8 @@ impl UserMessageContent {
                     }
                 }
             }
-            acp::ContentBlock::Resource(resource) => match resource.resource {
-                acp::EmbeddedResourceResource::TextResourceContents(resource) => {
+            schema::ContentBlock::Resource(resource) => match resource.resource {
+                schema::EmbeddedResourceResource::TextResourceContents(resource) => {
                     match MentionUri::parse(&resource.uri, path_style) {
                         Ok(uri) => Self::Mention {
                             uri,
@@ -4332,40 +4332,37 @@ impl UserMessageContent {
                         }
                     }
                 }
-                acp::EmbeddedResourceResource::BlobResourceContents(_) => {
+                schema::EmbeddedResourceResource::BlobResourceContents(_) => {
                     // TODO
                     Self::Text("[blob]".to_string())
                 }
+                #[allow(unreachable_patterns)]
                 other => {
                     log::warn!("Unexpected content type: {:?}", other);
                     Self::Text("[unknown]".to_string())
                 }
             },
-            other => {
-                log::warn!("Unexpected content type: {:?}", other);
-                Self::Text("[unknown]".to_string())
-            }
         }
     }
 }
 
-impl From<UserMessageContent> for acp::ContentBlock {
+impl From<UserMessageContent> for schema::ContentBlock {
     fn from(content: UserMessageContent) -> Self {
         match content {
             UserMessageContent::Text(text) => text.into(),
             UserMessageContent::Image(image) => {
-                acp::ContentBlock::Image(acp::ImageContent::new(image.source, "image/png"))
+                schema::ContentBlock::Image(schema::ImageContent::new(image.source, "image/png"))
             }
-            UserMessageContent::Mention { uri, content } => acp::ContentBlock::Resource(
-                acp::EmbeddedResource::new(acp::EmbeddedResourceResource::TextResourceContents(
-                    acp::TextResourceContents::new(content, uri.to_uri().to_string()),
+            UserMessageContent::Mention { uri, content } => schema::ContentBlock::Resource(
+                schema::EmbeddedResource::new(schema::EmbeddedResourceResource::TextResourceContents(
+                    schema::TextResourceContents::new(content, uri.to_uri().to_string()),
                 )),
             ),
         }
     }
 }
 
-fn convert_image(image_content: acp::ImageContent) -> LanguageModelImage {
+fn convert_image(image_content: schema::ImageContent) -> LanguageModelImage {
     LanguageModelImage {
         source: image_content.data.into(),
         size: None,

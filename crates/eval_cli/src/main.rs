@@ -38,9 +38,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use acp_thread::AgentConnection as _;
+use agent_thread::AgentConnection as _;
 use agent::{NativeAgent, NativeAgentConnection, Templates, ThreadStore};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::{Context, Result};
 use clap::Parser;
 use feature_flags::FeatureFlagAppExt as _;
@@ -393,7 +393,7 @@ async fn run_agent(
     });
 
     let connection = Rc::new(NativeAgentConnection(agent.clone()));
-    let acp_thread = match cx
+    let agent_thread = match cx
         .update(|cx| {
             connection
                 .clone()
@@ -402,19 +402,19 @@ async fn run_agent(
         .await
     {
         Ok(t) => t,
-        Err(e) => return (Err(e).context("creating ACP session"), None),
+        Err(e) => return (Err(e).context("creating agent session"), None),
     };
 
-    let _subscription = cx.subscribe(&acp_thread, |acp_thread, event, cx| {
-        log_acp_thread_event(&acp_thread, event, cx);
+    let _subscription = cx.subscribe(&agent_thread, |agent_thread, event, cx| {
+        log_agent_thread_event(&agent_thread, event, cx);
     });
 
-    let message = vec![acp::ContentBlock::Text(acp::TextContent::new(
+    let message = vec![schema::ContentBlock::Text(schema::TextContent::new(
         instruction.to_string(),
     ))];
 
-    let send_future = acp_thread.update(cx, |acp_thread: &mut acp_thread::AcpThread, cx| {
-        acp_thread.send(message, cx)
+    let send_future = agent_thread.update(cx, |agent_thread: &mut agent_thread::AgentThread, cx| {
+        agent_thread.send(message, cx)
     });
 
     let timeout_future = if let Some(timeout_secs) = timeout {
@@ -439,7 +439,7 @@ async fn run_agent(
         result = send_future.fuse() => match result {
             Ok(Some(response)) => {
                 eprintln!("[eval-cli] stopped: {:?}", response.stop_reason);
-                if response.stop_reason == acp::StopReason::MaxTokens {
+                if response.stop_reason == schema::StopReason::MaxTokens {
                     Err(anyhow::anyhow!("Model hit maximum token limit"))
                 } else {
                     Ok(AgentOutcome::Completed)
@@ -453,17 +453,17 @@ async fn run_agent(
         },
         _ = sigterm_future.fuse() => {
             eprintln!("[eval-cli] received SIGTERM, cancelling...");
-            acp_thread.update(cx, |t: &mut acp_thread::AcpThread, cx| t.cancel(cx)).await;
+            agent_thread.update(cx, |t: &mut agent_thread::AgentThread, cx| t.cancel(cx)).await;
             Ok(AgentOutcome::Interrupted)
         },
         _ = timeout_future.fuse() => {
-            acp_thread.update(cx, |t: &mut acp_thread::AcpThread, cx| t.cancel(cx)).await;
+            agent_thread.update(cx, |t: &mut agent_thread::AgentThread, cx| t.cancel(cx)).await;
             Ok(AgentOutcome::Timeout { seconds: timeout.unwrap_or(0) })
         }
     };
 
     let thread = cx.update(|cx| {
-        let session_id = acp_thread.read(cx).session_id().clone();
+        let session_id = agent_thread.read(cx).session_id().clone();
         connection.thread(&session_id, cx)
     });
 
@@ -481,7 +481,7 @@ async fn run_agent(
     };
 
     let acp_usage = cx.update(|cx| {
-        acp_thread
+        agent_thread
             .read(cx)
             .token_usage()
             .map(|usage| language_model::TokenUsage {
@@ -514,18 +514,18 @@ async fn run_agent(
     (outcome, final_usage)
 }
 
-fn log_acp_thread_event(
-    acp_thread: &Entity<acp_thread::AcpThread>,
-    event: &acp_thread::AcpThreadEvent,
+fn log_agent_thread_event(
+    agent_thread: &Entity<agent_thread::AgentThread>,
+    event: &agent_thread::AgentThreadEvent,
     cx: &mut gpui::App,
 ) {
     match event {
-        acp_thread::AcpThreadEvent::NewEntry => {
-            let entries = acp_thread.read(cx).entries();
-            if let Some(acp_thread::AgentThreadEntry::AssistantMessage(message)) = entries.last() {
+        agent_thread::AgentThreadEvent::NewEntry => {
+            let entries = agent_thread.read(cx).entries();
+            if let Some(agent_thread::AgentThreadEntry::AssistantMessage(message)) = entries.last() {
                 for chunk in &message.chunks {
-                    if let acp_thread::AssistantMessageChunk::Message { block } = chunk {
-                        if let acp_thread::ContentBlock::Markdown { markdown } = block {
+                    if let agent_thread::AssistantMessageChunk::Message { block } = chunk {
+                        if let agent_thread::ContentBlock::Markdown { markdown } = block {
                             let text = markdown.read(cx).source().to_string();
                             if !text.is_empty() {
                                 eprint!("{text}");
@@ -535,21 +535,21 @@ fn log_acp_thread_event(
                 }
             }
         }
-        acp_thread::AcpThreadEvent::EntryUpdated(index) => {
-            let entries = acp_thread.read(cx).entries();
-            if let Some(acp_thread::AgentThreadEntry::ToolCall(tool_call)) = entries.get(*index) {
+        agent_thread::AgentThreadEvent::EntryUpdated(index) => {
+            let entries = agent_thread.read(cx).entries();
+            if let Some(agent_thread::AgentThreadEntry::ToolCall(tool_call)) = entries.get(*index) {
                 if let Some(name) = &tool_call.tool_name {
                     match &tool_call.status {
-                        acp_thread::ToolCallStatus::Completed => {
+                        agent_thread::ToolCallStatus::Completed => {
                             eprintln!("[tool] {name} ✓");
                         }
-                        acp_thread::ToolCallStatus::Failed => {
+                        agent_thread::ToolCallStatus::Failed => {
                             eprintln!("[tool] {name} ✗");
                         }
-                        acp_thread::ToolCallStatus::Rejected => {
+                        agent_thread::ToolCallStatus::Rejected => {
                             eprintln!("[tool] {name} rejected");
                         }
-                        acp_thread::ToolCallStatus::Canceled => {
+                        agent_thread::ToolCallStatus::Canceled => {
                             eprintln!("[tool] {name} canceled");
                         }
                         _ => {}
@@ -557,16 +557,16 @@ fn log_acp_thread_event(
                 }
             }
         }
-        acp_thread::AcpThreadEvent::Stopped(reason) => {
+        agent_thread::AgentThreadEvent::Stopped(reason) => {
             eprintln!("\n[eval-cli] stopped: {reason:?}");
         }
-        acp_thread::AcpThreadEvent::Error => {
+        agent_thread::AgentThreadEvent::Error => {
             eprintln!("[eval-cli] error event");
         }
-        acp_thread::AcpThreadEvent::Retry(status) => {
+        agent_thread::AgentThreadEvent::Retry(status) => {
             eprintln!("[eval-cli] retry: {status:?}");
         }
-        acp_thread::AcpThreadEvent::SubagentSpawned(session_id) => {
+        agent_thread::AgentThreadEvent::SubagentSpawned(session_id) => {
             eprintln!("[eval-cli] subagent spawned: {session_id}");
         }
         _ => {}

@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::{borrow::Cow, cell::RefCell};
 
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::{Context as _, Result, bail};
 use futures::{AsyncReadExt as _, FutureExt as _};
 use gpui::{App, AppContext as _, Task};
@@ -120,8 +120,8 @@ impl AgentTool for FetchTool {
 
     const NAME: &'static str = "fetch";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Fetch
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Fetch
     }
 
     fn initial_title(

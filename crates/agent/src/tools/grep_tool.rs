@@ -1,5 +1,5 @@
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::Result;
 use futures::{FutureExt as _, StreamExt};
 use gpui::{App, Entity, SharedString, Task};
@@ -82,8 +82,8 @@ impl AgentTool for GrepTool {
 
     const NAME: &'static str = "grep";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Search
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Search
     }
 
     fn initial_title(

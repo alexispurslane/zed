@@ -3,10 +3,8 @@ pub mod agent_connection_store;
 mod agent_diff;
 mod agent_model_selector;
 mod agent_panel;
-mod agent_registry_ui;
 mod buffer_codegen;
 mod completion_provider;
-mod config_options;
 mod context;
 mod context_server_configuration;
 pub(crate) mod conversation_view;
@@ -19,7 +17,6 @@ mod inline_prompt_editor;
 mod language_model_selector;
 mod mention_set;
 mod message_editor;
-mod mode_selector;
 mod model_selector;
 mod model_selector_popover;
 mod profile_selector;
@@ -38,7 +35,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use ::ui::IconName;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::{AgentProfileId, AgentSettings};
 use command_palette_hooks::CommandPaletteFilter;
 use feature_flags::FeatureFlagAppExt as _;
@@ -60,21 +57,19 @@ use std::any::TypeId;
 use workspace::Workspace;
 
 use crate::agent_configuration::{ConfigureContextServerModal, ManageProfilesModal};
-pub use crate::agent_connection_store::{ActiveAcpConnection, AgentConnectionStore};
+pub use crate::agent_connection_store::{ActiveAgentConnection, AgentConnectionStore};
 pub use crate::agent_panel::{
     AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo, MaxIdleRetainedThreads, TerminalId,
 };
-use crate::agent_registry_ui::AgentRegistryPage;
 pub use crate::inline_assistant::InlineAssistant;
 pub use crate::thread_metadata_store::ThreadId;
 pub use agent_diff::{AgentDiffPane, AgentDiffToolbar};
 pub use conversation_view::ConversationView;
 pub use external_source_prompt::ExternalSourcePrompt;
-pub(crate) use mode_selector::ModeSelector;
 pub(crate) use model_selector::ModelSelector;
 pub(crate) use model_selector_popover::ModelSelectorPopover;
 pub use thread_import::{
-    AcpThreadImportOnboarding, CrossChannelImportOnboarding, ThreadImportModal,
+    CrossChannelImportOnboarding,
     channels_with_threads, import_threads_from_other_channels,
 };
 use xenomorphic_actions;
@@ -91,9 +86,7 @@ actions!(
         ToggleOptionsMenu,
         /// Toggles the profile or mode selector for switching between agent profiles.
         ToggleProfileSelector,
-        /// Cycles through available session modes.
-        CycleModeSelector,
-        /// Cycles through favorited models in the ACP model selector.
+        /// Cycles through favorited models in the model selector.
         CycleFavoriteModels,
         /// Expands the message editor to full size.
         ExpandMessageEditor,
@@ -258,7 +251,7 @@ pub struct NewExternalAgentThread {
 #[action(namespace = agent)]
 #[serde(deny_unknown_fields)]
 pub struct NewNativeAgentThreadFromSummary {
-    from_session_id: acp::SessionId,
+    from_session_id: schema::SessionId,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -327,7 +320,7 @@ impl Agent {
         match self {
             Self::NativeAgent => Rc::new(agent::NativeAgentServer::new(fs, thread_store)),
             Self::Custom { id: name } => {
-                Rc::new(agent_servers::CustomAgentServer::new(name.clone()))
+                Rc::new(agent_servers::UnsupportedAgentServer::new(name.clone()))
             }
             #[cfg(any(test, feature = "test-support"))]
             Self::Stub => Rc::new(crate::test_support::StubAgentServer::default_response()),
@@ -338,11 +331,11 @@ impl Agent {
 /// Content to initialize new external agent with.
 pub enum AgentInitialContent {
     ThreadSummary {
-        session_id: acp::SessionId,
+        session_id: schema::SessionId,
         title: Option<SharedString>,
     },
     ContentBlock {
-        blocks: Vec<acp::ContentBlock>,
+        blocks: Vec<schema::ContentBlock>,
         auto_submit: bool,
     },
     FromExternalSource(ExternalSourcePrompt),
@@ -442,36 +435,7 @@ pub fn init(
         ConfigureContextServerModal::register(workspace, language_registry.clone(), window, cx)
     })
     .detach();
-    cx.observe_new(|workspace: &mut Workspace, _window, _cx| {
-        workspace.register_action(
-            move |workspace: &mut Workspace,
-                  _: &xenomorphic_actions::AcpRegistry,
-                  window: &mut Window,
-                  cx: &mut Context<Workspace>| {
-                let existing = workspace
-                    .active_pane()
-                    .read(cx)
-                    .items()
-                    .find_map(|item| item.downcast::<AgentRegistryPage>());
-
-                if let Some(existing) = existing {
-                    existing.update(cx, |_, cx| {
-                        project::AgentRegistryStore::global(cx)
-                            .update(cx, |store, cx| store.refresh(cx));
-                    });
-                    workspace.activate_item(&existing, true, true, window, cx);
-                } else {
-                    let registry_page = AgentRegistryPage::new(workspace, window, cx);
-                    workspace.add_item_to_active_pane(
-                        Box::new(registry_page),
-                        None,
-                        true,
-                        window,
-                        cx,
-                    );
-                }
-            },
-        );
+    cx.observe_new(|_workspace: &mut Workspace, _window, _cx| {
     })
     .detach();
     cx.observe_new(ManageProfilesModal::register).detach();

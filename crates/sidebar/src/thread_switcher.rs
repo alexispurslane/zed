@@ -1,5 +1,5 @@
 use action_log::DiffStats;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_ui::thread_metadata_store::ThreadMetadata;
 use gpui::{
     Action as _, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, Modifiers,
@@ -10,7 +10,7 @@ use workspace::{ModalView, Workspace};
 use xenomorphic_actions::agents_sidebar::ToggleThreadSwitcher;
 
 pub(crate) struct ThreadSwitcherEntry {
-    pub session_id: acp::SessionId,
+    pub session_id: schema::SessionId,
     pub title: SharedString,
     pub icon: IconName,
     pub icon_from_external_svg: Option<SharedString>,

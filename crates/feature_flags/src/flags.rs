@@ -16,17 +16,9 @@ impl FeatureFlag for PanicFeatureFlag {
 }
 register_feature_flag!(PanicFeatureFlag);
 
-/// A feature flag for granting access to beta ACP features.
+/// A feature flag for granting access to beta agent features.
 ///
 /// We reuse this feature flag for new betas, so don't delete it if it is not currently in use.
-pub struct AcpBetaFeatureFlag;
-
-impl FeatureFlag for AcpBetaFeatureFlag {
-    const NAME: &'static str = "acp-beta";
-    type Value = PresenceFlag;
-}
-register_feature_flag!(AcpBetaFeatureFlag);
-
 pub struct AgentSharingFeatureFlag;
 
 impl FeatureFlag for AgentSharingFeatureFlag {

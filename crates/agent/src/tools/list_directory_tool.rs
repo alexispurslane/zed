@@ -3,7 +3,7 @@ use super::tool_permissions::{
     resolve_project_path,
 };
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{App, Entity, SharedString, Task};
 use project::{Project, ProjectPath, WorktreeSettings};
@@ -127,8 +127,8 @@ impl AgentTool for ListDirectoryTool {
 
     const NAME: &'static str = "list_directory";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Read
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Read
     }
 
     fn initial_title(
@@ -847,9 +847,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 

@@ -6,7 +6,7 @@ use crate::{
     AgentTool, ToolCallEventStream, ToolInput, ToolPermissionDecision,
     authorize_with_sensitive_settings, decide_permission_for_paths,
 };
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::AgentSettings;
 use futures::FutureExt as _;
 use gpui::{App, Entity, Task};
@@ -62,8 +62,8 @@ impl AgentTool for CopyPathTool {
 
     const NAME: &'static str = "copy_path";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Move
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Move
     }
 
     fn initial_title(
@@ -264,9 +264,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -373,9 +373,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 

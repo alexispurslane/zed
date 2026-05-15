@@ -1,8 +1,8 @@
 use std::ops::Range;
 
-use acp_thread::{AcpThread, AgentThreadEntry};
+use agent_thread::{AgentThread, AgentThreadEntry};
 use agent::ThreadStore;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use collections::HashMap;
 use editor::{Editor, EditorEvent, EditorMode, MinimapVisibility, SizingBehavior};
 use gpui::{
@@ -58,7 +58,7 @@ impl EntryViewState {
     pub fn sync_entry(
         &mut self,
         index: usize,
-        thread: &Entity<AcpThread>,
+        thread: &Entity<AgentThread>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -135,7 +135,7 @@ impl EntryViewState {
                 };
 
                 let is_tool_call_completed =
-                    matches!(tool_call.status, acp_thread::ToolCallStatus::Completed);
+                    matches!(tool_call.status, agent_thread::ToolCallStatus::Completed);
 
                 for terminal in terminals {
                     match views.entry(terminal.entity_id()) {
@@ -283,9 +283,9 @@ pub struct EntryViewEvent {
 }
 
 pub enum ViewEvent {
-    NewDiff(acp::ToolCallId),
-    NewTerminal(acp::ToolCallId),
-    TerminalMovedToBackground(acp::ToolCallId),
+    NewDiff(schema::ToolCallId),
+    NewTerminal(schema::ToolCallId),
+    TerminalMovedToBackground(schema::ToolCallId),
     MessageEditorEvent(Entity<MessageEditor>, MessageEditorEvent),
     OpenDiffLocation {
         path: String,
@@ -305,8 +305,8 @@ impl AssistantMessageEntry {
         self.scroll_handles_by_chunk_index.get(&ix).cloned()
     }
 
-    pub fn sync(&mut self, message: &acp_thread::AssistantMessage) {
-        if let Some(acp_thread::AssistantMessageChunk::Thought { .. }) = message.chunks.last() {
+    pub fn sync(&mut self, message: &agent_thread::AssistantMessage) {
+        if let Some(agent_thread::AssistantMessageChunk::Thought { .. }) = message.chunks.last() {
             let ix = message.chunks.len() - 1;
             let handle = self.scroll_handles_by_chunk_index.entry(ix).or_default();
             handle.scroll_to_bottom();
@@ -345,7 +345,7 @@ impl Entry {
         }
     }
 
-    pub fn editor_for_diff(&self, diff: &Entity<acp_thread::Diff>) -> Option<Entity<Editor>> {
+    pub fn editor_for_diff(&self, diff: &Entity<agent_thread::Diff>) -> Option<Entity<Editor>> {
         self.content_map()?
             .get(&diff.entity_id())
             .cloned()
@@ -354,7 +354,7 @@ impl Entry {
 
     pub fn terminal(
         &self,
-        terminal: &Entity<acp_thread::Terminal>,
+        terminal: &Entity<agent_thread::Terminal>,
     ) -> Option<Entity<TerminalView>> {
         self.content_map()?
             .get(&terminal.entity_id())
@@ -408,7 +408,7 @@ impl Focusable for Entry {
 fn create_terminal(
     workspace: WeakEntity<Workspace>,
     project: WeakEntity<Project>,
-    terminal: Entity<acp_thread::Terminal>,
+    terminal: Entity<agent_thread::Terminal>,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<TerminalView> {
@@ -427,7 +427,7 @@ fn create_terminal(
 }
 
 fn create_editor_diff(
-    diff: Entity<acp_thread::Diff>,
+    diff: Entity<agent_thread::Diff>,
     window: &mut Window,
     cx: &mut App,
 ) -> Entity<Editor> {
@@ -481,8 +481,8 @@ mod tests {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use acp_thread::{AgentConnection, StubAgentConnection};
-    use agent_client_protocol::schema as acp;
+    use agent_thread::{AgentConnection, StubAgentConnection};
+    use agent_thread::schema;
     use buffer_diff::{DiffHunkStatus, DiffHunkStatusKind};
     use editor::RowInfo;
     use fs::FakeFs;
@@ -516,10 +516,10 @@ mod tests {
             cx.add_window_view(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
         let workspace = multi_workspace.read_with(cx, |mw, _| mw.workspace().clone());
 
-        let tool_call = acp::ToolCall::new("tool", "Tool call")
-            .status(acp::ToolCallStatus::InProgress)
-            .content(vec![acp::ToolCallContent::Diff(
-                acp::Diff::new("/project/hello.txt", "hello world").old_text("hi world"),
+        let tool_call = schema::ToolCall::new("tool", "Tool call")
+            .status(schema::ToolCallStatus::InProgress)
+            .content(vec![schema::ToolCallContent::Diff(
+                schema::Diff::new("/project/hello.txt", "hello world").old_text("hi world"),
             )]);
         let connection = Rc::new(StubAgentConnection::new());
         let thread = cx
@@ -535,7 +535,7 @@ mod tests {
         let session_id = thread.update(cx, |thread, _| thread.session_id().clone());
 
         cx.update(|_, cx| {
-            connection.send_update(session_id, acp::SessionUpdate::ToolCall(tool_call), cx)
+            connection.send_update(session_id, schema::SessionUpdate::ToolCall(tool_call), cx)
         });
 
         let thread_store = None;

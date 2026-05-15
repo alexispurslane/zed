@@ -2,7 +2,7 @@ use super::tool_permissions::{
     authorize_symlink_access, canonicalize_worktree_roots, detect_symlink_escape,
     sensitive_settings_kind,
 };
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::AgentSettings;
 use futures::FutureExt as _;
 use gpui::{App, Entity, SharedString, Task};
@@ -53,8 +53,8 @@ impl AgentTool for CreateDirectoryTool {
 
     const NAME: &'static str = "create_directory";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Edit
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Edit
     }
 
     fn initial_title(
@@ -237,9 +237,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -358,9 +358,9 @@ mod tests {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 

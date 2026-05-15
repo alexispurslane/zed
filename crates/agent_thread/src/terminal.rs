@@ -1,4 +1,4 @@
-use agent_client_protocol::schema as acp;
+use crate::schema;
 use anyhow::Result;
 use futures::{FutureExt as _, future::Shared};
 use gpui::{App, AppContext, AsyncApp, Context, Entity, Task};
@@ -18,14 +18,14 @@ use task::Shell;
 use util::get_default_system_shell_preferring_bash;
 
 pub struct Terminal {
-    id: acp::TerminalId,
+    id: schema::TerminalId,
     command: Entity<Markdown>,
     working_dir: Option<PathBuf>,
     terminal: Entity<terminal::Terminal>,
     started_at: Instant,
     output: Option<TerminalOutput>,
     output_byte_limit: Option<usize>,
-    _output_task: Shared<Task<acp::TerminalExitStatus>>,
+    _output_task: Shared<Task<schema::TerminalExitStatus>>,
     /// Flag indicating whether this terminal was stopped by explicit user action
     /// (e.g., clicking the Stop button). This is set before kill() is called
     /// so that code awaiting wait_for_exit() can check it deterministically.
@@ -42,7 +42,7 @@ pub struct TerminalOutput {
 
 impl Terminal {
     pub fn new(
-        id: acp::TerminalId,
+        id: schema::TerminalId,
         command_label: &str,
         working_dir: Option<PathBuf>,
         output_byte_limit: Option<usize>,
@@ -88,19 +88,19 @@ impl Terminal {
 
                     let exit_status = exit_status.map(portable_pty::ExitStatus::from);
 
-                    acp::TerminalExitStatus::new()
-                        .exit_code(exit_status.as_ref().map(|e| e.exit_code()))
+                    schema::TerminalExitStatus::new()
+                        .exit_code(exit_status.as_ref().map(|e| e.exit_code() as i32))
                         .signal(exit_status.and_then(|e| e.signal().map(ToOwned::to_owned)))
                 })
                 .shared(),
         }
     }
 
-    pub fn id(&self) -> &acp::TerminalId {
+    pub fn id(&self) -> &schema::TerminalId {
         &self.id
     }
 
-    pub fn wait_for_exit(&self) -> Shared<Task<acp::TerminalExitStatus>> {
+    pub fn wait_for_exit(&self) -> Shared<Task<schema::TerminalExitStatus>> {
         self._output_task.clone()
     }
 
@@ -122,23 +122,23 @@ impl Terminal {
         self.user_stopped.load(Ordering::SeqCst)
     }
 
-    pub fn current_output(&self, cx: &App) -> acp::TerminalOutputResponse {
+    pub fn current_output(&self, cx: &App) -> schema::TerminalOutputResponse {
         if let Some(output) = self.output.as_ref() {
             let exit_status = output.exit_status.map(portable_pty::ExitStatus::from);
 
-            acp::TerminalOutputResponse::new(
+            schema::TerminalOutputResponse::new(
                 output.content.clone(),
                 output.original_content_len > output.content.len(),
             )
             .exit_status(
-                acp::TerminalExitStatus::new()
-                    .exit_code(exit_status.as_ref().map(|e| e.exit_code()))
+                schema::TerminalExitStatus::new()
+                    .exit_code(exit_status.as_ref().map(|e| e.exit_code() as i32))
                     .signal(exit_status.and_then(|e| e.signal().map(ToOwned::to_owned))),
             )
         } else {
             let (current_content, original_len) = self.truncated_output(cx);
             let truncated = current_content.len() < original_len;
-            acp::TerminalOutputResponse::new(current_content, truncated)
+            schema::TerminalOutputResponse::new(current_content, truncated)
         }
     }
 

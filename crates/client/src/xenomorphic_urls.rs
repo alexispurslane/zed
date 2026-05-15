@@ -52,14 +52,6 @@ pub fn edit_prediction_docs(cx: &App) -> String {
     )
 }
 
-/// Returns the URL to Xenomorphic's ACP registry blog post.
-pub fn acp_registry_blog(cx: &App) -> String {
-    format!(
-        "{server_url}/blog/acp-registry",
-        server_url = server_url(cx)
-    )
-}
-
 /// Returns the URL to Xenomorphic's Parallel Agents blog post.
 pub fn parallel_agents_blog(cx: &App) -> String {
     format!("{server_url}/blog", server_url = server_url(cx))

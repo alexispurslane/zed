@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use super::symbol_locator::{LocationDisplay, SymbolLocator};
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use gpui::{App, Entity, SharedString, Task};
 use project::Project;
 use schemars::JsonSchema;
@@ -38,8 +38,8 @@ impl AgentTool for GoToDefinitionTool {
 
     const NAME: &'static str = "go_to_definition";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Search
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Search
     }
 
     fn initial_title(

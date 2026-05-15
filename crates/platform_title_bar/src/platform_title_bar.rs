@@ -153,7 +153,7 @@ pub fn render_right_window_controls(
     window: &Window,
 ) -> Option<AnyElement> {
     let decorations = window.window_decorations();
-    let height = platform_title_bar_height(window);
+    let _height = platform_title_bar_height(window);
 
     match PlatformStyle::platform() {
         PlatformStyle::Linux => {

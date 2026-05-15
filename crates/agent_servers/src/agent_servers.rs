@@ -1,32 +1,14 @@
-mod acp;
-mod custom;
-
-#[cfg(any(test, feature = "test-support"))]
-pub mod e2e_tests;
-
-use client::ProxySettings;
-use collections::{HashMap, HashSet};
-pub use custom::*;
-use fs::Fs;
+use collections::HashMap;
 use http_client::read_no_proxy_from_env;
 use project::{AgentId, Project, agent_server_store::AgentServerStore};
 
-use acp_thread::AgentConnection;
-use agent_client_protocol::schema as acp_schema;
+use agent_thread::AgentConnection;
 use anyhow::Result;
-use gpui::{App, AppContext, Entity, Task};
-use settings::SettingsStore;
-use std::{any::Any, rc::Rc, sync::Arc};
+use gpui::{App, Entity, Task};
+use settings::Settings;
+use std::{any::Any, rc::Rc};
 
-#[cfg(any(test, feature = "test-support"))]
-pub use acp::test_support::{
-    FakeAcpAgentServer, FakeAcpConnectionHarness, connect_fake_acp_connection,
-};
-pub use acp::{
-    AcpConnection, AcpDebugMessage, AcpDebugMessageContent, AcpDebugMessageDirection,
-    GEMINI_TERMINAL_AUTH_METHOD_ID,
-};
-
+#[allow(dead_code)]
 pub struct AgentServerDelegate {
     store: Entity<AgentServerStore>,
     new_version_available: Option<watch::Sender<Option<String>>>,
@@ -55,74 +37,6 @@ pub trait AgentServer: Send {
     ) -> Task<Result<Rc<dyn AgentConnection>>>;
 
     fn into_any(self: Rc<Self>) -> Rc<dyn Any>;
-
-    fn default_mode(&self, _cx: &App) -> Option<acp_schema::SessionModeId> {
-        None
-    }
-
-    fn set_default_mode(
-        &self,
-        _mode_id: Option<acp_schema::SessionModeId>,
-        _fs: Arc<dyn Fs>,
-        _cx: &mut App,
-    ) {
-    }
-
-    fn default_model(&self, _cx: &App) -> Option<acp_schema::ModelId> {
-        None
-    }
-
-    fn set_default_model(
-        &self,
-        _model_id: Option<acp_schema::ModelId>,
-        _fs: Arc<dyn Fs>,
-        _cx: &mut App,
-    ) {
-    }
-
-    fn favorite_model_ids(&self, _cx: &mut App) -> HashSet<acp_schema::ModelId> {
-        HashSet::default()
-    }
-
-    fn default_config_option(&self, _config_id: &str, _cx: &App) -> Option<String> {
-        None
-    }
-
-    fn set_default_config_option(
-        &self,
-        _config_id: &str,
-        _value_id: Option<&str>,
-        _fs: Arc<dyn Fs>,
-        _cx: &mut App,
-    ) {
-    }
-
-    fn favorite_config_option_value_ids(
-        &self,
-        _config_id: &acp_schema::SessionConfigId,
-        _cx: &mut App,
-    ) -> HashSet<acp_schema::SessionConfigValueId> {
-        HashSet::default()
-    }
-
-    fn toggle_favorite_config_option_value(
-        &self,
-        _config_id: acp_schema::SessionConfigId,
-        _value_id: acp_schema::SessionConfigValueId,
-        _should_be_favorite: bool,
-        _fs: Arc<dyn Fs>,
-        _cx: &App,
-    ) {
-    }
-
-    fn toggle_favorite_model(
-        &self,
-        _model_id: acp_schema::ModelId,
-        _should_be_favorite: bool,
-        _fs: Arc<dyn Fs>,
-        _cx: &App,
-    ) {
-    }
 }
 
 impl dyn AgentServer {
@@ -132,9 +46,8 @@ impl dyn AgentServer {
 }
 
 /// Load the default proxy environment variables to pass through to the agent
-pub fn load_proxy_env(cx: &mut App) -> HashMap<String, String> {
-    let proxy_url = cx
-        .read_global(|settings: &SettingsStore, _| settings.get::<ProxySettings>(None).proxy_url());
+pub fn load_proxy_env(cx: &App) -> HashMap<String, String> {
+    let proxy_url = client::ProxySettings::get_global(cx).proxy_url();
     let mut env = HashMap::default();
 
     if let Some(proxy_url) = &proxy_url {
@@ -155,3 +68,43 @@ pub fn load_proxy_env(cx: &mut App) -> HashMap<String, String> {
 
     env
 }
+
+/// An agent server that cannot connect, used for agent types that are no longer supported.
+pub struct UnsupportedAgentServer {
+    agent_id: AgentId,
+}
+
+impl UnsupportedAgentServer {
+    pub fn new(agent_id: AgentId) -> Self {
+        Self { agent_id }
+    }
+}
+
+impl AgentServer for UnsupportedAgentServer {
+    fn logo(&self) -> ui::IconName {
+        ui::IconName::Sparkle
+    }
+
+    fn agent_id(&self) -> AgentId {
+        self.agent_id.clone()
+    }
+
+    fn connect(
+        &self,
+        _delegate: AgentServerDelegate,
+        _project: Entity<Project>,
+        _cx: &mut App,
+    ) -> Task<Result<Rc<dyn AgentConnection>>> {
+        let agent_id = self.agent_id.clone();
+        Task::ready(Err(anyhow::anyhow!(
+            "External agent '{}' is no longer supported. Agent Client Protocol (ACP) has been removed.",
+            agent_id
+        )))
+    }
+
+    fn into_any(self: Rc<Self>) -> Rc<dyn Any> {
+        self
+    }
+}
+
+

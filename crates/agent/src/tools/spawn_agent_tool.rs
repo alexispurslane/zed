@@ -1,5 +1,5 @@
-use acp_thread::{SUBAGENT_SESSION_INFO_META_KEY, SubagentSessionInfo};
-use agent_client_protocol::schema as acp;
+use agent_thread::{SUBAGENT_SESSION_INFO_META_KEY, SubagentSessionInfo};
+use agent_thread::schema;
 use anyhow::Result;
 use gpui::{App, SharedString, Task};
 use language_model::LanguageModelToolResultContent;
@@ -43,7 +43,7 @@ pub struct SpawnAgentToolInput {
     pub message: String,
     /// Session ID of an existing agent session to continue instead of creating a new one.
     #[serde(default)]
-    pub session_id: Option<acp::SessionId>,
+    pub session_id: Option<schema::SessionId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,14 +51,14 @@ pub struct SpawnAgentToolInput {
 #[serde(rename_all = "snake_case")]
 pub enum SpawnAgentToolOutput {
     Success {
-        session_id: acp::SessionId,
+        session_id: schema::SessionId,
         output: String,
         session_info: SubagentSessionInfo,
     },
     Error {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[serde(default)]
-        session_id: Option<acp::SessionId>,
+        session_id: Option<schema::SessionId>,
         error: String,
         session_info: Option<SubagentSessionInfo>,
     },
@@ -106,8 +106,8 @@ impl AgentTool for SpawnAgentTool {
 
     const NAME: &'static str = "spawn_agent";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Other
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Other
     }
 
     fn initial_title(
@@ -160,8 +160,8 @@ impl AgentTool for SpawnAgentTool {
 
                 event_stream.subagent_spawned(subagent.id());
                 event_stream.update_fields_with_meta(
-                    acp::ToolCallUpdateFields::new(),
-                    Some(acp::Meta::from_iter([(
+                    schema::ToolCallUpdateFields::new(),
+                    Some(schema::Meta::from_iter([(
                         SUBAGENT_SESSION_INFO_META_KEY.into(),
                         serde_json::json!(&session_info),
                     )])),
@@ -186,7 +186,7 @@ impl AgentTool for SpawnAgentTool {
             session_info.message_end_index =
                 cx.update(|cx| Some(subagent.num_entries(cx).saturating_sub(1)));
 
-            let meta = Some(acp::Meta::from_iter([(
+            let meta = Some(schema::Meta::from_iter([(
                 SUBAGENT_SESSION_INFO_META_KEY.into(),
                 serde_json::json!(&session_info),
             )]));
@@ -213,7 +213,7 @@ impl AgentTool for SpawnAgentTool {
                 }
             };
             event_stream.update_fields_with_meta(
-                acp::ToolCallUpdateFields::new().content(vec![output.into()]),
+                schema::ToolCallUpdateFields::new().content(vec![output.into()]),
                 meta,
             );
             result
@@ -241,13 +241,13 @@ impl AgentTool for SpawnAgentTool {
         };
 
         let meta = session_info.map(|session_info| {
-            acp::Meta::from_iter([(
+            schema::Meta::from_iter([(
                 SUBAGENT_SESSION_INFO_META_KEY.into(),
                 serde_json::json!(&session_info),
             )])
         });
         event_stream.update_fields_with_meta(
-            acp::ToolCallUpdateFields::new().content(vec![content]),
+            schema::ToolCallUpdateFields::new().content(vec![content]),
             meta,
         );
 

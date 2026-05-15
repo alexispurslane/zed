@@ -1,7 +1,7 @@
 use crate::diagnostics::{DiagnosticsOptions, codeblock_fence_for_path, collect_diagnostics};
-use acp_thread::{MentionUri, selection_name};
+use agent_thread::{MentionUri, selection_name};
 use agent::{ThreadStore, outline};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_servers::{AgentServer, AgentServerDelegate};
 use anyhow::{Context as _, Result, anyhow};
 use collections::{HashMap, HashSet};
@@ -541,7 +541,7 @@ impl MentionSet {
 
     fn confirm_mention_for_thread(
         &mut self,
-        id: acp::SessionId,
+        id: schema::SessionId,
         cx: &mut Context<Self>,
     ) -> Task<Result<Mention>> {
         let Some(thread_store) = self.thread_store.clone() else {
@@ -680,7 +680,7 @@ mod tests {
         let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), thread_store, None));
 
         let task = mention_set.update(cx, |mention_set, cx| {
-            mention_set.confirm_mention_for_thread(acp::SessionId::new("thread-1"), cx)
+            mention_set.confirm_mention_for_thread(schema::SessionId::new("thread-1"), cx)
         });
 
         let error = task.await.unwrap_err();

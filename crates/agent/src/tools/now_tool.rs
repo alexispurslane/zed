@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use chrono::{Local, Utc};
 use gpui::{App, SharedString, Task};
 use schemars::JsonSchema;
@@ -36,8 +36,8 @@ impl AgentTool for NowTool {
 
     const NAME: &'static str = "now";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Other
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Other
     }
 
     fn initial_title(

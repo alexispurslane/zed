@@ -2,7 +2,7 @@ use crate::{
     Thread, ToolCallEventStream, ToolPermissionContext, ToolPermissionDecision,
     decide_permission_for_path,
 };
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::{Result, anyhow};
 use fs::Fs;
 use gpui::{App, Entity, Task, WeakEntity};
@@ -564,30 +564,30 @@ pub fn authorize_dirty_buffer(
              before the agent continues editing?"
                 .to_string(),
             vec![
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("save"),
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("save"),
                     "Save",
-                    acp::PermissionOptionKind::AllowOnce,
+                    schema::PermissionOptionKind::AllowOnce,
                 ),
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("discard"),
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("discard"),
                     "Discard",
-                    acp::PermissionOptionKind::RejectOnce,
+                    schema::PermissionOptionKind::RejectOnce,
                 ),
             ],
         ),
         DirtyBufferPromptKind::Overwrite => (
             "This file has unsaved changes and the agent wants to overwrite it.".to_string(),
             vec![
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("discard"),
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("discard"),
                     "Overwrite",
-                    acp::PermissionOptionKind::AllowOnce,
+                    schema::PermissionOptionKind::AllowOnce,
                 ),
-                acp::PermissionOption::new(
-                    acp::PermissionOptionId::new("keep"),
+                schema::PermissionOption::new(
+                    schema::PermissionOptionId::new("keep"),
                     "Cancel",
-                    acp::PermissionOptionKind::RejectOnce,
+                    schema::PermissionOptionKind::RejectOnce,
                 ),
             ],
         ),

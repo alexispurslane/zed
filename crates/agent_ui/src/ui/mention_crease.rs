@@ -1,7 +1,7 @@
 use std::{ops::RangeInclusive, path::PathBuf, time::Duration};
 
-use acp_thread::MentionUri;
-use agent_client_protocol::schema as acp;
+use agent_thread::MentionUri;
+use agent_thread::schema;
 use editor::{Editor, SelectionEffects, scroll::Autoscroll};
 use gpui::{
     Animation, AnimationExt, AnyView, Context, IntoElement, TaskExt, WeakEntity, Window,
@@ -266,7 +266,7 @@ fn reveal_in_project_panel(
 
 fn open_thread(
     workspace: &mut Workspace,
-    id: acp::SessionId,
+    id: schema::SessionId,
     name: String,
     window: &mut Window,
     cx: &mut Context<Workspace>,

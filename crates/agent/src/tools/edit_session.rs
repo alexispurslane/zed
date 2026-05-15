@@ -3,9 +3,9 @@ mod streaming_fuzzy_matcher;
 mod streaming_parser;
 
 use crate::{Thread, ToolCallEventStream};
-use acp_thread::Diff;
+use agent_thread::Diff;
 use action_log::ActionLog;
-use agent_client_protocol::schema::{self as acp, ToolCallLocation, ToolCallUpdateFields};
+use agent_thread::schema::{self, ToolCallLocation, ToolCallUpdateFields};
 use anyhow::Result;
 use collections::HashSet;
 use futures::{FutureExt, channel::oneshot};
@@ -1011,7 +1011,7 @@ async fn resolve_dirty_buffer(
 
     let Some(decision) = decision else {
         event_stream.update_fields(
-            acp::ToolCallUpdateFields::new().status(acp::ToolCallStatus::InProgress),
+            schema::ToolCallUpdateFields::new().status(schema::ToolCallStatus::InProgress),
         );
         return match mode {
             EditSessionMode::Edit => Ok(()),
@@ -1047,7 +1047,7 @@ async fn resolve_dirty_buffer(
              retrying."
                 .to_string();
             event_stream.update_fields(
-                acp::ToolCallUpdateFields::new().content(vec![error.clone().into()]),
+                schema::ToolCallUpdateFields::new().content(vec![error.clone().into()]),
             );
             return Err(error);
         }

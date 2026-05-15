@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
-use acp_thread::{AgentConnection, LoadError};
-use agent_servers::AcpConnection;
+use agent_thread::{AgentConnection, LoadError};
 use agent_servers::{AgentServer, AgentServerDelegate};
 use anyhow::Result;
 use collections::HashMap;
@@ -60,9 +59,9 @@ pub enum AgentConnectionEntryEvent {
 impl EventEmitter<AgentConnectionEntryEvent> for AgentConnectionEntry {}
 
 #[derive(Clone)]
-pub struct ActiveAcpConnection {
+pub struct ActiveAgentConnection {
     pub agent_id: project::AgentId,
-    pub connection: Rc<AcpConnection>,
+    pub connection: Rc<dyn AgentConnection>,
 }
 
 pub struct AgentConnectionStore {
@@ -104,18 +103,14 @@ impl AgentConnectionStore {
         }
     }
 
-    pub fn active_acp_connections(&self, cx: &App) -> Vec<ActiveAcpConnection> {
+    pub fn active_agent_connections(&self, cx: &App) -> Vec<ActiveAgentConnection> {
         self.entries
             .values()
             .filter_map(|entry| match entry.read(cx) {
-                AgentConnectionEntry::Connected(state) => state
-                    .connection
-                    .clone()
-                    .downcast::<AcpConnection>()
-                    .map(|connection| ActiveAcpConnection {
-                        agent_id: state.connection.agent_id(),
-                        connection,
-                    }),
+                AgentConnectionEntry::Connected(state) => Some(ActiveAgentConnection {
+                    agent_id: state.connection.agent_id(),
+                    connection: state.connection.clone(),
+                }),
                 AgentConnectionEntry::Connecting { .. } | AgentConnectionEntry::Error { .. } => {
                     None
                 }

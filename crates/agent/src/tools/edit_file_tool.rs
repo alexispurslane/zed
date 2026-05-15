@@ -7,7 +7,7 @@ use super::edit_session::{
 };
 use crate::{AgentTool, Thread, ToolCallEventStream, ToolInput, ToolInputPayload};
 use action_log::ActionLog;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::Result;
 use futures::FutureExt as _;
 use gpui::{App, AsyncApp, Entity, Task, WeakEntity};
@@ -222,8 +222,8 @@ impl AgentTool for EditFileTool {
         true
     }
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Edit
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Edit
     }
 
     fn initial_title(
@@ -1209,9 +1209,9 @@ mod tests {
 
         event
             .response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
         authorize_task.await.unwrap();
@@ -1932,11 +1932,11 @@ mod tests {
         let _update = stream_rx.expect_update_fields().await;
         let auth = stream_rx.expect_authorization().await;
         let content = auth.tool_call.fields.content.as_deref().unwrap_or(&[]);
-        let acp::ToolCallContent::Content(text) = content.first().expect("expected message body")
+        let schema::ToolCallContent::Content(text) = content.first().expect("expected message body")
         else {
             panic!("expected text body, got: {:?}", content.first());
         };
-        let acp::ContentBlock::Text(text) = &text.content else {
+        let schema::ContentBlock::Text(text) = &text.content else {
             panic!("expected text body, got: {:?}", text.content);
         };
         assert!(
@@ -1947,9 +1947,9 @@ mod tests {
             text.text,
         );
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("save"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("save"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -2024,9 +2024,9 @@ mod tests {
         let _update = stream_rx.expect_update_fields().await;
         let auth = stream_rx.expect_authorization().await;
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("discard"),
-                acp::PermissionOptionKind::RejectOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("discard"),
+                schema::PermissionOptionKind::RejectOnce,
             ))
             .unwrap();
 
@@ -2113,7 +2113,7 @@ mod tests {
         // tool dismisses the prompt by transitioning the tool call status
         // to `InProgress`.
         let dismiss = stream_rx.expect_update_fields().await;
-        assert_eq!(dismiss.status, Some(acp::ToolCallStatus::InProgress));
+        assert_eq!(dismiss.status, Some(schema::ToolCallStatus::InProgress));
         drop(auth);
 
         let EditFileToolOutput::Success { new_text, .. } = task.await.unwrap() else {

@@ -6,8 +6,8 @@ use std::sync::atomic::AtomicBool;
 
 use crate::DEFAULT_THREAD_TITLE;
 use crate::thread_metadata_store::{ThreadMetadata, ThreadMetadataStore};
-use acp_thread::MentionUri;
-use agent_client_protocol::schema as acp;
+use agent_thread::MentionUri;
+use agent_thread::schema;
 use anyhow::Result;
 use editor::{CompletionProvider, Editor, code_context_menus::COMPLETION_MENU_MAX_WIDTH};
 use futures::FutureExt as _;
@@ -276,7 +276,7 @@ impl Match {
 
 #[derive(Debug, Clone)]
 pub struct SessionMatch {
-    session_id: acp::SessionId,
+    session_id: schema::SessionId,
     title: SharedString,
 }
 
@@ -375,7 +375,7 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
     }
 
     fn completion_for_thread(
-        session_id: acp::SessionId,
+        session_id: schema::SessionId,
         title: Option<SharedString>,
         source_range: Range<Anchor>,
         recent: bool,
@@ -2004,7 +2004,7 @@ fn collect_session_matches(cx: &App) -> Vec<SessionMatch> {
     entries
         .into_iter()
         .map(|metadata| {
-            let info = acp_thread::AgentSessionInfo::from(metadata);
+            let info = agent_thread::AgentSessionInfo::from(metadata);
             SessionMatch {
                 session_id: info.session_id,
                 title: session_title(info.title),
@@ -2668,11 +2668,11 @@ mod tests {
     #[gpui::test]
     async fn test_filter_sessions_by_query(cx: &mut TestAppContext) {
         let alpha = SessionMatch {
-            session_id: acp::SessionId::new("session-alpha"),
+            session_id: schema::SessionId::new("session-alpha"),
             title: "Alpha Session".into(),
         };
         let beta = SessionMatch {
-            session_id: acp::SessionId::new("session-beta"),
+            session_id: schema::SessionId::new("session-beta"),
             title: "Beta Session".into(),
         };
 

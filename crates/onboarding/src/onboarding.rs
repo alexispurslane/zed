@@ -218,7 +218,7 @@ impl Onboarding {
     fn new(workspace: &Workspace, cx: &mut App) -> Entity<Self> {
         let font_family_cache = theme::FontFamilyCache::global(cx);
 
-        let installed_agents = cx
+        let _installed_agents = cx
             .global::<SettingsStore>()
             .get::<AllAgentServersSettings>(None)
             .clone();
@@ -242,11 +242,7 @@ impl Onboarding {
                 Some(Plan::XenomorphicFree) | None => "free",
             }
         };
-        let agents_installed = basics_page::FEATURED_AGENT_IDS
-            .iter()
-            .filter(|id| installed_agents.contains_key(**id))
-            .copied()
-            .collect::<Vec<_>>();
+        let agents_installed: Vec<&str> = Vec::new();
         telemetry::event!(
             "Welcome Agent Setup Viewed",
             zed_agent = zed_agent_state,

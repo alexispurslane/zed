@@ -4,7 +4,7 @@ use super::edit_session::{
 };
 use crate::{AgentTool, Thread, ToolCallEventStream, ToolInput, ToolInputPayload};
 use action_log::ActionLog;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use futures::FutureExt as _;
 use gpui::{App, AsyncApp, Entity, Task, WeakEntity};
 use language::LanguageRegistry;
@@ -207,8 +207,8 @@ impl AgentTool for WriteFileTool {
         true
     }
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Edit
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Edit
     }
 
     fn initial_title(
@@ -265,7 +265,7 @@ mod tests {
         AgentTool, ContextServerRegistry, Templates, Thread, ToolCallEventStream, ToolInput,
         ToolInputSender,
     };
-    use acp_thread::Diff;
+    use agent_thread::Diff;
     use action_log::ActionLog;
     use fs::Fs as _;
     use futures::StreamExt as _;
@@ -1131,11 +1131,11 @@ mod tests {
 
         // Verify the prompt is the overwrite-mode prompt.
         let content = auth.tool_call.fields.content.as_deref().unwrap_or(&[]);
-        let acp::ToolCallContent::Content(text) = content.first().expect("expected message body")
+        let schema::ToolCallContent::Content(text) = content.first().expect("expected message body")
         else {
             panic!("expected text body, got: {:?}", content.first());
         };
-        let acp::ContentBlock::Text(text) = &text.content else {
+        let schema::ContentBlock::Text(text) = &text.content else {
             panic!("expected text body, got: {:?}", text.content);
         };
         assert!(
@@ -1146,7 +1146,7 @@ mod tests {
 
         // Verify both option ids are present (option_id is the stable contract).
         let option_ids: Vec<&str> = match &auth.options {
-            acp_thread::PermissionOptions::Flat(opts) => {
+            agent_thread::PermissionOptions::Flat(opts) => {
                 opts.iter().map(|o| o.option_id.0.as_ref()).collect()
             }
             other => panic!("expected flat options, got: {other:?}"),
@@ -1155,9 +1155,9 @@ mod tests {
         assert!(option_ids.contains(&"discard"), "options: {option_ids:?}");
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("discard"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("discard"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -1208,9 +1208,9 @@ mod tests {
         let _update = stream_rx.expect_update_fields().await;
         let auth = stream_rx.expect_authorization().await;
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("keep"),
-                acp::PermissionOptionKind::RejectOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("keep"),
+                schema::PermissionOptionKind::RejectOnce,
             ))
             .unwrap();
 
@@ -1279,7 +1279,7 @@ mod tests {
 
         // The prompt is dismissed by transitioning to InProgress.
         let dismiss = stream_rx.expect_update_fields().await;
-        assert_eq!(dismiss.status, Some(acp::ToolCallStatus::InProgress));
+        assert_eq!(dismiss.status, Some(schema::ToolCallStatus::InProgress));
         drop(auth);
 
         // The overwrite is cancelled with an error.

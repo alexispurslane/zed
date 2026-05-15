@@ -4,7 +4,7 @@ mod configure_context_server_tools_modal;
 mod manage_profiles_modal;
 mod tool_picker;
 
-use std::{ops::Range, rc::Rc, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use agent::ContextServerRegistry;
 use anyhow::Result;
@@ -1018,12 +1018,7 @@ impl AgentConfiguration {
             .menu({
                 move |window, cx| {
                     Some(ContextMenu::build(window, cx, |menu, _window, _cx| {
-                        menu.entry("Install from Registry", None, {
-                            |window, cx| {
-                                window.dispatch_action(Box::new(xenomorphic_actions::AcpRegistry), cx)
-                            }
-                        })
-                        .entry("Add Custom Agent", None, {
+                        menu.entry("Add Custom Agent", None, {
                             move |window, cx| {
                                 if let Some(workspace) = Workspace::for_window(window, cx) {
                                     let workspace = workspace.downgrade();
@@ -1126,7 +1121,6 @@ impl AgentConfiguration {
 
         let source_kind = match source {
             ExternalAgentSource::Extension => AiSettingItemSource::Extension,
-            ExternalAgentSource::Registry => AiSettingItemSource::Registry,
             ExternalAgentSource::Custom => AiSettingItemSource::Custom,
         };
 
@@ -1142,31 +1136,6 @@ impl AgentConfiguration {
                 connection_store.agent_version(&agent, cx),
             )
         };
-
-        let restart_button = matches!(
-            connection_status,
-            AgentConnectionStatus::Connected | AgentConnectionStatus::Connecting
-        )
-        .then(|| {
-            IconButton::new(
-                SharedString::from(format!("restart-{}", id)),
-                IconName::RotateCw,
-            )
-            .disabled(connection_status == AgentConnectionStatus::Connecting)
-            .icon_color(Color::Muted)
-            .icon_size(IconSize::Small)
-            .tooltip(Tooltip::text("Restart Agent Connection"))
-            .on_click(cx.listener({
-                let agent = agent.clone();
-                move |this, _, _window, cx| {
-                    let server: Rc<dyn agent_servers::AgentServer> =
-                        Rc::new(agent_servers::CustomAgentServer::new(agent.id()));
-                    this.agent_connection_store.update(cx, |store, cx| {
-                        store.restart_connection(agent.clone(), server, cx);
-                    });
-                }
-            }))
-        });
 
         let uninstall_button = match source {
             ExternalAgentSource::Extension => Some(
@@ -1189,34 +1158,6 @@ impl AgentConfiguration {
                     }
                 })),
             ),
-            ExternalAgentSource::Registry => {
-                let fs = self.fs.clone();
-                Some(
-                    IconButton::new(
-                        SharedString::from(format!("uninstall-{}", id)),
-                        IconName::Trash,
-                    )
-                    .icon_color(Color::Muted)
-                    .icon_size(IconSize::Small)
-                    .tooltip(Tooltip::text("Remove Registry Agent"))
-                    .on_click(cx.listener(move |_, _, _window, cx| {
-                        let agent_name = agent_server_name.clone();
-                        update_settings_file(fs.clone(), cx, move |settings, _| {
-                            let Some(agent_servers) = settings.agent_servers.as_mut() else {
-                                return;
-                            };
-                            if let Some(entry) = agent_servers.get(agent_name.0.as_ref())
-                                && matches!(
-                                    entry,
-                                    settings::CustomAgentServerSettings::Registry { .. }
-                                )
-                            {
-                                agent_servers.remove(agent_name.0.as_ref());
-                            }
-                        });
-                    })),
-                )
-            }
             ExternalAgentSource::Custom => {
                 let fs = self.fs.clone();
                 Some(
@@ -1256,7 +1197,6 @@ impl AgentConfiguration {
         AiSettingItem::new(id, display_name, status, source_kind)
             .icon(icon)
             .when_some(running_version, |this, version| this.detail_label(version))
-            .when_some(restart_button, |this, button| this.action(button))
             .when_some(uninstall_button, |this, button| this.action(button))
     }
 }

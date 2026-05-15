@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, rc::Rc, sync::Arc};
 
-use acp_thread::{AgentModelIcon, AgentModelInfo, AgentModelList, AgentModelSelector};
-use agent_client_protocol::schema as acp;
+use agent_thread::{AgentModelIcon, AgentModelInfo, AgentModelList, AgentModelSelector};
+use agent_thread::schema;
 use agent_servers::AgentServer;
 
 use anyhow::Result;
@@ -48,6 +48,7 @@ enum ModelPickerEntry {
     Model(AgentModelInfo, bool),
 }
 
+#[allow(dead_code)]
 pub struct ModelPickerDelegate {
     selector: Rc<dyn AgentModelSelector>,
     agent_server: Rc<dyn AgentServer>,
@@ -57,7 +58,7 @@ pub struct ModelPickerDelegate {
     selected_index: usize,
     selected_description: Option<(usize, SharedString, bool)>,
     selected_model: Option<AgentModelInfo>,
-    favorites: HashSet<acp::ModelId>,
+    favorites: HashSet<schema::ModelId>,
     _refresh_models_task: Task<()>,
     _settings_subscription: Subscription,
     focus_handle: FocusHandle,
@@ -107,18 +108,17 @@ impl ModelPickerDelegate {
             })
         };
 
-        let agent_server_for_subscription = agent_server.clone();
         let settings_subscription =
             cx.observe_global_in::<SettingsStore>(window, move |picker, window, cx| {
                 // Only refresh if the favorites actually changed to avoid redundant work
                 // when other settings are modified (e.g., user editing settings.json)
-                let new_favorites = agent_server_for_subscription.favorite_model_ids(cx);
+                let new_favorites = HashSet::default() /* external-agent removed */;
                 if new_favorites != picker.delegate.favorites {
                     picker.delegate.favorites = new_favorites;
                     picker.refresh(window, cx);
                 }
             });
-        let favorites = agent_server.favorite_model_ids(cx);
+        let favorites = HashSet::default() /* external-agent removed */;
 
         Self {
             selector,
@@ -278,18 +278,7 @@ impl PickerDelegate for ModelPickerDelegate {
             self.filtered_entries.get(self.selected_index)
         {
             if window.modifiers().secondary() {
-                let default_model = self.agent_server.default_model(cx);
-                let is_default = default_model.as_ref() == Some(&model_info.id);
-
-                self.agent_server.set_default_model(
-                    if is_default {
-                        None
-                    } else {
-                        Some(model_info.id.clone())
-                    },
-                    self.fs.clone(),
-                    cx,
-                );
+                // external-agent default_model/set_default_model removed
             }
 
             self.selector
@@ -322,23 +311,12 @@ impl PickerDelegate for ModelPickerDelegate {
             }
             ModelPickerEntry::Model(model_info, is_favorite) => {
                 let is_selected = Some(model_info) == self.selected_model.as_ref();
-                let default_model = self.agent_server.default_model(cx);
-                let is_default = default_model.as_ref() == Some(&model_info.id);
+                let is_default = false; // external-agent default_model removed
 
                 let is_favorite = *is_favorite;
                 let handle_action_click = {
-                    let model_id = model_info.id.clone();
-                    let fs = self.fs.clone();
-                    let agent_server = self.agent_server.clone();
-
-                    cx.listener(move |_, _, _, cx| {
-                        agent_server.toggle_favorite_model(
-                            model_id.clone(),
-                            !is_favorite,
-                            fs.clone(),
-                            cx,
-                        );
-                    })
+                    // external-agent toggle_favorite_model removed
+                    cx.listener(move |_, _, _, _cx| {})
                 };
 
                 let model_cost = model_info.cost.clone();
@@ -424,7 +402,7 @@ impl PickerDelegate for ModelPickerDelegate {
 
 fn info_list_to_picker_entries(
     model_list: AgentModelList,
-    favorites: &HashSet<acp::ModelId>,
+    favorites: &HashSet<schema::ModelId>,
 ) -> Vec<ModelPickerEntry> {
     let mut entries = Vec::new();
 
@@ -538,11 +516,11 @@ mod tests {
         AgentModelList::Grouped(IndexMap::from_iter(grouped_models.into_iter().map(
             |(group, models)| {
                 (
-                    acp_thread::AgentModelGroupName(group.to_string().into()),
+                    agent_thread::AgentModelGroupName(group.to_string().into()),
                     models
                         .into_iter()
-                        .map(|model| acp_thread::AgentModelInfo {
-                            id: acp::ModelId::new(model.to_string()),
+                        .map(|model| agent_thread::AgentModelInfo {
+                            id: schema::ModelId::new(model.to_string()),
                             name: model.to_string().into(),
                             description: None,
                             icon: None,
@@ -591,10 +569,10 @@ mod tests {
         }
     }
 
-    fn create_favorites(models: Vec<&str>) -> HashSet<acp::ModelId> {
+    fn create_favorites(models: Vec<&str>) -> HashSet<schema::ModelId> {
         models
             .into_iter()
-            .map(|m| acp::ModelId::new(m.to_string()))
+            .map(|m| schema::ModelId::new(m.to_string()))
             .collect()
     }
 
@@ -756,16 +734,16 @@ mod tests {
     #[gpui::test]
     fn test_flat_model_list_with_favorites(_cx: &mut TestAppContext) {
         let models = AgentModelList::Flat(vec![
-            acp_thread::AgentModelInfo {
-                id: acp::ModelId::new("zed/claude".to_string()),
+            agent_thread::AgentModelInfo {
+                id: schema::ModelId::new("zed/claude".to_string()),
                 name: "Claude".into(),
                 description: None,
                 icon: None,
                 is_latest: false,
                 cost: None,
             },
-            acp_thread::AgentModelInfo {
-                id: acp::ModelId::new("zed/gemini".to_string()),
+            agent_thread::AgentModelInfo {
+                id: schema::ModelId::new("zed/gemini".to_string()),
                 name: "Gemini".into(),
                 description: None,
                 icon: None,
@@ -790,7 +768,7 @@ mod tests {
 
     #[gpui::test]
     fn test_favorites_count_returns_correct_count(_cx: &mut TestAppContext) {
-        let empty_favorites: HashSet<acp::ModelId> = HashSet::default();
+        let empty_favorites: HashSet<schema::ModelId> = HashSet::default();
         assert_eq!(empty_favorites.len(), 0);
 
         let one_favorite = create_favorites(vec!["model-a"]);
@@ -806,16 +784,16 @@ mod tests {
     #[gpui::test]
     fn test_is_favorite_flag_set_correctly_in_entries(_cx: &mut TestAppContext) {
         let models = AgentModelList::Flat(vec![
-            acp_thread::AgentModelInfo {
-                id: acp::ModelId::new("favorite-model".to_string()),
+            agent_thread::AgentModelInfo {
+                id: schema::ModelId::new("favorite-model".to_string()),
                 name: "Favorite".into(),
                 description: None,
                 icon: None,
                 is_latest: false,
                 cost: None,
             },
-            acp_thread::AgentModelInfo {
-                id: acp::ModelId::new("regular-model".to_string()),
+            agent_thread::AgentModelInfo {
+                id: schema::ModelId::new("regular-model".to_string()),
                 name: "Regular".into(),
                 description: None,
                 icon: None,

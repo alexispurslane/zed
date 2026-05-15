@@ -10,7 +10,7 @@ use crate::thread_metadata_store::{
 use crate::{Agent, ArchiveSelectedThread, DEFAULT_THREAD_TITLE, RemoveSelectedThread};
 
 use agent::ThreadStore;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::AgentSettings;
 use chrono::{DateTime, Datelike as _, Local, NaiveDate, TimeDelta, Utc};
 use collections::HashMap;
@@ -132,7 +132,6 @@ pub enum ThreadsArchiveViewEvent {
     Close,
     Activate { thread: ThreadMetadata },
     CancelRestore { thread_id: ThreadId },
-    Import,
 }
 
 impl EventEmitter<ThreadsArchiveViewEvent> for ThreadsArchiveView {}
@@ -800,7 +799,7 @@ impl ThreadsArchiveView {
     fn delete_thread(
         &mut self,
         thread_id: ThreadId,
-        session_id: Option<acp::SessionId>,
+        session_id: Option<schema::SessionId>,
         agent: AgentId,
         cx: &mut Context<Self>,
     ) {
@@ -961,14 +960,6 @@ impl ThreadsArchiveView {
             .child(
                 h_flex()
                     .gap_1()
-                    .child(
-                        IconButton::new("thread-import", IconName::Download)
-                            .icon_size(IconSize::Small)
-                            .tooltip(Tooltip::text("Import Threads"))
-                            .on_click(cx.listener(|_this, _, _, cx| {
-                                cx.emit(ThreadsArchiveViewEvent::Import);
-                            })),
-                    )
                     .child(
                         IconButton::new("filter-archived-only", IconName::Archive)
                             .icon_size(IconSize::Small)

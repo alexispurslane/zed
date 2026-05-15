@@ -1,4 +1,4 @@
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::Result;
 use futures::FutureExt as _;
 use gpui::{App, Entity, SharedString, Task};
@@ -71,8 +71,8 @@ impl AgentTool for TerminalTool {
 
     const NAME: &'static str = "terminal";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Execute
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Execute
     }
 
     fn initial_title(
@@ -120,8 +120,8 @@ impl AgentTool for TerminalTool {
                 .map_err(|e| e.to_string())?;
 
             let terminal_id = terminal.id(cx).map_err(|e| e.to_string())?;
-            event_stream.update_fields(acp::ToolCallUpdateFields::new().content(vec![
-                acp::ToolCallContent::Terminal(acp::Terminal::new(terminal_id)),
+            event_stream.update_fields(schema::ToolCallUpdateFields::new().content(vec![
+                schema::ToolCallContent::Terminal(schema::Terminal::new(terminal_id)),
             ]));
 
             let timeout = input.timeout_ms.map(Duration::from_millis);
@@ -183,7 +183,7 @@ impl AgentTool for TerminalTool {
 }
 
 fn process_content(
-    output: acp::TerminalOutputResponse,
+    output: schema::TerminalOutputResponse,
     command: &str,
     timed_out: bool,
     user_stopped: bool,
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_process_content_user_stopped() {
-        let output = acp::TerminalOutputResponse::new("partial output".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("partial output".to_string(), false);
 
         let result = process_content(output, "cargo build", false, true);
 
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn test_process_content_user_stopped_empty_output() {
-        let output = acp::TerminalOutputResponse::new("".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("".to_string(), false);
 
         let result = process_content(output, "cargo build", false, true);
 
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_process_content_timed_out() {
-        let output = acp::TerminalOutputResponse::new("build output here".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("build output here".to_string(), false);
 
         let result = process_content(output, "cargo build", true, false);
 
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_process_content_timed_out_with_empty_output() {
-        let output = acp::TerminalOutputResponse::new("".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("".to_string(), false);
 
         let result = process_content(output, "sleep 1000", true, false);
 
@@ -509,8 +509,8 @@ mod tests {
 
     #[test]
     fn test_process_content_with_success() {
-        let output = acp::TerminalOutputResponse::new("success output".to_string(), false)
-            .exit_status(acp::TerminalExitStatus::new().exit_code(0));
+        let output = schema::TerminalOutputResponse::new("success output".to_string(), false)
+            .exit_status(schema::TerminalExitStatus::new().exit_code(0));
 
         let result = process_content(output, "echo hello", false, false);
 
@@ -528,8 +528,8 @@ mod tests {
 
     #[test]
     fn test_process_content_with_success_empty_output() {
-        let output = acp::TerminalOutputResponse::new("".to_string(), false)
-            .exit_status(acp::TerminalExitStatus::new().exit_code(0));
+        let output = schema::TerminalOutputResponse::new("".to_string(), false)
+            .exit_status(schema::TerminalExitStatus::new().exit_code(0));
 
         let result = process_content(output, "true", false, false);
 
@@ -542,8 +542,8 @@ mod tests {
 
     #[test]
     fn test_process_content_with_error_exit() {
-        let output = acp::TerminalOutputResponse::new("error output".to_string(), false)
-            .exit_status(acp::TerminalExitStatus::new().exit_code(1));
+        let output = schema::TerminalOutputResponse::new("error output".to_string(), false)
+            .exit_status(schema::TerminalExitStatus::new().exit_code(1));
 
         let result = process_content(output, "false", false, false);
 
@@ -561,8 +561,8 @@ mod tests {
 
     #[test]
     fn test_process_content_with_error_exit_empty_output() {
-        let output = acp::TerminalOutputResponse::new("".to_string(), false)
-            .exit_status(acp::TerminalExitStatus::new().exit_code(1));
+        let output = schema::TerminalOutputResponse::new("".to_string(), false)
+            .exit_status(schema::TerminalExitStatus::new().exit_code(1));
 
         let result = process_content(output, "false", false, false);
 
@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn test_process_content_unexpected_termination() {
-        let output = acp::TerminalOutputResponse::new("some output".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("some output".to_string(), false);
 
         let result = process_content(output, "some_command", false, false);
 
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_process_content_unexpected_termination_empty_output() {
-        let output = acp::TerminalOutputResponse::new("".to_string(), false);
+        let output = schema::TerminalOutputResponse::new("".to_string(), false);
 
         let result = process_content(output, "some_command", false, false);
 
@@ -668,7 +668,7 @@ mod tests {
             !matches!(
                 rx.try_recv(),
                 Ok(Ok(crate::ThreadEvent::ToolCallUpdate(
-                    acp_thread::ToolCallUpdate::UpdateFields(_)
+                    agent_thread::ToolCallUpdate::UpdateFields(_)
                 )))
             ),
             "invalid command should not emit a terminal card update"
@@ -719,7 +719,7 @@ mod tests {
             update.content.iter().any(|blocks| {
                 blocks
                     .iter()
-                    .any(|content| matches!(content, acp::ToolCallContent::Terminal(_)))
+                    .any(|content| matches!(content, schema::ToolCallContent::Terminal(_)))
             }),
             "expected terminal content update in unconditional allow-all mode"
         );
@@ -849,7 +849,7 @@ mod tests {
             update.content.iter().any(|blocks| {
                 blocks
                     .iter()
-                    .any(|content| matches!(content, acp::ToolCallContent::Terminal(_)))
+                    .any(|content| matches!(content, schema::ToolCallContent::Terminal(_)))
             }),
             "expected terminal content update for matching env-prefixed allow rule"
         );
@@ -1196,7 +1196,7 @@ mod tests {
             update.content.iter().any(|blocks| {
                 blocks
                     .iter()
-                    .any(|content| matches!(content, acp::ToolCallContent::Terminal(_)))
+                    .any(|content| matches!(content, schema::ToolCallContent::Terminal(_)))
             }),
             "terminal-specific allow-all should bypass substitution rejection"
         );
@@ -1334,7 +1334,7 @@ mod tests {
             update.content.iter().any(|blocks| {
                 blocks
                     .iter()
-                    .any(|content| matches!(content, acp::ToolCallContent::Terminal(_)))
+                    .any(|content| matches!(content, schema::ToolCallContent::Terminal(_)))
             }),
             "multi-assignment pattern should match and produce terminal content"
         );
@@ -1411,7 +1411,7 @@ mod tests {
             update.content.iter().any(|blocks| {
                 blocks
                     .iter()
-                    .any(|content| matches!(content, acp::ToolCallContent::Terminal(_)))
+                    .any(|content| matches!(content, schema::ToolCallContent::Terminal(_)))
             }),
             "quoted whitespace value should match pattern with quoted form"
         );

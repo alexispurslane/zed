@@ -1,14 +1,13 @@
-use crate::AcpThread;
-use agent_client_protocol::schema as acp;
+use crate::schema;
+use crate::thread::AgentThread;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use collections::{HashMap, IndexMap};
+use collections::IndexMap;
 use gpui::{Entity, SharedString, Task};
 use language_model::LanguageModelProviderId;
 use project::{AgentId, Project};
 use serde::{Deserialize, Serialize};
 use std::{any::Any, error::Error, fmt, path::PathBuf, rc::Rc, sync::Arc};
-use task::{HideStrategy, SpawnInTerminal, TaskId};
 use ui::{App, IconName};
 use util::path_list::PathList;
 use uuid::Uuid;
@@ -19,28 +18,6 @@ pub struct UserMessageId(Arc<str>);
 impl UserMessageId {
     pub fn new() -> Self {
         Self(Uuid::new_v4().to_string().into())
-    }
-}
-
-pub fn build_terminal_auth_task(
-    id: String,
-    label: String,
-    command: String,
-    args: Vec<String>,
-    env: HashMap<String, String>,
-) -> SpawnInTerminal {
-    SpawnInTerminal {
-        id: TaskId(id),
-        full_label: label.clone(),
-        label: label.clone(),
-        command: Some(command),
-        args,
-        command_label: label,
-        env,
-        use_new_terminal: true,
-        allow_concurrent_runs: true,
-        hide: HideStrategy::Always,
-        ..Default::default()
     }
 }
 
@@ -58,7 +35,7 @@ pub trait AgentConnection {
         project: Entity<Project>,
         _work_dirs: PathList,
         cx: &mut App,
-    ) -> Task<Result<Entity<AcpThread>>>;
+    ) -> Task<Result<Entity<AgentThread>>>;
 
     /// Whether this agent supports loading existing sessions.
     fn supports_load_session(&self) -> bool {
@@ -68,12 +45,12 @@ pub trait AgentConnection {
     /// Load an existing session by ID.
     fn load_session(
         self: Rc<Self>,
-        _session_id: acp::SessionId,
+        _session_id: schema::SessionId,
         _project: Entity<Project>,
         _work_dirs: PathList,
         _title: Option<SharedString>,
         _cx: &mut App,
-    ) -> Task<Result<Entity<AcpThread>>> {
+    ) -> Task<Result<Entity<AgentThread>>> {
         Task::ready(Err(anyhow::Error::msg("Loading sessions is not supported")))
     }
 
@@ -85,64 +62,28 @@ pub trait AgentConnection {
     /// Close an existing session. Allows the agent to free the session from memory.
     fn close_session(
         self: Rc<Self>,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         _cx: &mut App,
     ) -> Task<Result<()>> {
         Task::ready(Err(anyhow::Error::msg("Closing sessions is not supported")))
     }
 
-    /// Whether this agent supports resuming existing sessions without loading history.
-    fn supports_resume_session(&self) -> bool {
-        false
-    }
-
-    /// Resume an existing session by ID without replaying previous messages.
-    fn resume_session(
-        self: Rc<Self>,
-        _session_id: acp::SessionId,
-        _project: Entity<Project>,
-        _work_dirs: PathList,
-        _title: Option<SharedString>,
-        _cx: &mut App,
-    ) -> Task<Result<Entity<AcpThread>>> {
-        Task::ready(Err(anyhow::Error::msg(
-            "Resuming sessions is not supported",
-        )))
-    }
-
-    /// Whether this agent supports showing session history.
-    fn supports_session_history(&self) -> bool {
-        self.supports_load_session() || self.supports_resume_session()
-    }
-
-    fn auth_methods(&self) -> &[acp::AuthMethod];
-
-    fn terminal_auth_task(
-        &self,
-        _method: &acp::AuthMethodId,
-        _cx: &App,
-    ) -> Option<Task<Result<SpawnInTerminal>>> {
-        None
-    }
-
-    fn authenticate(&self, method: acp::AuthMethodId, cx: &mut App) -> Task<Result<()>>;
-
     fn prompt(
         &self,
         user_message_id: UserMessageId,
-        params: acp::PromptRequest,
+        params: schema::PromptRequest,
         cx: &mut App,
-    ) -> Task<Result<acp::PromptResponse>>;
+    ) -> Task<Result<schema::PromptResponse>>;
 
-    fn retry(&self, _session_id: &acp::SessionId, _cx: &App) -> Option<Rc<dyn AgentSessionRetry>> {
+    fn retry(&self, _session_id: &schema::SessionId, _cx: &App) -> Option<Rc<dyn AgentSessionRetry>> {
         None
     }
 
-    fn cancel(&self, session_id: &acp::SessionId, cx: &mut App);
+    fn cancel(&self, session_id: &schema::SessionId, cx: &mut App);
 
     fn truncate(
         &self,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         _cx: &App,
     ) -> Option<Rc<dyn AgentSessionTruncate>> {
         None
@@ -150,7 +91,7 @@ pub trait AgentConnection {
 
     fn set_title(
         &self,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         _cx: &App,
     ) -> Option<Rc<dyn AgentSessionSetTitle>> {
         None
@@ -160,7 +101,7 @@ pub trait AgentConnection {
     ///
     /// If the agent does not support model selection, returns [None].
     /// This allows sharing the selector in UI components.
-    fn model_selector(&self, _session_id: &acp::SessionId) -> Option<Rc<dyn AgentModelSelector>> {
+    fn model_selector(&self, _session_id: &schema::SessionId) -> Option<Rc<dyn AgentModelSelector>> {
         None
     }
 
@@ -170,7 +111,7 @@ pub trait AgentConnection {
 
     fn session_modes(
         &self,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         _cx: &App,
     ) -> Option<Rc<dyn AgentSessionModes>> {
         None
@@ -178,7 +119,7 @@ pub trait AgentConnection {
 
     fn session_config_options(
         &self,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         _cx: &App,
     ) -> Option<Rc<dyn AgentSessionConfigOptions>> {
         None
@@ -202,7 +143,7 @@ pub trait AgentSessionTruncate {
 }
 
 pub trait AgentSessionRetry {
-    fn run(&self, cx: &mut App) -> Task<Result<acp::PromptResponse>>;
+    fn run(&self, cx: &mut App) -> Task<Result<schema::PromptResponse>>;
 }
 
 pub trait AgentSessionSetTitle {
@@ -214,31 +155,31 @@ pub trait AgentTelemetry {
     /// storage with telemetry events.
     fn thread_data(
         &self,
-        session_id: &acp::SessionId,
+        session_id: &schema::SessionId,
         cx: &mut App,
     ) -> Task<Result<serde_json::Value>>;
 }
 
 pub trait AgentSessionModes {
-    fn current_mode(&self) -> acp::SessionModeId;
+    fn current_mode(&self) -> schema::SessionModeId;
 
-    fn all_modes(&self) -> Vec<acp::SessionMode>;
+    fn all_modes(&self) -> Vec<schema::SessionMode>;
 
-    fn set_mode(&self, mode: acp::SessionModeId, cx: &mut App) -> Task<Result<()>>;
+    fn set_mode(&self, mode: schema::SessionModeId, cx: &mut App) -> Task<Result<()>>;
 }
 
 pub trait AgentSessionConfigOptions {
     /// Get all current config options with their state
-    fn config_options(&self) -> Vec<acp::SessionConfigOption>;
+    fn config_options(&self) -> Vec<schema::SessionConfigOption>;
 
     /// Set a config option value
     /// Returns the full updated list of config options
     fn set_config_option(
         &self,
-        config_id: acp::SessionConfigId,
-        value: acp::SessionConfigValueId,
+        config_id: schema::SessionConfigId,
+        value: schema::SessionConfigValueId,
         cx: &mut App,
-    ) -> Task<Result<Vec<acp::SessionConfigOption>>>;
+    ) -> Task<Result<Vec<schema::SessionConfigOption>>>;
 
     /// Whenever the config options are updated the receiver will be notified.
     /// Optional for agents that don't update their config options dynamically.
@@ -251,14 +192,14 @@ pub trait AgentSessionConfigOptions {
 pub struct AgentSessionListRequest {
     pub cwd: Option<PathBuf>,
     pub cursor: Option<String>,
-    pub meta: Option<acp::Meta>,
+    pub meta: Option<schema::Meta>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AgentSessionListResponse {
     pub sessions: Vec<AgentSessionInfo>,
     pub next_cursor: Option<String>,
-    pub meta: Option<acp::Meta>,
+    pub meta: Option<schema::Meta>,
 }
 
 impl AgentSessionListResponse {
@@ -273,16 +214,16 @@ impl AgentSessionListResponse {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgentSessionInfo {
-    pub session_id: acp::SessionId,
+    pub session_id: schema::SessionId,
     pub work_dirs: Option<PathList>,
     pub title: Option<SharedString>,
     pub updated_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
-    pub meta: Option<acp::Meta>,
+    pub meta: Option<schema::Meta>,
 }
 
 impl AgentSessionInfo {
-    pub fn new(session_id: impl Into<acp::SessionId>) -> Self {
+    pub fn new(session_id: impl Into<schema::SessionId>) -> Self {
         Self {
             session_id: session_id.into(),
             work_dirs: None,
@@ -298,8 +239,8 @@ impl AgentSessionInfo {
 pub enum SessionListUpdate {
     Refresh,
     SessionInfo {
-        session_id: acp::SessionId,
-        update: acp::SessionInfoUpdate,
+        session_id: schema::SessionId,
+        update: schema::SessionInfoUpdate,
     },
 }
 
@@ -314,7 +255,7 @@ pub trait AgentSessionList {
         false
     }
 
-    fn delete_session(&self, _session_id: &acp::SessionId, _cx: &mut App) -> Task<Result<()>> {
+    fn delete_session(&self, _session_id: &schema::SessionId, _cx: &mut App) -> Task<Result<()>> {
         Task::ready(Err(anyhow::anyhow!("delete_session not supported")))
     }
 
@@ -393,7 +334,7 @@ pub trait AgentModelSelector: 'static {
     ///
     /// # Returns
     /// A task resolving to `Ok(())` on success or an error.
-    fn select_model(&self, model_id: acp::ModelId, cx: &mut App) -> Task<Result<()>>;
+    fn select_model(&self, model_id: schema::ModelId, cx: &mut App) -> Task<Result<()>>;
 
     /// Retrieves the currently selected model for a specific session (thread).
     ///
@@ -427,7 +368,7 @@ pub enum AgentModelIcon {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentModelInfo {
-    pub id: acp::ModelId,
+    pub id: schema::ModelId,
     pub name: SharedString,
     pub description: Option<SharedString>,
     pub icon: Option<AgentModelIcon>,
@@ -435,8 +376,8 @@ pub struct AgentModelInfo {
     pub cost: Option<SharedString>,
 }
 
-impl From<acp::ModelInfo> for AgentModelInfo {
-    fn from(info: acp::ModelInfo) -> Self {
+impl From<schema::ModelInfo> for AgentModelInfo {
+    fn from(info: schema::ModelInfo) -> Self {
         Self {
             id: info.model_id,
             name: info.name.into(),
@@ -472,8 +413,8 @@ impl AgentModelList {
 
 #[derive(Debug, Clone)]
 pub struct PermissionOptionChoice {
-    pub allow: acp::PermissionOption,
-    pub deny: acp::PermissionOption,
+    pub allow: schema::PermissionOption,
+    pub deny: schema::PermissionOption,
     pub sub_patterns: Vec<String>,
 }
 
@@ -486,18 +427,18 @@ impl PermissionOptionChoice {
     ///
     /// If the choice carries `sub_patterns`, they are attached as
     /// `SelectedPermissionParams::Terminal`.
-    pub fn build_outcome(&self, is_allow: bool) -> crate::SelectedPermissionOutcome {
+    pub fn build_outcome(&self, is_allow: bool) -> crate::thread::SelectedPermissionOutcome {
         let option = if is_allow { &self.allow } else { &self.deny };
 
         let params = if !self.sub_patterns.is_empty() {
-            Some(crate::SelectedPermissionParams::Terminal {
+            Some(crate::thread::SelectedPermissionParams::Terminal {
                 patterns: self.sub_patterns.clone(),
             })
         } else {
             None
         };
 
-        crate::SelectedPermissionOutcome::new(option.option_id.clone(), option.kind).params(params)
+        crate::thread::SelectedPermissionOutcome::new(option.option_id.clone(), option.kind).params(params)
     }
 }
 
@@ -514,7 +455,7 @@ pub struct PermissionPattern {
 
 #[derive(Debug, Clone)]
 pub enum PermissionOptions {
-    Flat(Vec<acp::PermissionOption>),
+    Flat(Vec<schema::PermissionOption>),
     Dropdown(Vec<PermissionOptionChoice>),
     DropdownWithPatterns {
         choices: Vec<PermissionOptionChoice>,
@@ -534,8 +475,8 @@ impl PermissionOptions {
 
     pub fn first_option_of_kind(
         &self,
-        kind: acp::PermissionOptionKind,
-    ) -> Option<&acp::PermissionOption> {
+        kind: schema::PermissionOptionKind,
+    ) -> Option<&schema::PermissionOption> {
         match self {
             PermissionOptions::Flat(options) => options.iter().find(|option| option.kind == kind),
             PermissionOptions::Dropdown(options) => options.iter().find_map(|choice| {
@@ -561,13 +502,13 @@ impl PermissionOptions {
         }
     }
 
-    pub fn allow_once_option_id(&self) -> Option<acp::PermissionOptionId> {
-        self.first_option_of_kind(acp::PermissionOptionKind::AllowOnce)
+    pub fn allow_once_option_id(&self) -> Option<schema::PermissionOptionId> {
+        self.first_option_of_kind(schema::PermissionOptionKind::AllowOnce)
             .map(|option| option.option_id.clone())
     }
 
-    pub fn deny_once_option_id(&self) -> Option<acp::PermissionOptionId> {
-        self.first_option_of_kind(acp::PermissionOptionKind::RejectOnce)
+    pub fn deny_once_option_id(&self) -> Option<schema::PermissionOptionId> {
+        self.first_option_of_kind(schema::PermissionOptionKind::RejectOnce)
             .map(|option| option.option_id.clone())
     }
 
@@ -584,7 +525,7 @@ impl PermissionOptions {
         &self,
         checked_indices: &[usize],
         is_allow: bool,
-    ) -> Option<crate::SelectedPermissionOutcome> {
+    ) -> Option<crate::thread::SelectedPermissionOutcome> {
         let PermissionOptions::DropdownWithPatterns {
             choices, patterns, ..
         } = self
@@ -615,8 +556,8 @@ impl PermissionOptions {
             &always_choice.deny
         };
 
-        let outcome = crate::SelectedPermissionOutcome::new(option.option_id.clone(), option.kind)
-            .params(Some(crate::SelectedPermissionParams::Terminal {
+        let outcome = crate::thread::SelectedPermissionOutcome::new(option.option_id.clone(), option.kind)
+            .params(Some(crate::thread::SelectedPermissionParams::Terminal {
                 patterns: checked_patterns,
             }));
         Some(outcome)
@@ -690,17 +631,17 @@ mod test_support {
 
     #[derive(Clone)]
     pub struct StubAgentConnection {
-        sessions: Arc<Mutex<HashMap<acp::SessionId, Session>>>,
-        permission_requests: HashMap<acp::ToolCallId, PermissionOptions>,
-        next_prompt_updates: Arc<Mutex<Vec<acp::SessionUpdate>>>,
+        sessions: Arc<Mutex<HashMap<schema::SessionId, Session>>>,
+        permission_requests: HashMap<schema::ToolCallId, PermissionOptions>,
+        next_prompt_updates: Arc<Mutex<Vec<schema::SessionUpdate>>>,
         supports_load_session: bool,
         agent_id: AgentId,
         telemetry_id: SharedString,
     }
 
     struct Session {
-        thread: WeakEntity<AcpThread>,
-        response_tx: Option<oneshot::Sender<acp::StopReason>>,
+        thread: WeakEntity<AgentThread>,
+        response_tx: Option<oneshot::Sender<schema::StopReason>>,
     }
 
     impl Default for StubAgentConnection {
@@ -721,13 +662,13 @@ mod test_support {
             }
         }
 
-        pub fn set_next_prompt_updates(&self, updates: Vec<acp::SessionUpdate>) {
+        pub fn set_next_prompt_updates(&self, updates: Vec<schema::SessionUpdate>) {
             *self.next_prompt_updates.lock() = updates;
         }
 
         pub fn with_permission_requests(
             mut self,
-            permission_requests: HashMap<acp::ToolCallId, PermissionOptions>,
+            permission_requests: HashMap<schema::ToolCallId, PermissionOptions>,
         ) -> Self {
             self.permission_requests = permission_requests;
             self
@@ -750,15 +691,15 @@ mod test_support {
 
         fn create_session(
             self: Rc<Self>,
-            session_id: acp::SessionId,
+            session_id: schema::SessionId,
             project: Entity<Project>,
             work_dirs: PathList,
             title: Option<SharedString>,
             cx: &mut gpui::App,
-        ) -> Entity<AcpThread> {
+        ) -> Entity<AgentThread> {
             let action_log = cx.new(|_| ActionLog::new(project.clone()));
             let thread = cx.new(|cx| {
-                AcpThread::new(
+                AgentThread::new(
                     None,
                     title,
                     Some(work_dirs),
@@ -767,7 +708,7 @@ mod test_support {
                     action_log,
                     session_id.clone(),
                     watch::Receiver::constant(
-                        acp::PromptCapabilities::new()
+                        schema::PromptCapabilities::new()
                             .image(true)
                             .audio(true)
                             .embedded_context(true),
@@ -787,8 +728,8 @@ mod test_support {
 
         pub fn send_update(
             &self,
-            session_id: acp::SessionId,
-            update: acp::SessionUpdate,
+            session_id: schema::SessionId,
+            update: schema::SessionUpdate,
             cx: &mut App,
         ) {
             assert!(
@@ -807,7 +748,7 @@ mod test_support {
                 .unwrap();
         }
 
-        pub fn end_turn(&self, session_id: acp::SessionId, stop_reason: acp::StopReason) {
+        pub fn end_turn(&self, session_id: schema::SessionId, stop_reason: schema::StopReason) {
             self.sessions
                 .lock()
                 .get_mut(&session_id)
@@ -829,13 +770,9 @@ mod test_support {
             self.telemetry_id.clone()
         }
 
-        fn auth_methods(&self) -> &[acp::AuthMethod] {
-            &[]
-        }
-
         fn model_selector(
             &self,
-            _session_id: &acp::SessionId,
+            _session_id: &schema::SessionId,
         ) -> Option<Rc<dyn AgentModelSelector>> {
             Some(self.model_selector_impl())
         }
@@ -845,8 +782,8 @@ mod test_support {
             project: Entity<Project>,
             work_dirs: PathList,
             cx: &mut gpui::App,
-        ) -> Task<gpui::Result<Entity<AcpThread>>> {
-            let session_id = acp::SessionId::new(StubSessionCounter::next(cx).to_string());
+        ) -> Task<gpui::Result<Entity<AgentThread>>> {
+            let session_id = schema::SessionId::new(StubSessionCounter::next(cx).to_string());
             let thread = self.create_session(session_id, project, work_dirs, None, cx);
             Task::ready(Ok(thread))
         }
@@ -857,12 +794,12 @@ mod test_support {
 
         fn load_session(
             self: Rc<Self>,
-            session_id: acp::SessionId,
+            session_id: schema::SessionId,
             project: Entity<Project>,
             work_dirs: PathList,
             title: Option<SharedString>,
             cx: &mut App,
-        ) -> Task<Result<Entity<AcpThread>>> {
+        ) -> Task<Result<Entity<AgentThread>>> {
             if !self.supports_load_session {
                 return Task::ready(Err(anyhow::Error::msg("Loading sessions is not supported")));
             }
@@ -871,20 +808,12 @@ mod test_support {
             Task::ready(Ok(thread))
         }
 
-        fn authenticate(
-            &self,
-            _method_id: acp::AuthMethodId,
-            _cx: &mut App,
-        ) -> Task<gpui::Result<()>> {
-            unimplemented!()
-        }
-
         fn prompt(
             &self,
             _id: UserMessageId,
-            params: acp::PromptRequest,
+            params: schema::PromptRequest,
             cx: &mut App,
-        ) -> Task<gpui::Result<acp::PromptResponse>> {
+        ) -> Task<gpui::Result<schema::PromptResponse>> {
             let mut sessions = self.sessions.lock();
             let Session {
                 thread,
@@ -896,13 +825,13 @@ mod test_support {
                 response_tx.replace(tx);
                 cx.spawn(async move |_| {
                     let stop_reason = rx.await?;
-                    Ok(acp::PromptResponse::new(stop_reason))
+                    Ok(schema::PromptResponse::new(stop_reason))
                 })
             } else {
                 for update in self.next_prompt_updates.lock().drain(..) {
                     let thread = thread.clone();
                     let update = update.clone();
-                    let permission_request = if let acp::SessionUpdate::ToolCall(tool_call) =
+                    let permission_request = if let schema::SessionUpdate::ToolCall(tool_call) =
                         &update
                         && let Some(options) = self.permission_requests.get(&tool_call.tool_call_id)
                     {
@@ -933,12 +862,12 @@ mod test_support {
 
                 cx.spawn(async move |_| {
                     try_join_all(tasks).await?;
-                    Ok(acp::PromptResponse::new(acp::StopReason::EndTurn))
+                    Ok(schema::PromptResponse::new(schema::StopReason::EndTurn))
                 })
             }
         }
 
-        fn cancel(&self, session_id: &acp::SessionId, _cx: &mut App) {
+        fn cancel(&self, session_id: &schema::SessionId, _cx: &mut App) {
             if let Some(end_turn_tx) = self
                 .sessions
                 .lock()
@@ -947,13 +876,13 @@ mod test_support {
                 .response_tx
                 .take()
             {
-                end_turn_tx.send(acp::StopReason::Cancelled).unwrap();
+                end_turn_tx.send(schema::StopReason::Cancelled).unwrap();
             }
         }
 
         fn set_title(
             &self,
-            _session_id: &acp::SessionId,
+            _session_id: &schema::SessionId,
             _cx: &App,
         ) -> Option<Rc<dyn AgentSessionSetTitle>> {
             Some(Rc::new(StubAgentSessionSetTitle))
@@ -961,7 +890,7 @@ mod test_support {
 
         fn truncate(
             &self,
-            _session_id: &acp::SessionId,
+            _session_id: &schema::SessionId,
             _cx: &App,
         ) -> Option<Rc<dyn AgentSessionTruncate>> {
             Some(Rc::new(StubAgentSessionEditor))
@@ -997,7 +926,7 @@ mod test_support {
         fn new() -> Self {
             Self {
                 selected_model: Arc::new(Mutex::new(AgentModelInfo {
-                    id: acp::ModelId::new("visual-test-model"),
+                    id: schema::ModelId::new("visual-test-model"),
                     name: "Visual Test Model".into(),
                     description: Some("A stub model for visual testing".into()),
                     icon: Some(AgentModelIcon::Named(ui::IconName::XenomorphicAssistant)),
@@ -1014,7 +943,7 @@ mod test_support {
             Task::ready(Ok(AgentModelList::Flat(vec![model])))
         }
 
-        fn select_model(&self, model_id: acp::ModelId, _cx: &mut App) -> Task<Result<()>> {
+        fn select_model(&self, model_id: schema::ModelId, _cx: &mut App) -> Task<Result<()>> {
             self.selected_model.lock().id = model_id;
             Task::ready(Ok(()))
         }

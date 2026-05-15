@@ -24,7 +24,6 @@ Zed's Agent Panel can be used via:
 
 - [Zed's hosted models](./subscription.md)
 - [connecting a non-Zed AI service via API key](./llm-providers.md)
-- using an [external agent](./external-agents.md) via ACP
 
 When using Zed's hosted models, we require assurances from our service providers that your user content won't be used for training models.
 

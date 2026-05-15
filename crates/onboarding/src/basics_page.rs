@@ -3,14 +3,12 @@ use std::time::Duration;
 
 use client::{Client, TelemetrySettings, UserStore, xenomorphic_urls};
 use cloud_api_types::Plan;
-use collections::HashMap;
 use fs::Fs;
 use gpui::{Action, Animation, AnimationExt, App, Entity, IntoElement, TaskExt, pulsating_between};
-use project::agent_server_store::AllAgentServersSettings;
 use project::project_settings::ProjectSettings;
-use project::{AgentRegistryStore, RegistryAgent};
+
 use settings::{
-    BaseKeymap, CustomAgentServerSettings, Settings, SettingsStore, update_settings_file,
+    BaseKeymap, Settings, update_settings_file,
 };
 use theme::{Appearance, SystemAppearance, ThemeRegistry};
 use theme_settings::{ThemeAppearanceMode, ThemeName, ThemeSelection, ThemeSettings};
@@ -528,61 +526,6 @@ fn render_import_settings_section(tab_index: &mut isize, cx: &mut App) -> impl I
         .child(h_flex().gap_1().child(vscode).child(cursor))
 }
 
-pub(crate) const FEATURED_AGENT_IDS: &[&str] =
-    &["claude-acp", "codex-acp", "github-copilot-cli", "cursor"];
-
-fn render_registry_agent_button(
-    agent: &RegistryAgent,
-    installed: bool,
-    cx: &mut App,
-) -> impl IntoElement {
-    let agent_id = agent.id().to_string();
-    let element_id = format!("{}-onboarding", agent_id);
-
-    let icon = match agent.icon_path() {
-        Some(icon_path) => Icon::from_external_svg(icon_path.clone()),
-        None => Icon::new(IconName::Sparkle),
-    }
-    .size(IconSize::XSmall)
-    .color(Color::Muted);
-
-    let fs = <dyn Fs>::global(cx);
-
-    let state_element = if installed {
-        Icon::new(IconName::Check)
-            .size(IconSize::Small)
-            .color(Color::Success)
-            .into_any_element()
-    } else {
-        Label::new("Install")
-            .size(LabelSize::XSmall)
-            .color(Color::Muted)
-            .into_any_element()
-    };
-
-    AgentSetupButton::new(element_id)
-        .icon(icon)
-        .name(agent.name().clone())
-        .state(state_element)
-        .disabled(installed)
-        .on_click(move |_, _, cx| {
-            telemetry::event!("Welcome Agent Install Clicked", agent = agent_id.as_str());
-            let agent_id = agent_id.clone();
-            update_settings_file(fs.clone(), cx, move |settings, _| {
-                let agent_servers = settings.agent_servers.get_or_insert_default();
-                agent_servers.entry(agent_id).or_insert_with(|| {
-                    CustomAgentServerSettings::Registry {
-                        env: Default::default(),
-                        default_mode: None,
-                        default_model: None,
-                        favorite_models: Vec::new(),
-                        default_config_options: HashMap::default(),
-                        favorite_config_option_values: HashMap::default(),
-                    }
-                });
-            });
-        })
-}
 
 fn render_zed_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl IntoElement {
     let client = Client::global(cx);
@@ -657,36 +600,10 @@ fn render_zed_agent_button(user_store: &Entity<UserStore>, cx: &mut App) -> impl
 }
 
 fn render_ai_section(user_store: &Entity<UserStore>, cx: &mut App) -> impl IntoElement {
-    let registry_agents = AgentRegistryStore::try_global(cx)
-        .map(|store| store.read(cx).agents().to_vec())
-        .unwrap_or_default();
-
-    let installed_agents = cx
-        .global::<SettingsStore>()
-        .get::<AllAgentServersSettings>(None)
-        .clone();
-
-    let column_count = 1 + FEATURED_AGENT_IDS.len() as u16;
-
-    let grid = FEATURED_AGENT_IDS.iter().fold(
-        div()
-            .w_full()
-            .mt_1p5()
-            .grid()
-            .grid_cols(column_count)
-            .gap_2()
-            .child(render_zed_agent_button(user_store, cx)),
-        |grid, agent_id| {
-            let Some(agent) = registry_agents
-                .iter()
-                .find(|a| a.id().as_ref() == *agent_id)
-            else {
-                return grid;
-            };
-            let is_installed = installed_agents.contains_key(*agent_id);
-            grid.child(render_registry_agent_button(agent, is_installed, cx))
-        },
-    );
+    let grid = div()
+        .w_full()
+        .mt_1p5()
+        .child(render_zed_agent_button(user_store, cx));
 
     v_flex()
         .gap_0p5()

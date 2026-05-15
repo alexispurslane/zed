@@ -1,5 +1,5 @@
 use action_log::ActionLog;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use anyhow::{Context as _, Result, anyhow};
 use futures::FutureExt as _;
 use gpui::{App, Entity, SharedString, Task};
@@ -81,8 +81,8 @@ impl AgentTool for ReadFileTool {
 
     const NAME: &'static str = "read_file";
 
-    fn kind() -> acp::ToolKind {
-        acp::ToolKind::Read
+    fn kind() -> schema::ToolKind {
+        schema::ToolKind::Read
     }
 
     fn initial_title(
@@ -207,8 +207,8 @@ impl AgentTool for ReadFileTool {
             let file_path = input.path.clone();
 
             cx.update(|_cx| {
-                event_stream.update_fields(acp::ToolCallUpdateFields::new().locations(vec![
-                    acp::ToolCallLocation::new(&abs_path)
+                event_stream.update_fields(schema::ToolCallUpdateFields::new().locations(vec![
+                    schema::ToolCallLocation::new(&abs_path)
                         .line(input.start_line.map(|line| line.saturating_sub(1))),
                 ]));
             });
@@ -235,9 +235,9 @@ impl AgentTool for ReadFileTool {
                     .context("processing image")
                     .map_err(tool_content_err)?;
 
-                event_stream.update_fields(acp::ToolCallUpdateFields::new().content(vec![
-                    acp::ToolCallContent::Content(acp::Content::new(acp::ContentBlock::Image(
-                        acp::ImageContent::new(language_model_image.source.clone(), "image/png"),
+                event_stream.update_fields(schema::ToolCallUpdateFields::new().content(vec![
+                    schema::ToolCallContent::Content(schema::Content::new(schema::ContentBlock::Image(
+                        schema::ImageContent::new(language_model_image.source.clone(), "image/png"),
                     ))),
                 ]));
 
@@ -340,8 +340,8 @@ impl AgentTool for ReadFileTool {
                         text,
                     }
                     .to_string();
-                    event_stream.update_fields(acp::ToolCallUpdateFields::new().content(vec![
-                        acp::ToolCallContent::Content(acp::Content::new(markdown)),
+                    event_stream.update_fields(schema::ToolCallUpdateFields::new().content(vec![
+                        schema::ToolCallContent::Content(schema::Content::new(markdown)),
                     ]));
                 }
             });
@@ -935,9 +935,9 @@ mod test {
         );
         authorization
             .response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 
@@ -1227,9 +1227,9 @@ mod test {
         );
 
         auth.response
-            .send(acp_thread::SelectedPermissionOutcome::new(
-                acp::PermissionOptionId::new("allow"),
-                acp::PermissionOptionKind::AllowOnce,
+            .send(agent_thread::SelectedPermissionOutcome::new(
+                schema::PermissionOptionId::new("allow"),
+                schema::PermissionOptionKind::AllowOnce,
             ))
             .unwrap();
 

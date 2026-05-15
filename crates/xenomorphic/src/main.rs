@@ -15,7 +15,7 @@ const _: () = assert!(
 );
 
 use agent::{SharedThread, ThreadStore};
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_ui::AgentPanel;
 use anyhow::{Context as _, Result};
 use clap::Parser;
@@ -696,7 +696,6 @@ fn main() {
             cx,
         );
         language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
-        acp_tools::init(cx);
         xenomorphic_app::telemetry_log::init(cx);
         xenomorphic_app::remote_debug::init(cx);
         edit_prediction_ui::init(cx);
@@ -705,11 +704,6 @@ fn main() {
         snippet_provider::init(cx);
         edit_prediction_registry::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         let prompt_builder = PromptBuilder::load(app_state.fs.clone(), stdout_is_a_pty(), cx);
-        project::AgentRegistryStore::init_global(
-            cx,
-            app_state.fs.clone(),
-            app_state.client.http_client(),
-        );
         agent_ui::init(
             app_state.fs.clone(),
             prompt_builder,
@@ -1047,7 +1041,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
 
                     let shared_thread = SharedThread::from_bytes(&response.thread_data)?;
                     let db_thread = shared_thread.to_db_thread();
-                    let session_id = acp::SessionId::new(session_id);
+                    let session_id = schema::SessionId::new(session_id);
 
                     let save_session_id = session_id.clone();
 

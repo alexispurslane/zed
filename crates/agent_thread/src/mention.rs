@@ -1,4 +1,4 @@
-use agent_client_protocol::schema as acp;
+use crate::schema;
 use anyhow::{Context as _, Result, bail};
 use file_icons::FileIcons;
 use prompt_store::{PromptId, UserPromptId};
@@ -34,7 +34,7 @@ pub enum MentionUri {
         line_range: RangeInclusive<u32>,
     },
     Thread {
-        id: acp::SessionId,
+        id: schema::SessionId,
         name: String,
     },
     Rule {
@@ -178,7 +178,7 @@ impl MentionUri {
                 if let Some(thread_id) = path.strip_prefix("/agent/thread/") {
                     let name = single_query_param(&url, "name")?.context("Missing thread name")?;
                     Ok(Self::Thread {
-                        id: acp::SessionId::new(thread_id),
+                        id: schema::SessionId::new(thread_id),
                         name,
                     })
                 } else if let Some(rule_id) = path.strip_prefix("/agent/rule/") {

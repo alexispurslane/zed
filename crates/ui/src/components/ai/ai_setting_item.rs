@@ -44,7 +44,6 @@ impl AiSettingItemStatus {
 pub enum AiSettingItemSource {
     Extension,
     Custom,
-    Registry,
 }
 
 impl AiSettingItemSource {
@@ -52,14 +51,12 @@ impl AiSettingItemSource {
         match self {
             Self::Extension => IconName::XenomorphicSrcExtension,
             Self::Custom => IconName::XenomorphicSrcCustom,
-            Self::Registry => IconName::AcpRegistry,
         }
     }
 
     fn tooltip_text(&self, label: &str) -> String {
         match self {
             Self::Extension => format!("{label} was installed from an extension."),
-            Self::Registry => format!("{label} was installed from the ACP registry."),
             Self::Custom => format!("{label} was configured manually."),
         }
     }
@@ -357,14 +354,14 @@ impl Component for AiSettingItem {
                     .into_any_element(),
             ),
             single_example(
-                "Registry agent (starting, animated)",
+                "Custom agent (starting, animated)",
                 container()
                     .child(
                         AiSettingItem::new(
                             "reg-agent",
                             "Devin Agent",
                             AiSettingItemStatus::Starting,
-                            AiSettingItemSource::Registry,
+                            AiSettingItemSource::Custom,
                         )
                         .icon(
                             Icon::new(IconName::XenomorphicAssistant)

@@ -1,8 +1,8 @@
 mod thread_switcher;
 
-use acp_thread::ThreadStatus;
+use agent_thread::ThreadStatus;
 use action_log::DiffStats;
-use agent_client_protocol::schema as acp;
+use agent_thread::schema;
 use agent_settings::AgentSettings;
 use agent_ui::thread_metadata_store::{
     ThreadMetadata, ThreadMetadataStore, WorktreePaths, worktree_info_from_thread_paths,
@@ -13,9 +13,9 @@ use agent_ui::threads_archive_view::{
     fuzzy_match_positions,
 };
 use agent_ui::{
-    AcpThreadImportOnboarding, Agent, AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo,
+    Agent, AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo,
     ArchiveSelectedThread, CrossChannelImportOnboarding, DEFAULT_THREAD_TITLE, NewThread,
-    TerminalId, ThreadId, ThreadImportModal, channels_with_threads,
+    TerminalId, ThreadId, channels_with_threads,
     import_threads_from_other_channels,
 };
 use chrono::{DateTime, Utc};
@@ -33,7 +33,7 @@ use itertools::Itertools;
 use menu::{
     Cancel, Confirm, SelectChild, SelectFirst, SelectLast, SelectNext, SelectParent, SelectPrevious,
 };
-use project::{AgentId, AgentRegistryStore, Event as ProjectEvent, WorktreeId};
+use project::{AgentId, Event as ProjectEvent, WorktreeId};
 use recent_projects::sidebar_recent_projects::SidebarRecentProjects;
 use remote::{RemoteConnectionOptions, same_remote_connection_identity};
 use ui::utils::platform_title_bar_height;
@@ -128,7 +128,7 @@ enum ActiveEntry {
         /// Stable remote identifier, used for matching when thread_id
         /// differs (e.g. after cross-window activation creates a new
         /// local ThreadId).
-        session_id: Option<acp::SessionId>,
+        session_id: Option<schema::SessionId>,
         workspace: Entity<Workspace>,
     },
     Terminal {
@@ -180,7 +180,7 @@ impl ActiveEntry {
 
 #[derive(Clone, Debug)]
 struct ActiveThreadInfo {
-    session_id: acp::SessionId,
+    session_id: schema::SessionId,
     title: SharedString,
     status: AgentThreadStatus,
     icon: IconName,
@@ -326,7 +326,7 @@ impl ActivatableEntry {
 
 #[cfg(test)]
 impl ListEntry {
-    fn session_id(&self) -> Option<&acp::SessionId> {
+    fn session_id(&self) -> Option<&schema::SessionId> {
         match self {
             ListEntry::Thread(thread_entry) => thread_entry.metadata.session_id.as_ref(),
             ListEntry::Terminal(_) | ListEntry::ProjectHeader { .. } => None,
@@ -1106,7 +1106,7 @@ impl Sidebar {
 
         let previous = mem::take(&mut self.contents);
 
-        let old_statuses: HashMap<acp::SessionId, AgentThreadStatus> = previous
+        let old_statuses: HashMap<schema::SessionId, AgentThreadStatus> = previous
             .entries
             .iter()
             .filter_map(|entry| match entry {
@@ -1121,7 +1121,7 @@ impl Sidebar {
         let mut entries = Vec::new();
         let mut notified_threads = previous.notified_threads;
         let mut notified_terminals: HashSet<TerminalId> = HashSet::new();
-        let mut current_session_ids: HashSet<acp::SessionId> = HashSet::new();
+        let mut current_session_ids: HashSet<schema::SessionId> = HashSet::new();
         let mut current_thread_ids: HashSet<agent_ui::ThreadId> = HashSet::new();
         let mut project_header_indices: Vec<usize> = Vec::new();
         let mut seen_thread_ids: HashSet<agent_ui::ThreadId> = HashSet::new();
@@ -1360,7 +1360,7 @@ impl Sidebar {
 
                 // Build a lookup from live_infos and compute running/waiting
                 // counts in a single pass.
-                let mut live_info_by_session: HashMap<&acp::SessionId, &ActiveThreadInfo> =
+                let mut live_info_by_session: HashMap<&schema::SessionId, &ActiveThreadInfo> =
                     HashMap::new();
                 for info in &live_infos {
                     live_info_by_session.insert(&info.session_id, info);
@@ -3344,7 +3344,7 @@ impl Sidebar {
 
     fn archive_thread(
         &mut self,
-        session_id: &acp::SessionId,
+        session_id: &schema::SessionId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -3680,7 +3680,7 @@ impl Sidebar {
     /// initiated unarchive can cancel the task.
     fn archive_and_activate(
         &mut self,
-        _session_id: &acp::SessionId,
+        _session_id: &schema::SessionId,
         thread_id: Option<agent_ui::ThreadId>,
         neighbor: Option<&ActivatableEntry>,
         thread_folder_paths: Option<&PathList>,
@@ -3896,7 +3896,7 @@ impl Sidebar {
         entries: &mut Vec<ListEntry>,
         terminals: Vec<TerminalEntry>,
         threads: Vec<ThreadEntry>,
-        current_session_ids: &mut HashSet<acp::SessionId>,
+        current_session_ids: &mut HashSet<schema::SessionId>,
         current_thread_ids: &mut HashSet<agent_ui::ThreadId>,
     ) {
         fn display_time(entry: &ListEntry) -> DateTime<Utc> {
@@ -5019,79 +5019,6 @@ impl Sidebar {
             .map(|w| w.read(cx).workspace().clone())
     }
 
-    fn show_thread_import_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(active_workspace) = self.active_workspace(cx) else {
-            return;
-        };
-
-        let Some(agent_registry_store) = AgentRegistryStore::try_global(cx) else {
-            return;
-        };
-
-        let agent_server_store = active_workspace
-            .read(cx)
-            .project()
-            .read(cx)
-            .agent_server_store()
-            .clone();
-
-        let workspace_handle = active_workspace.downgrade();
-        let multi_workspace = self.multi_workspace.clone();
-
-        active_workspace.update(cx, |workspace, cx| {
-            workspace.toggle_modal(window, cx, |window, cx| {
-                ThreadImportModal::new(
-                    agent_server_store,
-                    agent_registry_store,
-                    workspace_handle.clone(),
-                    multi_workspace.clone(),
-                    window,
-                    cx,
-                )
-            });
-        });
-    }
-
-    fn should_render_acp_import_onboarding(&self, cx: &App) -> bool {
-        let has_external_agents = self
-            .active_workspace(cx)
-            .map(|ws| {
-                ws.read(cx)
-                    .project()
-                    .read(cx)
-                    .agent_server_store()
-                    .read(cx)
-                    .has_external_agents()
-            })
-            .unwrap_or(false);
-
-        has_external_agents && !AcpThreadImportOnboarding::dismissed(cx)
-    }
-
-    fn render_acp_import_onboarding(
-        &mut self,
-        verbose_labels: bool,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let on_import = cx.listener(|this, _, window, cx| {
-            this.show_archive(window, cx);
-            this.show_thread_import_modal(window, cx);
-        });
-        render_import_onboarding_banner(
-            "acp",
-            "Looking for threads from external agents?",
-            "Import threads from agents like Claude Agent, Codex, and more, whether started in Xenomorphic or another client.",
-            if verbose_labels {
-                "Import Threads from External Agents"
-            } else {
-                "Import Threads"
-            },
-            |_, _window, cx| AcpThreadImportOnboarding::dismiss(cx),
-            on_import,
-            cx,
-        )
-    }
-
     fn should_render_cross_channel_import_onboarding(&self, cx: &App) -> bool {
         !CrossChannelImportOnboarding::dismissed(cx) && !channels_with_threads(cx).is_empty()
     }
@@ -5198,9 +5125,6 @@ impl Sidebar {
                 }
                 ThreadsArchiveViewEvent::CancelRestore { thread_id } => {
                     this.restoring_tasks.remove(thread_id);
-                }
-                ThreadsArchiveViewEvent::Import => {
-                    this.show_thread_import_modal(window, cx);
                 }
             },
         );
@@ -5451,17 +5375,13 @@ impl Render for Sidebar {
                 SidebarView::Archive(archive_view) => this.child(archive_view.clone()),
             })
             .map(|this| {
-                let show_acp = self.should_render_acp_import_onboarding(cx);
                 let show_cross_channel = self.should_render_cross_channel_import_onboarding(cx);
 
                 let verbose = *self
                     .import_banners_use_verbose_labels
-                    .get_or_insert(show_acp && show_cross_channel);
+                    .get_or_insert(show_cross_channel);
 
-                this.when(show_acp, |this| {
-                    this.child(self.render_acp_import_onboarding(verbose, cx))
-                })
-                .when(show_cross_channel, |this| {
+                this.when(show_cross_channel, |this| {
                     this.child(self.render_cross_channel_import_onboarding(verbose, cx))
                 })
             })
