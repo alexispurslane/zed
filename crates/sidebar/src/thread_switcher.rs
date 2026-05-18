@@ -13,7 +13,6 @@ pub(crate) struct ThreadSwitcherEntry {
     pub session_id: schema::SessionId,
     pub title: SharedString,
     pub icon: IconName,
-    pub icon_from_external_svg: Option<SharedString>,
     pub status: AgentThreadStatus,
     pub metadata: ThreadMetadata,
     pub workspace: Entity<Workspace>,
@@ -240,9 +239,6 @@ impl Render for ThreadSwitcher {
                             .rounded(true)
                             .icon(entry.icon)
                             .status(entry.status)
-                            .when_some(entry.icon_from_external_svg.clone(), |this, svg| {
-                                this.custom_icon_from_external_svg(svg)
-                            })
                             .when_some(entry.project_name.clone(), |this, name| {
                                 this.project_name(name)
                             })

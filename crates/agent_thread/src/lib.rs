@@ -1,7 +1,4 @@
 //! Agent thread types — the core entity for agent conversation threads.
-//!
-//! This crate replaces the former `acp_thread` and `agent-client-protocol::schema`
-//! dependencies with locally-defined types.
 
 mod connection;
 mod diff;

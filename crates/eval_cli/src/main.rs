@@ -480,7 +480,7 @@ async fn run_agent(
         None
     };
 
-    let acp_usage = cx.update(|cx| {
+    let agent_usage = cx.update(|cx| {
         agent_thread
             .read(cx)
             .token_usage()
@@ -491,7 +491,7 @@ async fn run_agent(
             })
     });
 
-    let final_usage = cumulative_usage.or(acp_usage);
+    let final_usage = cumulative_usage.or(agent_usage);
 
     if let (Some(thread), Some(dir)) = (&thread, output_dir) {
         let markdown = thread.read_with(cx, |thread, _cx| thread.to_markdown());

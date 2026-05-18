@@ -37,7 +37,6 @@ pub struct ThreadItem {
     icon: IconName,
     icon_color: Option<Color>,
     icon_visible: bool,
-    custom_icon_from_external_svg: Option<SharedString>,
     title: SharedString,
     title_label_color: Option<Color>,
     title_generating: bool,
@@ -69,7 +68,6 @@ impl ThreadItem {
             icon: IconName::XenomorphicAgent,
             icon_color: None,
             icon_visible: true,
-            custom_icon_from_external_svg: None,
             title: title.into(),
             title_label_color: None,
             title_generating: false,
@@ -115,10 +113,6 @@ impl ThreadItem {
         self
     }
 
-    pub fn custom_icon_from_external_svg(mut self, svg: impl Into<SharedString>) -> Self {
-        self.custom_icon_from_external_svg = Some(svg.into());
-        self
-    }
 
     pub fn notified(mut self, notified: bool) -> Self {
         self.notified = notified;
@@ -269,13 +263,7 @@ impl RenderOnce for ThreadItem {
                 .when(!icon_visible, |this| this.invisible())
         };
         let icon_color = self.icon_color.unwrap_or(Color::Muted);
-        let agent_icon = if let Some(custom_svg) = self.custom_icon_from_external_svg {
-            Icon::from_external_svg(custom_svg)
-                .color(icon_color)
-                .size(IconSize::Small)
-        } else {
-            Icon::new(self.icon).color(icon_color).size(IconSize::Small)
-        };
+        let agent_icon = Icon::new(self.icon).color(icon_color).size(IconSize::Small);
 
         let status_icon = if self.status == AgentThreadStatus::Error {
             Some(

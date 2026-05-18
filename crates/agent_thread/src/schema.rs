@@ -1,8 +1,6 @@
-//! Local replacements for `agent_client_protocol::schema` types.
+//! Schema types for the agent thread protocol.
 //!
-//! These types were originally imported from the `agent-client-protocol` crate.
-//! Only the variants and fields actually used by the native agent and its UI
-//! are defined here. External-agent-only types have been dropped.
+//! These types are used internally by the native agent and its UI.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,7 +8,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 /// Trait for builder methods that accept `T`, `Option<T>`, or `&str` (when T=String).
-/// This mirrors the `IntoOption` pattern from `agent-client-protocol`.
 pub trait IntoOption<T> {
     fn into_option(self) -> Option<T>;
 }
@@ -155,7 +152,7 @@ impl SessionConfigValueId {
 // Meta type
 // ---------------------------------------------------------------------------
 
-/// Extension metadata map (`_meta` in the ACP spec).
+/// Extension metadata map (`_meta` field).
 pub type Meta = serde_json::Map<String, serde_json::Value>;
 
 // ---------------------------------------------------------------------------
@@ -475,7 +472,7 @@ impl ToolKind {
     }
 }
 
-/// Execution status of a tool call (ACP wire format).
+/// Execution status of a tool call.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCallStatus {
@@ -1727,10 +1724,6 @@ impl Error {
             err
         }
     }
-
-    pub fn auth_required() -> Self {
-        ErrorCode::AuthRequired.into()
-    }
 }
 
 impl std::fmt::Display for Error {
@@ -1761,7 +1754,6 @@ pub enum ErrorCode {
     MethodNotFound,  // -32601
     InvalidParams,   // -32602
     InternalError,   // -32603
-    AuthRequired,    // -32000
     ResourceNotFound, // -32002
     Other(i32),
 }
@@ -1774,7 +1766,6 @@ impl From<i32> for ErrorCode {
             -32601 => ErrorCode::MethodNotFound,
             -32602 => ErrorCode::InvalidParams,
             -32603 => ErrorCode::InternalError,
-            -32000 => ErrorCode::AuthRequired,
             -32002 => ErrorCode::ResourceNotFound,
             _ => ErrorCode::Other(value),
         }
@@ -1789,7 +1780,6 @@ impl From<ErrorCode> for i32 {
             ErrorCode::MethodNotFound => -32601,
             ErrorCode::InvalidParams => -32602,
             ErrorCode::InternalError => -32603,
-            ErrorCode::AuthRequired => -32000,
             ErrorCode::ResourceNotFound => -32002,
             ErrorCode::Other(v) => v,
         }
@@ -1804,7 +1794,6 @@ impl From<ErrorCode> for Error {
             ErrorCode::MethodNotFound => "Method not found",
             ErrorCode::InvalidParams => "Invalid params",
             ErrorCode::InternalError => "Internal error",
-            ErrorCode::AuthRequired => "Authentication required",
             ErrorCode::ResourceNotFound => "Resource not found",
             ErrorCode::Other(_) => "Unknown error",
         };
@@ -1826,7 +1815,6 @@ impl std::fmt::Display for ErrorCode {
             ErrorCode::MethodNotFound => write!(f, "Method not found"),
             ErrorCode::InvalidParams => write!(f, "Invalid params"),
             ErrorCode::InternalError => write!(f, "Internal error"),
-            ErrorCode::AuthRequired => write!(f, "Authentication required"),
             ErrorCode::ResourceNotFound => write!(f, "Resource not found"),
             ErrorCode::Other(_) => write!(f, "Unknown error"),
         }

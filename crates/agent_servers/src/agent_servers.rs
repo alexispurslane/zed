@@ -1,6 +1,6 @@
 use collections::HashMap;
 use http_client::read_no_proxy_from_env;
-use project::{AgentId, Project, agent_server_store::AgentServerStore};
+use project::{AgentId, Project};
 
 use agent_thread::AgentConnection;
 use anyhow::Result;
@@ -8,30 +8,15 @@ use gpui::{App, Entity, Task};
 use settings::Settings;
 use std::{any::Any, rc::Rc};
 
-#[allow(dead_code)]
-pub struct AgentServerDelegate {
-    store: Entity<AgentServerStore>,
-    new_version_available: Option<watch::Sender<Option<String>>>,
-}
-
-impl AgentServerDelegate {
-    pub fn new(
-        store: Entity<AgentServerStore>,
-        new_version_tx: Option<watch::Sender<Option<String>>>,
-    ) -> Self {
-        Self {
-            store,
-            new_version_available: new_version_tx,
-        }
-    }
-}
+/// Opaque delegate passed to `AgentServer::connect()`.
+pub struct AgentServerDelegate;
 
 pub trait AgentServer: Send {
     fn logo(&self) -> ui::IconName;
     fn agent_id(&self) -> AgentId;
     fn connect(
         &self,
-        delegate: AgentServerDelegate,
+        _delegate: AgentServerDelegate,
         project: Entity<Project>,
         cx: &mut App,
     ) -> Task<Result<Rc<dyn AgentConnection>>>;
@@ -68,43 +53,3 @@ pub fn load_proxy_env(cx: &App) -> HashMap<String, String> {
 
     env
 }
-
-/// An agent server that cannot connect, used for agent types that are no longer supported.
-pub struct UnsupportedAgentServer {
-    agent_id: AgentId,
-}
-
-impl UnsupportedAgentServer {
-    pub fn new(agent_id: AgentId) -> Self {
-        Self { agent_id }
-    }
-}
-
-impl AgentServer for UnsupportedAgentServer {
-    fn logo(&self) -> ui::IconName {
-        ui::IconName::Sparkle
-    }
-
-    fn agent_id(&self) -> AgentId {
-        self.agent_id.clone()
-    }
-
-    fn connect(
-        &self,
-        _delegate: AgentServerDelegate,
-        _project: Entity<Project>,
-        _cx: &mut App,
-    ) -> Task<Result<Rc<dyn AgentConnection>>> {
-        let agent_id = self.agent_id.clone();
-        Task::ready(Err(anyhow::anyhow!(
-            "External agent '{}' is no longer supported. Agent Client Protocol (ACP) has been removed.",
-            agent_id
-        )))
-    }
-
-    fn into_any(self: Rc<Self>) -> Rc<dyn Any> {
-        self
-    }
-}
-
-

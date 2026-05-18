@@ -696,6 +696,78 @@ Removed ALL remaining ACP vestigial code from production paths:
 - `SimpleTestAgentServer` from agent_servers
 
 ### What remains (kept intentionally):
-- `AuthRequired` error struct in `connection.rs` — still used as a protocol error type
-- `ErrorCode::AuthRequired` in `schema.rs` — legitimate protocol error code
 - `resume_session_id` variable name in conversation_view — just a parameter name for session persistence (uses `load_session`, not the removed `resume_session` trait method)
+
+## Phase 26: Final ACP Authentication Code Removal ✅ DONE
+
+Removed ALL remaining ACP authentication and login code:
+
+### From `agent_ui/src/conversation_view.rs`:
+- Removed `ThreadError::AuthenticationRequired(SharedString)` variant
+- Removed `acp_error_code: Option<SharedString>` field from `ThreadError::Other`
+- Removed ACP `schema::Error` / `ErrorCode::AuthRequired` match in `From<anyhow::Error>` impl
+- Removed ACP error code extraction in `From<anyhow::Error>` fallthrough
+- Updated `emit_thread_error_telemetry` to remove `acp_error_code` from telemetry event and match arms
+- Replaced ACP agent comments with "external agent" in `current_model_name`
+- Renamed `create_test_acp_thread` → `create_test_agent_thread`
+- Renamed test `test_manually_editing_title_updates_acp_thread_title` → `test_manually_editing_title_updates_agent_thread_title`
+
+### From `agent_ui/src/conversation_view/thread_view.rs`:
+- Removed dead `/login` `/logout` handler code (was a no-op fallthrough)
+- Removed `ThreadError::AuthenticationRequired` match arm from `render_thread_error`
+- Removed `render_authentication_required_error()` method
+- Removed `acp_error_code` from telemetry tuple patterns
+
+### From `agent_ui/src/agent_panel.rs`:
+- Removed `acp_error_code: None` from test `ThreadError::Other` construction
+
+### From `agent_ui/src/agent_configuration.rs`:
+- Removed "ACP Docs" context menu item linking to agentclientprotocol.com
+- Removed now-unused `OpenBrowser` import
+- Removed now-unused `ContextMenuEntry` import
+
+### From `agent_ui/src/model_selector.rs` + `model_selector_popover.rs`:
+- Renamed `acp_model_selector` → `agent_model_selector`
+
+### From `agent_thread/src/connection.rs`:
+- Removed `AuthRequired` error struct and all its impls
+- Removed now-unused `LanguageModelProviderId` import
+- Removed now-unused `std::error::Error` and `std::fmt` imports
+- Updated comment "acp_thread" → "agent_thread"
+
+### From `agent_thread/src/schema.rs`:
+- Removed `ErrorCode::AuthRequired` variant from enum
+- Removed `auth_required()` helper method
+- Removed all `AuthRequired` match arms from `From<i32>`, `From<ErrorCode> for i32`, `From<ErrorCode> for Error`, `Display`
+- Updated crate doc comment (removed `agent-client-protocol` references)
+- Updated `IntoOption` doc comment
+- Updated `_meta` and tool status doc comments
+
+### From `agent_thread/src/thread.rs`:
+- Updated "acp_thread" → "agent_thread" / "Terminal" in test comments
+- Updated "ACP" → generalized comments in tool name meta and session info helpers
+- Updated "ACP servers echo" → "Some servers echo" comment
+
+### From `agent_thread/src/lib.rs`:
+- Updated crate doc comment (removed `acp_thread` and `agent-client-protocol` references)
+
+### From `agent/src/thread.rs` + `agent.rs`:
+- Renamed `push_acp_user_block` → `push_user_block`
+- Renamed `push_acp_agent_block` → `push_agent_block`
+
+### From `project/src/agent_server_store.rs`:
+- Removed `login: None` from `AgentServerCommand` proto construction
+- Removed `NO_BROWSER` env var injection
+- Removed `no_browser()` method
+- Removed `no_browser` local variable usage
+- Fixed `mut` on now-unmodified `extra_env`
+
+### From `proto/proto/ai.proto`:
+- Removed `optional SpawnInTerminal login = 5` field from `AgentServerCommand` message
+- Added `reserved 5` to prevent accidental field number reuse
+
+### From `remote_server/src/remote_editing_tests.rs`:
+- Removed `NO_BROWSER` from expected env map in `test_remote_external_agent_server`
+
+### From `agent_servers/src/agent_servers.rs`:
+- Simplified error message in `UnsupportedAgentServer` (removed ACP mention)

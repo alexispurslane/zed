@@ -184,7 +184,6 @@ struct ActiveThreadInfo {
     title: SharedString,
     status: AgentThreadStatus,
     icon: IconName,
-    icon_from_external_svg: Option<SharedString>,
     is_background: bool,
     is_title_generating: bool,
     diff_stats: DiffStats,
@@ -218,7 +217,6 @@ impl ThreadEntryWorkspace {
 struct ThreadEntry {
     metadata: ThreadMetadata,
     icon: IconName,
-    icon_from_external_svg: Option<SharedString>,
     status: AgentThreadStatus,
     workspace: ThreadEntryWorkspace,
     is_live: bool,
@@ -249,7 +247,6 @@ impl ThreadEntry {
         self.metadata.title = Some(info.title.clone());
         self.status = info.status;
         self.icon = info.icon;
-        self.icon_from_external_svg = info.icon_from_external_svg.clone();
         self.is_live = true;
         self.is_background = info.is_background;
         self.is_title_generating = info.is_title_generating;
@@ -1098,10 +1095,6 @@ impl Sidebar {
         let workspaces: Vec<_> = mw.workspaces().cloned().collect();
         let active_workspace = Some(mw.workspace().clone());
 
-        let agent_server_store = workspaces
-            .first()
-            .map(|ws| ws.read(cx).project().read(cx).agent_server_store().clone());
-
         let query = self.filter_editor.read(cx).text(cx);
 
         let previous = mem::take(&mut self.contents);
@@ -1130,18 +1123,8 @@ impl Sidebar {
             .iter()
             .any(|ws| !workspace_path_list(ws, cx).paths().is_empty());
 
-        let resolve_agent_icon = |agent_id: &AgentId| -> (IconName, Option<SharedString>) {
-            let agent = Agent::from(agent_id.clone());
-            let icon = match agent {
-                Agent::NativeAgent => IconName::XenomorphicAgent,
-                Agent::Custom { .. } => IconName::Terminal,
-
-                _ => IconName::XenomorphicAgent,
-            };
-            let icon_from_external_svg = agent_server_store
-                .as_ref()
-                .and_then(|store| store.read(cx).agent_icon(&agent_id));
-            (icon, icon_from_external_svg)
+        let _resolve_agent_icon = |_agent_id: &AgentId| -> IconName {
+            IconName::XenomorphicAgent
         };
 
         let groups = mw.project_groups(cx);
@@ -1245,13 +1228,12 @@ impl Sidebar {
                 // Build a ThreadEntry from a metadata row.
                 let make_thread_entry =
                     |row: ThreadMetadata, workspace: ThreadEntryWorkspace| -> ThreadEntry {
-                        let (icon, icon_from_external_svg) = resolve_agent_icon(&row.agent_id);
+                        let icon = _resolve_agent_icon(&row.agent_id);
                         let worktrees =
                             worktree_info_from_thread_paths(&row.worktree_paths, &branch_by_path);
                         ThreadEntry {
                             metadata: row,
                             icon,
-                            icon_from_external_svg,
                             status: AgentThreadStatus::default(),
                             workspace,
                             is_live: false,
@@ -2591,7 +2573,7 @@ impl Sidebar {
             };
             agent_panel.update(cx, |panel, cx| {
                 panel.load_agent_thread(
-                    Agent::from(metadata.agent_id.clone()),
+                    Agent::NativeAgent,
                     session_id,
                     Some(metadata.folder_paths().clone()),
                     metadata.title.clone(),
@@ -3975,7 +3957,6 @@ impl Sidebar {
                         session_id,
                         title: thread.metadata.display_title(),
                         icon: thread.icon,
-                        icon_from_external_svg: thread.icon_from_external_svg.clone(),
                         status: thread.status,
                         metadata: thread.metadata.clone(),
                         workspace,
@@ -4252,9 +4233,6 @@ impl Sidebar {
             .icon(thread.icon)
             .status(thread.status)
             .is_remote(is_remote)
-            .when_some(thread.icon_from_external_svg.clone(), |this, svg| {
-                this.custom_icon_from_external_svg(svg)
-            })
             .worktrees(worktrees)
             .timestamp(timestamp)
             .highlight_positions(thread.highlight_positions.to_vec())
@@ -5094,20 +5072,12 @@ impl Sidebar {
             return;
         };
 
-        let agent_server_store = active_workspace
-            .read(cx)
-            .project()
-            .read(cx)
-            .agent_server_store()
-            .downgrade();
-
         let agent_connection_store = agent_panel.read(cx).connection_store().downgrade();
 
         let archive_view = cx.new(|cx| {
             ThreadsArchiveView::new(
                 active_workspace.downgrade(),
                 agent_connection_store.clone(),
-                agent_server_store.clone(),
                 window,
                 cx,
             )
@@ -5437,7 +5407,6 @@ fn all_thread_infos_for_workspace(
             let thread = thread_view_ref.thread.read(cx);
 
             let icon = thread_view_ref.agent_icon;
-            let icon_from_external_svg = thread_view_ref.agent_icon_from_external_svg.clone();
             let title = thread
                 .title()
                 .unwrap_or_else(|| DEFAULT_THREAD_TITLE.into());
@@ -5465,7 +5434,6 @@ fn all_thread_infos_for_workspace(
                 title,
                 status,
                 icon,
-                icon_from_external_svg,
                 is_background,
                 is_title_generating,
                 diff_stats,

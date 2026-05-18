@@ -1142,7 +1142,7 @@ impl NativeAgent {
             let mut last_is_user = true;
 
             thread.update(cx, |thread, cx| {
-                thread.push_acp_user_block(
+                thread.push_user_block(
                     message_id,
                     original_content.into_iter().skip(1),
                     path_style,
@@ -1152,7 +1152,7 @@ impl NativeAgent {
 
             for message in prompt.messages {
                 let context_server::types::PromptMessage { role, content } = message;
-                let block = mcp_message_content_to_acp_content_block(content);
+                let block = mcp_message_content_to_content_block(content);
 
                 match role {
                     context_server::types::Role::User => {
@@ -1168,7 +1168,7 @@ impl NativeAgent {
                         });
 
                         thread.update(cx, |thread, cx| {
-                            thread.push_acp_user_block(id, [block], path_style, cx);
+                            thread.push_user_block(id, [block], path_style, cx);
                         });
                     }
                     context_server::types::Role::Assistant => {
@@ -1182,7 +1182,7 @@ impl NativeAgent {
                         });
 
                         thread.update(cx, |thread, cx| {
-                            thread.push_acp_agent_block(block, cx);
+                            thread.push_agent_block(block, cx);
                         });
                     }
                 }
@@ -3419,7 +3419,7 @@ mod internal_tests {
     }
 }
 
-fn mcp_message_content_to_acp_content_block(
+fn mcp_message_content_to_content_block(
     content: context_server::types::MessageContent,
 ) -> schema::ContentBlock {
     match content {

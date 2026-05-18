@@ -4,22 +4,19 @@ mod configure_context_server_tools_modal;
 mod manage_profiles_modal;
 mod tool_picker;
 
-use std::{ops::Range, sync::Arc};
+use std::sync::Arc;
 
 use agent::ContextServerRegistry;
-use anyhow::Result;
 use cloud_api_types::Plan;
 use collections::HashMap;
 use context_server::ContextServerId;
-use editor::{Editor, MultiBufferOffset, SelectionEffects, scroll::Autoscroll};
 use extension::ExtensionManifest;
 use extension_host::ExtensionStore;
 use fs::Fs;
 use gpui::{
-    Action, Anchor, AnyView, App, AsyncWindowContext, Entity, EventEmitter, FocusHandle, Focusable,
+    Action, Anchor, AnyView, App, Entity, EventEmitter, FocusHandle, Focusable,
     ScrollHandle, Subscription, Task, TaskExt, WeakEntity,
 };
-use itertools::Itertools;
 use language::LanguageRegistry;
 use language_model::{
     IconOrSvg, LanguageModelProvider, LanguageModelProviderId, LanguageModelRegistry,
@@ -28,34 +25,30 @@ use language_model::{
 use language_models::AllLanguageModelSettings;
 use notifications::status_toast::StatusToast;
 use project::{
-    agent_server_store::{AgentId, AgentServerStore, ExternalAgentSource},
     context_server_store::{ContextServerConfiguration, ContextServerStatus, ContextServerStore},
 };
-use settings::{Settings, SettingsStore, update_settings_file};
+use settings::{Settings, update_settings_file};
 use ui::{
     AiSettingItem, AiSettingItemSource, AiSettingItemStatus, ButtonStyle, Chip, ContextMenu,
-    ContextMenuEntry, Disclosure, Divider, DividerColor, ElevationIndex, LabelSize, PopoverMenu,
+    Disclosure, Divider, DividerColor, ElevationIndex, LabelSize, PopoverMenu,
     Switch, Tooltip, WithScrollbar, prelude::*,
 };
 use util::ResultExt as _;
-use workspace::{Workspace, create_and_open_local_file};
-use xenomorphic_actions::{ExtensionCategoryFilter, OpenBrowser};
+use workspace::Workspace;
+use xenomorphic_actions::ExtensionCategoryFilter;
 
 pub(crate) use configure_context_server_modal::ConfigureContextServerModal;
 pub(crate) use configure_context_server_tools_modal::ConfigureContextServerToolsModal;
 pub(crate) use manage_profiles_modal::ManageProfilesModal;
 
 use crate::{
-    Agent,
     agent_configuration::add_llm_provider_modal::{AddLlmProviderModal, LlmCompatibleProvider},
-    agent_connection_store::{AgentConnectionStatus, AgentConnectionStore},
+    agent_connection_store::AgentConnectionStore,
 };
 
 pub struct AgentConfiguration {
     fs: Arc<dyn Fs>,
     language_registry: Arc<LanguageRegistry>,
-    agent_server_store: Entity<AgentServerStore>,
-    agent_connection_store: Entity<AgentConnectionStore>,
     workspace: WeakEntity<Workspace>,
     focus_handle: FocusHandle,
     configuration_views_by_provider: HashMap<LanguageModelProviderId, AnyView>,
@@ -69,8 +62,7 @@ pub struct AgentConfiguration {
 impl AgentConfiguration {
     pub fn new(
         fs: Arc<dyn Fs>,
-        agent_server_store: Entity<AgentServerStore>,
-        agent_connection_store: Entity<AgentConnectionStore>,
+        _agent_connection_store: Entity<AgentConnectionStore>,
         context_server_store: Entity<ContextServerStore>,
         context_server_registry: Entity<ContextServerRegistry>,
         language_registry: Arc<LanguageRegistry>,
@@ -97,8 +89,6 @@ impl AgentConfiguration {
                     _ => {}
                 },
             ),
-            cx.subscribe(&agent_server_store, |_, _, _, cx| cx.notify()),
-            cx.observe(&agent_connection_store, |_, _, cx| cx.notify()),
             cx.subscribe(&context_server_store, |_, _, _, cx| cx.notify()),
         ];
 
@@ -108,8 +98,6 @@ impl AgentConfiguration {
             workspace,
             focus_handle,
             configuration_views_by_provider: HashMap::default(),
-            agent_server_store,
-            agent_connection_store,
             context_server_store,
             expanded_provider_configurations: HashMap::default(),
             context_server_registry,
@@ -160,11 +148,6 @@ pub enum AssistantConfigurationEvent {
 }
 
 impl EventEmitter<AssistantConfigurationEvent> for AgentConfiguration {}
-
-enum AgentIcon {
-    Name(IconName),
-    Path(SharedString),
-}
 
 impl AgentConfiguration {
     fn render_section_title(
@@ -978,227 +961,6 @@ impl AgentConfiguration {
             .when_some(tool_label, |this, label| this.detail_label(label))
             .when_some(details, |this, details| this.details(details))
     }
-
-    fn render_agent_servers_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let agent_server_store = self.agent_server_store.read(cx);
-
-        let agents = agent_server_store
-            .external_agents()
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let agents: Vec<_> = agents
-            .into_iter()
-            .map(|name| {
-                let icon = if let Some(icon_path) = agent_server_store.agent_icon(&name) {
-                    AgentIcon::Path(icon_path)
-                } else {
-                    AgentIcon::Name(IconName::Sparkle)
-                };
-                let display_name = agent_server_store
-                    .agent_display_name(&name)
-                    .unwrap_or_else(|| name.0.clone());
-                let source = agent_server_store.agent_source(&name).unwrap_or_default();
-                (name, icon, display_name, source)
-            })
-            .sorted_unstable_by_key(|(_, _, display_name, _)| display_name.to_lowercase())
-            .collect();
-
-        let add_agent_popover = PopoverMenu::new("add-agent-server-popover")
-            .trigger(
-                Button::new("add-agent", "Add Agent")
-                    .style(ButtonStyle::Outlined)
-                    .start_icon(
-                        Icon::new(IconName::Plus)
-                            .size(IconSize::Small)
-                            .color(Color::Muted),
-                    )
-                    .label_size(LabelSize::Small),
-            )
-            .menu({
-                move |window, cx| {
-                    Some(ContextMenu::build(window, cx, |menu, _window, _cx| {
-                        menu.entry("Add Custom Agent", None, {
-                            move |window, cx| {
-                                if let Some(workspace) = Workspace::for_window(window, cx) {
-                                    let workspace = workspace.downgrade();
-                                    window
-                                        .spawn(cx, async |cx| {
-                                            open_new_agent_servers_entry_in_settings_editor(
-                                                workspace, cx,
-                                            )
-                                            .await
-                                        })
-                                        .detach_and_log_err(cx);
-                                }
-                            }
-                        })
-                        .separator()
-                        .header("Learn More")
-                        .item(
-                            ContextMenuEntry::new("ACP Docs")
-                                .icon(IconName::ArrowUpRight)
-                                .icon_color(Color::Muted)
-                                .icon_position(IconPosition::End)
-                                .handler({
-                                    move |window, cx| {
-                                        window.dispatch_action(
-                                            Box::new(OpenBrowser {
-                                                url: "https://agentclientprotocol.com/".into(),
-                                            }),
-                                            cx,
-                                        );
-                                    }
-                                }),
-                        )
-                    }))
-                }
-            })
-            .anchor(gpui::Anchor::TopRight)
-            .offset(gpui::Point {
-                x: px(0.0),
-                y: px(2.0),
-            });
-
-        v_flex()
-            .min_w_0()
-            .border_b_1()
-            .border_color(cx.theme().colors().border)
-            .child(
-                v_flex()
-                    .child(self.render_section_title(
-                        "External Agents",
-                        "All agents connected through the Agent Client Protocol.",
-                        add_agent_popover.into_any_element(),
-                    ))
-                    .child(
-                        v_flex()
-                            .p_4()
-                            .pt_0()
-                            .gap_2()
-                            .children(Itertools::intersperse_with(
-                                agents
-                                    .into_iter()
-                                    .map(|(name, icon, display_name, source)| {
-                                        self.render_agent_server(
-                                            icon,
-                                            name,
-                                            display_name,
-                                            source,
-                                            cx,
-                                        )
-                                        .into_any_element()
-                                    }),
-                                || {
-                                    Divider::horizontal()
-                                        .color(DividerColor::BorderFaded)
-                                        .into_any_element()
-                                },
-                            )),
-                    ),
-            )
-    }
-
-    fn render_agent_server(
-        &self,
-        icon: AgentIcon,
-        id: impl Into<SharedString>,
-        display_name: impl Into<SharedString>,
-        source: ExternalAgentSource,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let id = id.into();
-        let display_name = display_name.into();
-
-        let icon = match icon {
-            AgentIcon::Name(icon_name) => Icon::new(icon_name)
-                .size(IconSize::Small)
-                .color(Color::Muted),
-            AgentIcon::Path(icon_path) => Icon::from_external_svg(icon_path)
-                .size(IconSize::Small)
-                .color(Color::Muted),
-        };
-
-        let source_kind = match source {
-            ExternalAgentSource::Extension => AiSettingItemSource::Extension,
-            ExternalAgentSource::Custom => AiSettingItemSource::Custom,
-        };
-
-        let agent_server_name = AgentId(id.clone());
-        let agent = Agent::Custom {
-            id: agent_server_name.clone(),
-        };
-
-        let (connection_status, running_version) = {
-            let connection_store = self.agent_connection_store.read(cx);
-            (
-                connection_store.connection_status(&agent, cx),
-                connection_store.agent_version(&agent, cx),
-            )
-        };
-
-        let uninstall_button = match source {
-            ExternalAgentSource::Extension => Some(
-                IconButton::new(
-                    SharedString::from(format!("uninstall-{}", id)),
-                    IconName::Trash,
-                )
-                .icon_color(Color::Muted)
-                .icon_size(IconSize::Small)
-                .tooltip(Tooltip::text("Uninstall Agent Extension"))
-                .on_click(cx.listener(move |this, _, _window, cx| {
-                    let agent_name = agent_server_name.clone();
-
-                    if let Some(ext_id) = this.agent_server_store.update(cx, |store, _cx| {
-                        store.get_extension_id_for_agent(&agent_name)
-                    }) {
-                        ExtensionStore::global(cx)
-                            .update(cx, |store, cx| store.uninstall_extension(ext_id, cx))
-                            .detach_and_log_err(cx);
-                    }
-                })),
-            ),
-            ExternalAgentSource::Custom => {
-                let fs = self.fs.clone();
-                Some(
-                    IconButton::new(
-                        SharedString::from(format!("uninstall-{}", id)),
-                        IconName::Trash,
-                    )
-                    .icon_color(Color::Muted)
-                    .icon_size(IconSize::Small)
-                    .tooltip(Tooltip::text("Remove Custom Agent"))
-                    .on_click(cx.listener(move |_, _, _window, cx| {
-                        let agent_name = agent_server_name.clone();
-                        update_settings_file(fs.clone(), cx, move |settings, _| {
-                            let Some(agent_servers) = settings.agent_servers.as_mut() else {
-                                return;
-                            };
-                            if let Some(entry) = agent_servers.get(agent_name.0.as_ref())
-                                && matches!(
-                                    entry,
-                                    settings::CustomAgentServerSettings::Custom { .. }
-                                )
-                            {
-                                agent_servers.remove(agent_name.0.as_ref());
-                            }
-                        });
-                    })),
-                )
-            }
-        };
-
-        let status = match connection_status {
-            AgentConnectionStatus::Disconnected => AiSettingItemStatus::Stopped,
-            AgentConnectionStatus::Connecting => AiSettingItemStatus::Starting,
-            AgentConnectionStatus::Connected => AiSettingItemStatus::Running,
-        };
-
-        AiSettingItem::new(id, display_name, status, source_kind)
-            .icon(icon)
-            .when_some(running_version, |this, version| this.detail_label(version))
-            .when_some(uninstall_button, |this, button| this.action(button))
-    }
 }
 
 impl Render for AgentConfiguration {
@@ -1221,7 +983,6 @@ impl Render for AgentConfiguration {
                             .size_full()
                             .min_w_0()
                             .overflow_y_scroll()
-                            .child(self.render_agent_servers_section(cx))
                             .child(self.render_context_servers_section(cx))
                             .child(self.render_provider_configuration_section(cx)),
                     )
@@ -1317,143 +1078,6 @@ fn show_unable_to_uninstall_extension_with_context_server(
 
     workspace.toggle_status_toast(status_toast, cx);
 }
-
-async fn open_new_agent_servers_entry_in_settings_editor(
-    workspace: WeakEntity<Workspace>,
-    cx: &mut AsyncWindowContext,
-) -> Result<()> {
-    let settings_editor = workspace
-        .update_in(cx, |_, window, cx| {
-            create_and_open_local_file(paths::settings_file(), window, cx, || {
-                settings::initial_user_settings_content().as_ref().into()
-            })
-        })?
-        .await?
-        .downcast::<Editor>()
-        .unwrap();
-
-    settings_editor
-        .downgrade()
-        .update_in(cx, |item, window, cx| {
-            let text = item.buffer().read(cx).snapshot(cx).text();
-
-            let settings = cx.global::<SettingsStore>();
-
-            let mut unique_server_name = None;
-            let Some(edits) = settings
-                .edits_for_update(&text, |settings| {
-                    let server_name: Option<String> = (0..u8::MAX)
-                        .map(|i| {
-                            if i == 0 {
-                                "your_agent".to_string()
-                            } else {
-                                format!("your_agent_{}", i)
-                            }
-                        })
-                        .find(|name| {
-                            !settings
-                                .agent_servers
-                                .as_ref()
-                                .is_some_and(|agent_servers| {
-                                    agent_servers.contains_key(name.as_str())
-                                })
-                        });
-                    if let Some(server_name) = server_name {
-                        unique_server_name = Some(SharedString::from(server_name.clone()));
-                        settings.agent_servers.get_or_insert_default().insert(
-                            server_name,
-                            settings::CustomAgentServerSettings::Custom {
-                                path: "path_to_executable".into(),
-                                args: vec![],
-                                env: HashMap::default(),
-                                default_mode: None,
-                                default_model: None,
-                                favorite_models: vec![],
-                                default_config_options: Default::default(),
-                                favorite_config_option_values: Default::default(),
-                            },
-                        );
-                    }
-                })
-                .log_err()
-            else {
-                return;
-            };
-
-            if edits.is_empty() {
-                return;
-            }
-
-            let ranges = edits
-                .iter()
-                .map(|(range, _)| range.clone())
-                .collect::<Vec<_>>();
-
-            item.edit(
-                edits.into_iter().map(|(range, s)| {
-                    (
-                        MultiBufferOffset(range.start)..MultiBufferOffset(range.end),
-                        s,
-                    )
-                }),
-                cx,
-            );
-            if let Some((unique_server_name, buffer)) =
-                unique_server_name.zip(item.buffer().read(cx).as_singleton())
-            {
-                let snapshot = buffer.read(cx).snapshot();
-                if let Some(range) =
-                    find_text_in_buffer(&unique_server_name, ranges[0].start, &snapshot)
-                {
-                    item.change_selections(
-                        SelectionEffects::scroll(Autoscroll::newest()),
-                        window,
-                        cx,
-                        |selections| {
-                            selections.select_ranges(vec![
-                                MultiBufferOffset(range.start)..MultiBufferOffset(range.end),
-                            ]);
-                        },
-                    );
-                }
-            }
-        })
-}
-
-fn find_text_in_buffer(
-    text: &str,
-    start: usize,
-    snapshot: &language::BufferSnapshot,
-) -> Option<Range<usize>> {
-    let chars = text.chars().collect::<Vec<char>>();
-
-    let mut offset = start;
-    let mut char_offset = 0;
-    for c in snapshot.chars_at(start) {
-        if char_offset >= chars.len() {
-            break;
-        }
-        offset += 1;
-
-        if c == chars[char_offset] {
-            char_offset += 1;
-        } else {
-            char_offset = 0;
-        }
-    }
-
-    if char_offset == chars.len() {
-        Some(offset.saturating_sub(chars.len())..offset)
-    } else {
-        None
-    }
-}
-
-// OpenAI-compatible providers are user-configured and can be removed,
-// whereas built-in providers (like Anthropic, OpenAI, Google, etc.) can't.
-//
-// If in the future we have more "API-compatible-type" of providers,
-// they should be included here as removable providers.
 fn is_removable_provider(provider_id: &LanguageModelProviderId, cx: &App) -> bool {
     AllLanguageModelSettings::get_global(cx)
         .openai_compatible

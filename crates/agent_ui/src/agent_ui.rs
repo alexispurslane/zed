@@ -238,14 +238,11 @@ pub struct ToggleCommandPattern {
 #[serde(deny_unknown_fields)]
 pub struct NewThread;
 
-/// Creates a new external agent conversation thread.
+/// Creates a new agent conversation thread.
 #[derive(Default, Clone, PartialEq, Deserialize, JsonSchema, Action)]
 #[action(namespace = agent)]
 #[serde(deny_unknown_fields)]
-pub struct NewExternalAgentThread {
-    /// Which agent to use for the conversation.
-    agent: Option<Agent>,
-}
+pub struct NewAgentThread;
 
 #[derive(Clone, PartialEq, Deserialize, JsonSchema, Action)]
 #[action(namespace = agent)]
@@ -261,30 +258,14 @@ pub enum Agent {
     #[default]
     #[serde(alias = "NativeAgent", alias = "TextThread")]
     NativeAgent,
-    #[serde(alias = "Custom")]
-    Custom {
-        #[serde(rename = "name")]
-        id: AgentId,
-    },
     #[cfg(any(test, feature = "test-support"))]
     Stub,
-}
-
-impl From<AgentId> for Agent {
-    fn from(id: AgentId) -> Self {
-        if id.as_ref() == agent::XENOMORPHIC_AGENT_ID.as_ref() {
-            Self::NativeAgent
-        } else {
-            Self::Custom { id }
-        }
-    }
 }
 
 impl Agent {
     pub fn id(&self) -> AgentId {
         match self {
             Self::NativeAgent => agent::XENOMORPHIC_AGENT_ID.clone(),
-            Self::Custom { id } => id.clone(),
             #[cfg(any(test, feature = "test-support"))]
             Self::Stub => "stub".into(),
         }
@@ -297,7 +278,6 @@ impl Agent {
     pub fn label(&self) -> SharedString {
         match self {
             Self::NativeAgent => "Xenomorphic Agent".into(),
-            Self::Custom { id, .. } => id.0.clone(),
             #[cfg(any(test, feature = "test-support"))]
             Self::Stub => "Stub Agent".into(),
         }
@@ -306,7 +286,6 @@ impl Agent {
     pub fn icon(&self) -> Option<IconName> {
         match self {
             Self::NativeAgent => None,
-            Self::Custom { .. } => Some(IconName::Sparkle),
             #[cfg(any(test, feature = "test-support"))]
             Self::Stub => None,
         }
@@ -319,9 +298,6 @@ impl Agent {
     ) -> Rc<dyn agent_servers::AgentServer> {
         match self {
             Self::NativeAgent => Rc::new(agent::NativeAgentServer::new(fs, thread_store)),
-            Self::Custom { id: name } => {
-                Rc::new(agent_servers::UnsupportedAgentServer::new(name.clone()))
-            }
             #[cfg(any(test, feature = "test-support"))]
             Self::Stub => Rc::new(crate::test_support::StubAgentServer::default_response()),
         }
@@ -862,16 +838,14 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_external_agent_variants() {
+    fn test_deserialize_agent_variants() {
         assert_eq!(
             serde_json::from_str::<Agent>(r#""NativeAgent""#).unwrap(),
             Agent::NativeAgent,
         );
         assert_eq!(
-            serde_json::from_str::<Agent>(r#"{"Custom":{"name":"my-agent"}}"#).unwrap(),
-            Agent::Custom {
-                id: "my-agent".into(),
-            },
+            serde_json::from_str::<Agent>(r#""native_agent""#).unwrap(),
+            Agent::NativeAgent,
         );
     }
 }

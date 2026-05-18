@@ -269,7 +269,6 @@ pub struct ThreadView {
     pub(crate) conversation: Entity<super::Conversation>,
     pub server_view: WeakEntity<ConversationView>,
     pub agent_icon: IconName,
-    pub agent_icon_from_external_svg: Option<SharedString>,
     pub agent_id: AgentId,
     pub focus_handle: FocusHandle,
     pub workspace: WeakEntity<Workspace>,
@@ -307,7 +306,6 @@ pub struct ThreadView {
     pub turn_fields: TurnFields,
     pub discarded_partial_edits: HashSet<schema::ToolCallId>,
     pub is_loading_contents: bool,
-    pub new_server_version_available: Option<SharedString>,
     pub resumed_without_history: bool,
     pub(crate) permission_selections: HashMap<schema::ToolCallId, PermissionSelection>,
     pub _cancel_task: Option<Task<()>>,
@@ -354,7 +352,6 @@ impl ThreadView {
         conversation: Entity<super::Conversation>,
         server_view: WeakEntity<ConversationView>,
         agent_icon: IconName,
-        agent_icon_from_external_svg: Option<SharedString>,
         agent_id: AgentId,
         agent_display_name: SharedString,
         workspace: WeakEntity<Workspace>,
@@ -492,7 +489,6 @@ impl ThreadView {
             conversation,
             server_view,
             agent_icon,
-            agent_icon_from_external_svg,
             agent_id,
             workspace,
             entry_view_state,
@@ -529,7 +525,6 @@ impl ThreadView {
             turn_fields: TurnFields::default(),
             discarded_partial_edits: HashSet::default(),
             is_loading_contents: false,
-            new_server_version_available: None,
             permission_selections: HashMap::default(),
             _cancel_task: None,
             _save_task: None,
@@ -931,22 +926,6 @@ impl ThreadView {
             return;
         }
 
-        let text = message_editor.read(cx).text(cx);
-        let text = text.trim();
-        if text == "/login" || text == "/logout" {
-            // Does the agent have a specific logout command? Prefer that in case they need to reset internal state.
-            let logout_supported = text == "/logout"
-                && self
-                    .session_capabilities
-                    .read()
-                    .available_commands()
-                    .iter()
-                    .any(|command| command.name == "logout");
-            if logout_supported {
-                // nothing to do here, will fall through to send_impl which handles /logout
-            }
-        }
-
         cx.emit(ThreadViewEvent::Interacted);
         self.send_impl(message_editor, window, cx)
     }
@@ -1196,11 +1175,9 @@ impl ThreadView {
     }
 
     fn emit_thread_error_telemetry(&self, error: &ThreadError, cx: &mut Context<Self>) {
-        let (error_kind, acp_error_code, message): (&str, Option<SharedString>, SharedString) =
-            match error {
+        let (error_kind, message): (&str, SharedString) = match error {
                 ThreadError::PaymentRequired => (
                     "payment_required",
-                    None,
                     "You reached your free usage limit. Upgrade to Xenomorphic Pro for more prompts."
                         .into(),
                 ),
@@ -1210,44 +1187,34 @@ impl ThreadView {
                         "{} refused to respond to this prompt. This can happen when a model believes the prompt violates its content policy or safety guidelines, so rephrasing it can sometimes address the issue.",
                         model_or_agent_name
                     );
-                    ("refusal", None, message.into())
-                }
-                ThreadError::AuthenticationRequired(message) => {
-                    ("authentication_required", None, message.clone())
+                    ("refusal", message.into())
                 }
                 ThreadError::RateLimitExceeded { provider } => (
                     "rate_limit_exceeded",
-                    None,
                     format!("{provider}'s rate limit was reached.").into(),
                 ),
                 ThreadError::ServerOverloaded { provider } => (
                     "server_overloaded",
-                    None,
                     format!("{provider}'s servers are temporarily unavailable.").into(),
                 ),
                 ThreadError::PromptTooLarge => (
                     "prompt_too_large",
-                    None,
                     "Context too large for the model's context window.".into(),
                 ),
                 ThreadError::NoApiKey { provider } => (
                     "no_api_key",
-                    None,
                     format!("No API key configured for {provider}.").into(),
                 ),
                 ThreadError::StreamError { provider } => (
                     "stream_error",
-                    None,
                     format!("Connection to {provider}'s API was interrupted.").into(),
                 ),
                 ThreadError::InvalidApiKey { provider } => (
                     "invalid_api_key",
-                    None,
                     format!("Invalid or expired API key for {provider}.").into(),
                 ),
                 ThreadError::PermissionDenied { provider } => (
                     "permission_denied",
-                    None,
                     format!(
                         "{provider}'s API rejected the request due to insufficient permissions."
                     )
@@ -1255,26 +1222,20 @@ impl ThreadView {
                 ),
                 ThreadError::RequestFailed => (
                     "request_failed",
-                    None,
                     "Request could not be completed after multiple attempts.".into(),
                 ),
                 ThreadError::MaxOutputTokens => (
                     "max_output_tokens",
-                    None,
                     "Model reached its maximum output length.".into(),
                 ),
                 ThreadError::NoModelSelected => {
-                    ("no_model_selected", None, "No model selected.".into())
+                    ("no_model_selected", "No model selected.".into())
                 }
                 ThreadError::ApiError { provider } => (
                     "api_error",
-                    None,
                     format!("{provider}'s API returned an unexpected error.").into(),
                 ),
-                ThreadError::Other {
-                    acp_error_code,
-                    message,
-                } => ("other", acp_error_code.clone(), message.clone()),
+                ThreadError::Other { message } => ("other", message.clone()),
             };
 
         let agent_telemetry_id = self.thread.read(cx).connection().telemetry_id();
@@ -1291,7 +1252,6 @@ impl ThreadView {
             session_id = session_id,
             parent_session_id = parent_session_id,
             kind = error_kind,
-            acp_error_code = acp_error_code,
             message = message,
         );
     }
@@ -8206,13 +8166,10 @@ impl ThreadView {
         cx: &mut Context<Self>,
     ) -> Option<Div> {
         let content = match self.thread_error.as_ref()? {
-            ThreadError::Other { message, .. } => {
+            ThreadError::Other { message } => {
                 self.render_any_thread_error(message.clone(), window, cx)
             }
             ThreadError::Refusal => self.render_refusal_error(cx),
-            ThreadError::AuthenticationRequired(error) => {
-                self.render_authentication_required_error(error.clone(), cx)
-            }
             ThreadError::PaymentRequired => self.render_payment_required_error(cx),
             ThreadError::RateLimitExceeded { provider } => self.render_error_callout(
                 "Rate Limit Reached",
@@ -8337,24 +8294,6 @@ impl ThreadView {
             .icon(IconName::XCircle)
             .description(refusal_message.clone())
             .actions_slot(self.create_copy_button(&refusal_message))
-            .dismiss_action(self.dismiss_error_button(cx))
-    }
-
-    fn render_authentication_required_error(
-        &self,
-        error: SharedString,
-        cx: &mut Context<Self>,
-    ) -> Callout {
-        Callout::new()
-            .severity(Severity::Error)
-            .title("Authentication Required")
-            .icon(IconName::XCircle)
-            .description(error.clone())
-            .actions_slot(
-                h_flex()
-                    .gap_0p5()
-                    .child(self.create_copy_button(error)),
-            )
             .dismiss_action(self.dismiss_error_button(cx))
     }
 
@@ -8647,53 +8586,6 @@ impl ThreadView {
                             this.multi_root_callout_dismissed = true;
                             cx.notify();
                         })),
-                ),
-        )
-    }
-
-    fn render_new_version_callout(&self, version: &SharedString, cx: &mut Context<Self>) -> Div {
-        let server_view = self.server_view.clone();
-        let has_version = !version.is_empty();
-        let title = if has_version {
-            "New version available"
-        } else {
-            "Agent update available"
-        };
-        let button_label = if has_version {
-            format!("Update to v{}", version)
-        } else {
-            "Reconnect".to_string()
-        };
-
-        v_flex().w_full().justify_end().child(
-            h_flex()
-                .p_2()
-                .pr_3()
-                .w_full()
-                .gap_1p5()
-                .border_t_1()
-                .border_color(cx.theme().colors().border)
-                .bg(cx.theme().colors().element_background)
-                .child(
-                    h_flex()
-                        .flex_1()
-                        .gap_1p5()
-                        .child(
-                            Icon::new(IconName::Download)
-                                .color(Color::Accent)
-                                .size(IconSize::Small),
-                        )
-                        .child(Label::new(title).size(LabelSize::Small)),
-                )
-                .child(
-                    Button::new("update-button", button_label)
-                        .label_size(LabelSize::Small)
-                        .style(ButtonStyle::Tinted(TintColor::Accent))
-                        .on_click(move |_, window, cx| {
-                            server_view
-                                .update(cx, |view, cx| view.reset(window, cx))
-                                .ok();
-                        }),
                 ),
         )
     }
@@ -9015,13 +8907,6 @@ impl Render for ThreadView {
             })
             .children(self.render_thread_retry_status_callout())
             .children(self.render_thread_error(window, cx))
-            .when_some(
-                match has_messages {
-                    true => None,
-                    false => self.new_server_version_available.clone(),
-                },
-                |this, version| this.child(self.render_new_version_callout(&version, cx)),
-            )
             .children(self.render_token_limit_callout(cx))
             .child(self.render_message_editor(window, cx))
     }

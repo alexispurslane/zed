@@ -28,7 +28,7 @@ use crate::ui::{
 
 pub type ModelSelector = Picker<ModelPickerDelegate>;
 
-pub fn acp_model_selector(
+pub fn agent_model_selector(
     selector: Rc<dyn AgentModelSelector>,
     agent_server: Rc<dyn AgentServer>,
     fs: Arc<dyn Fs>,

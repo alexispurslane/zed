@@ -4363,8 +4363,8 @@ async fn test_exact_filename_with_directory_token(cx: &mut TestAppContext) {
                 "crates": {
                     "agent_servers": {
                         "src": {
-                            "acp.rs": "",
-                            "agent_server.rs": "",
+                            "connection.rs": "",
+                            "agent_servers.rs": "",
                             "custom.rs": "",
                         }
                     }
@@ -4379,7 +4379,7 @@ async fn test_exact_filename_with_directory_token(cx: &mut TestAppContext) {
         .update_in(cx, |picker, window, cx| {
             picker
                 .delegate
-                .spawn_search(test_path_position("acp server"), window, cx)
+                .spawn_search(test_path_position("agent server"), window, cx)
         })
         .await;
     picker.update(cx, |picker, _| {
@@ -4387,7 +4387,7 @@ async fn test_exact_filename_with_directory_token(cx: &mut TestAppContext) {
         assert!(!matches.is_empty(),);
         assert_eq!(
             matches[0].path.as_unix_str(),
-            "crates/agent_servers/src/acp.rs",
+            "crates/agent_servers/src/connection.rs",
         );
     });
 }

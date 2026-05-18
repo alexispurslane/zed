@@ -22,13 +22,13 @@ co-inhabitants of the same environment.
 ## What's Being Ripped Out
 
 - **Collaboration features** — tethered to Zed's proprietary Cloud services; dead weight
-- **ACP (Agent Client Protocol)** — too limited, too buggy, distracts from making the built-in agent better
+- **ACP (Agent Client Protocol)** — removed; too limited, too buggy, distracted from making the built-in agent better
 - **Rules library** — outdated compared to automatically summoned skills and memories
 - **The agent sidebar horror show** — replaced with proper tabs in regular panes
 
 ## What's Being Built
 
-Zed's built-in agent moves too slowly — they've got the excuse of ACP to lean on, so they don't ship the hard things themselves. Catching up to the meaningful, serious features of AMP (handoff), Crush (LSP tools), Claude Code (skills, hooks), and others isn't optional — it's the focus. If it helps you and an agent ship code together, it belongs here.
+Zed's built-in agent moves too slowly — with ACP removed, the focus is squarely on shipping the hard things natively. Catching up to the meaningful, serious features of AMP (handoff), Crush (LSP tools), Claude Code (skills, hooks), and others isn't optional — it's the focus. If it helps you and an agent ship code together, it belongs here.
 
 ### Core Structural Changes
 - **Agent panel → tab** — convert the agent panel into a regular tab that can be placed in any pane, rearranged, and kept open in multiples. No more locked-in custom panel.

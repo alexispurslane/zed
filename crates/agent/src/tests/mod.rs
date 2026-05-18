@@ -5424,7 +5424,7 @@ async fn test_subagent_tool_resume_session(cx: &mut TestAppContext) {
         );
     });
 
-    // Verify the subagent's acp thread has both conversation turns
+    // Verify the subagent's agent thread has both conversation turns
     assert_eq!(
         subagent_agent_thread.read_with(cx, |thread, cx| thread.to_markdown(cx)),
         indoc! {"

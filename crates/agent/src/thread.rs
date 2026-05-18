@@ -1231,7 +1231,7 @@ impl Thread {
             // Tool not found (e.g., MCP server not connected after restart),
             // but still display the saved result if available.
             // We need to send both ToolCall and ToolCallUpdate events because the UI
-            // only converts raw_output to displayable content in update_fields, not from_acp.
+            // only converts raw_output to displayable content in update_fields, not from_schema.
             stream
                 .0
                 .unbounded_send(Ok(ThreadEvent::ToolCall(
@@ -1858,7 +1858,7 @@ impl Thread {
         self.run_turn(cx)
     }
 
-    pub fn push_acp_user_block(
+    pub fn push_user_block(
         &mut self,
         id: UserMessageId,
         blocks: impl IntoIterator<Item = schema::ContentBlock>,
@@ -1874,7 +1874,7 @@ impl Thread {
         cx.notify();
     }
 
-    pub fn push_acp_agent_block(&mut self, block: schema::ContentBlock, cx: &mut Context<Self>) {
+    pub fn push_agent_block(&mut self, block: schema::ContentBlock, cx: &mut Context<Self>) {
         let text = match block {
             schema::ContentBlock::Text(text_content) => text_content.text,
             schema::ContentBlock::Image(_) => "[image]".to_string(),

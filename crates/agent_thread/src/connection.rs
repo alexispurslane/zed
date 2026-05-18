@@ -4,10 +4,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use collections::IndexMap;
 use gpui::{Entity, SharedString, Task};
-use language_model::LanguageModelProviderId;
 use project::{AgentId, Project};
 use serde::{Deserialize, Serialize};
-use std::{any::Any, error::Error, fmt, path::PathBuf, rc::Rc, sync::Arc};
+use std::{any::Any, path::PathBuf, rc::Rc, sync::Arc};
 use ui::{App, IconName};
 use util::path_list::PathList;
 use uuid::Uuid;
@@ -25,10 +24,6 @@ pub trait AgentConnection {
     fn agent_id(&self) -> AgentId;
 
     fn telemetry_id(&self) -> SharedString;
-
-    fn agent_version(&self) -> Option<SharedString> {
-        None
-    }
 
     fn new_session(
         self: Rc<Self>,
@@ -275,38 +270,6 @@ pub trait AgentSessionList {
 impl dyn AgentSessionList {
     pub fn downcast<T: 'static + AgentSessionList + Sized>(self: Rc<Self>) -> Option<Rc<T>> {
         self.into_any().downcast().ok()
-    }
-}
-
-#[derive(Debug)]
-pub struct AuthRequired {
-    pub description: Option<String>,
-    pub provider_id: Option<LanguageModelProviderId>,
-}
-
-impl AuthRequired {
-    pub fn new() -> Self {
-        Self {
-            description: None,
-            provider_id: None,
-        }
-    }
-
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = Some(description);
-        self
-    }
-
-    pub fn with_language_model_provider(mut self, provider_id: LanguageModelProviderId) -> Self {
-        self.provider_id = Some(provider_id);
-        self
-    }
-}
-
-impl Error for AuthRequired {}
-impl fmt::Display for AuthRequired {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Authentication required")
     }
 }
 
@@ -566,7 +529,7 @@ impl PermissionOptions {
 
 #[cfg(feature = "test-support")]
 mod test_support {
-    //! Test-only stubs and helpers for acp_thread.
+    //! Test-only stubs and helpers for agent_thread.
     //!
     //! This module is gated by the `test-support` feature and is not included
     //! in production builds. It provides:

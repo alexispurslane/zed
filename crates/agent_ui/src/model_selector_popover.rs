@@ -8,7 +8,7 @@ use picker::popover_menu::PickerPopoverMenu;
 use ui::{PopoverMenuHandle, Tooltip, prelude::*};
 
 use crate::ui::ModelSelectorTooltip;
-use crate::{ModelSelector, model_selector::acp_model_selector};
+use crate::{ModelSelector, model_selector::agent_model_selector};
 
 pub struct ModelSelectorPopover {
     selector: Entity<ModelSelector>,
@@ -27,7 +27,7 @@ impl ModelSelectorPopover {
     ) -> Self {
         Self {
             selector: cx.new(move |cx| {
-                acp_model_selector(selector, agent_server, fs, focus_handle.clone(), window, cx)
+                agent_model_selector(selector, agent_server, fs, focus_handle.clone(), window, cx)
             }),
             menu_handle,
         }

@@ -28,7 +28,7 @@ use picker::{
     Picker, PickerDelegate,
     highlighted_match_with_paths::{HighlightedMatch, HighlightedMatchWithPaths},
 };
-use project::{AgentId, AgentServerStore};
+use project::AgentId;
 use settings::Settings as _;
 use theme::ActiveTheme;
 use ui::{
@@ -149,7 +149,6 @@ pub struct ThreadsArchiveView {
     _refresh_history_task: Task<()>,
     workspace: WeakEntity<Workspace>,
     agent_connection_store: WeakEntity<AgentConnectionStore>,
-    agent_server_store: WeakEntity<AgentServerStore>,
     restoring: HashSet<ThreadId>,
     archived_thread_ids: HashSet<ThreadId>,
     archived_branch_names: HashMap<ThreadId, HashMap<PathBuf, String>>,
@@ -161,7 +160,6 @@ impl ThreadsArchiveView {
     pub fn new(
         workspace: WeakEntity<Workspace>,
         agent_connection_store: WeakEntity<AgentConnectionStore>,
-        agent_server_store: WeakEntity<AgentServerStore>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -223,7 +221,6 @@ impl ThreadsArchiveView {
             _refresh_history_task: Task::ready(()),
             workspace,
             agent_connection_store,
-            agent_server_store,
             restoring: HashSet::default(),
             archived_thread_ids: HashSet::default(),
             archived_branch_names: HashMap::default(),
@@ -615,11 +612,6 @@ impl ThreadsArchiveView {
                 let timestamp =
                     format_history_entry_timestamp(thread.created_at.unwrap_or(thread.updated_at));
 
-                let icon_from_external_svg = self
-                    .agent_server_store
-                    .upgrade()
-                    .and_then(|store| store.read(cx).agent_icon(&thread.agent_id));
-
                 let icon = if thread.agent_id.as_ref() == agent::XENOMORPHIC_AGENT_ID.as_ref() {
                     IconName::XenomorphicAgent
                 } else {
@@ -653,9 +645,6 @@ impl ThreadsArchiveView {
                         this.archived(true)
                             .icon_color(archived_color)
                             .title_label_color(Color::Muted)
-                    })
-                    .when_some(icon_from_external_svg, |this, svg| {
-                        this.custom_icon_from_external_svg(svg)
                     })
                     .timestamp(timestamp)
                     .highlight_positions(highlight_positions.clone())
@@ -800,12 +789,12 @@ impl ThreadsArchiveView {
         &mut self,
         thread_id: ThreadId,
         session_id: Option<schema::SessionId>,
-        agent: AgentId,
+        _agent: AgentId,
         cx: &mut Context<Self>,
     ) {
         ThreadMetadataStore::global(cx).update(cx, |store, cx| store.delete(thread_id, cx));
 
-        let agent = Agent::from(agent);
+        let agent = Agent::NativeAgent;
 
         let Some(agent_connection_store) = self.agent_connection_store.upgrade() else {
             return;

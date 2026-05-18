@@ -45,11 +45,11 @@ impl std::fmt::Display for MaxOutputTokensError {
 
 impl std::error::Error for MaxOutputTokensError {}
 
-/// Key used in ACP ToolCall meta to store the tool's programmatic name.
-/// This is a workaround since ACP's ToolCall doesn't have a dedicated name field.
+/// Key used in ToolCall meta to store the tool's programmatic name.
+/// This is a workaround since ToolCall doesn't have a dedicated name field.
 pub const TOOL_NAME_META_KEY: &str = "tool_name";
 
-/// Helper to extract tool name from ACP meta
+/// Helper to extract tool name from meta
 pub fn tool_name_from_meta(meta: &Option<schema::Meta>) -> Option<SharedString> {
     meta.as_ref()
         .and_then(|m| m.get(TOOL_NAME_META_KEY))
@@ -62,7 +62,7 @@ pub fn meta_with_tool_name(tool_name: &str) -> schema::Meta {
     schema::Meta::from_iter([(TOOL_NAME_META_KEY.into(), tool_name.into())])
 }
 
-/// Key used in ACP ToolCall meta to store the session id and message indexes
+/// Key used in ToolCall meta to store the session id and message indexes
 pub const SUBAGENT_SESSION_INFO_META_KEY: &str = "subagent_session_info";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -76,7 +76,7 @@ pub struct SubagentSessionInfo {
     pub message_end_index: Option<usize>,
 }
 
-/// Helper to extract subagent session id from ACP meta
+/// Helper to extract subagent session id from meta
 pub fn subagent_session_info_from_meta(meta: &Option<schema::Meta>) -> Option<SubagentSessionInfo> {
     meta.as_ref()
         .and_then(|m| m.get(SUBAGENT_SESSION_INFO_META_KEY))
@@ -256,7 +256,7 @@ pub struct ToolCall {
 }
 
 impl ToolCall {
-    fn from_acp(
+    fn from_schema(
         tool_call: schema::ToolCall,
         status: ToolCallStatus,
         language_registry: Arc<LanguageRegistry>,
@@ -275,7 +275,7 @@ impl ToolCall {
         };
         let mut content = Vec::with_capacity(tool_call.content.len());
         for item in tool_call.content {
-            if let Some(item) = ToolCallContent::from_acp(
+            if let Some(item) = ToolCallContent::from_schema(
                 item,
                 language_registry.clone(),
                 path_style,
@@ -378,13 +378,13 @@ impl ToolCall {
             // Reuse existing content if we can
             for (old, new) in self.content.iter_mut().zip(content.by_ref()) {
                 let valid_content =
-                    old.update_from_acp(new, language_registry.clone(), path_style, terminals, cx)?;
+                    old.update_from_schema(new, language_registry.clone(), path_style, terminals, cx)?;
                 if !valid_content {
                     new_content_len -= 1;
                 }
             }
             for new in content {
-                if let Some(new) = ToolCallContent::from_acp(
+                if let Some(new) = ToolCallContent::from_schema(
                     new,
                     language_registry.clone(),
                     path_style,
@@ -803,7 +803,7 @@ pub enum ToolCallContent {
 }
 
 impl ToolCallContent {
-    pub fn from_acp(
+    pub fn from_schema(
         content: schema::ToolCallContent,
         language_registry: Arc<LanguageRegistry>,
         path_style: PathStyle,
@@ -836,7 +836,7 @@ impl ToolCallContent {
         }
     }
 
-    pub fn update_from_acp(
+    pub fn update_from_schema(
         &mut self,
         new: schema::ToolCallContent,
         language_registry: Arc<LanguageRegistry>,
@@ -855,7 +855,7 @@ impl ToolCallContent {
             _ => true,
         };
 
-        if let Some(update) = Self::from_acp(new, language_registry, path_style, terminals, cx)? {
+        if let Some(update) = Self::from_schema(new, language_registry, path_style, terminals, cx)? {
             if needs_update {
                 *self = update;
             }
@@ -979,7 +979,7 @@ pub struct PlanEntry {
 }
 
 impl PlanEntry {
-    pub fn from_acp(entry: schema::PlanEntry, cx: &mut App) -> Self {
+    pub fn from_schema(entry: schema::PlanEntry, cx: &mut App) -> Self {
         Self {
             content: cx.new(|cx| Markdown::new(entry.content.into(), None, None, cx)),
             priority: entry.priority,
@@ -1449,7 +1449,7 @@ impl AgentThread {
         match update {
             schema::SessionUpdate::UserMessageChunk(schema::ContentChunk { content, .. }) => {
                 // We optimistically add the full user prompt before calling `prompt`.
-                // Some ACP servers echo user chunks back over updates. Skip the chunk if
+                // Some servers echo user chunks back over updates. Skip the chunk if
                 // it's already present in the current user message to avoid duplicating content.
                 let already_in_user_message = self
                     .entries
@@ -1947,7 +1947,7 @@ impl AgentThread {
 
             cx.emit(AgentThreadEvent::EntryUpdated(ix));
         } else {
-            let call = ToolCall::from_acp(
+            let call = ToolCall::from_schema(
                 update.try_into()?,
                 status,
                 language_registry,
@@ -2179,7 +2179,7 @@ impl AgentThread {
             *status = new.status;
         }
         for new in new_entries {
-            self.plan.entries.push(PlanEntry::from_acp(new, cx))
+            self.plan.entries.push(PlanEntry::from_schema(new, cx))
         }
         self.plan.entries.truncate(new_entries_len);
 
@@ -3123,7 +3123,7 @@ mod tests {
 
         let terminal_id = schema::TerminalId::new(uuid::Uuid::new_v4().to_string());
 
-        // Send Output BEFORE Created - should be buffered by acp_thread
+        // Send Output BEFORE Created - should be buffered by agent_thread
         thread.update(cx, |thread, cx| {
             thread.on_terminal_provider_event(
                 TerminalProviderEvent::Output {
@@ -3324,7 +3324,7 @@ mod tests {
 
         let lower_terminal = cx.new(|cx| builder.subscribe(cx));
 
-        // Create the acp_thread Terminal wrapper
+        // Create the Terminal wrapper
         thread.update(cx, |thread, cx| {
             thread.on_terminal_provider_event(
                 TerminalProviderEvent::Created {
@@ -3360,7 +3360,7 @@ mod tests {
             cx.executor().timer(Duration::from_millis(50)).await;
         }
 
-        // Get the acp_thread Terminal and kill it
+        // Get the Terminal and kill it
         let wait_for_exit = thread.update(cx, |thread, cx| {
             let term = thread.terminals.get(&terminal_id).unwrap();
             let wait_for_exit = term.read(cx).wait_for_exit();

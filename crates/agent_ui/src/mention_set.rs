@@ -557,8 +557,7 @@ impl MentionSet {
             project.read(cx).fs().clone(),
             thread_store,
         ));
-        let delegate =
-            AgentServerDelegate::new(project.read(cx).agent_server_store().clone(), None);
+        let delegate = AgentServerDelegate;
         let connection = server.connect(delegate, project.clone(), cx);
         cx.spawn(async move |_, cx| {
             let agent = connection.await?;

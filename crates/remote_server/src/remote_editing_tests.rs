@@ -5,7 +5,7 @@ use crate::headless_project::HeadlessProject;
 use agent::{AgentTool, ReadFileTool, ReadFileToolInput, ToolCallEventStream, ToolInput};
 use client::{Client, UserStore};
 use clock::FakeSystemClock;
-use collections::{HashMap, HashSet};
+use collections::HashSet;
 use language_model::LanguageModelToolResultContent;
 use languages::rust_lang;
 
@@ -28,7 +28,6 @@ use lsp::{
 use node_runtime::NodeRuntime;
 use project::{
     ProgressToken, Project,
-    agent_server_store::AgentServerCommand,
     search::{SearchQuery, SearchResult},
 };
 use remote::RemoteClient;
@@ -2396,90 +2395,6 @@ async fn test_remote_agent_fs_tool_calls(cx: &mut TestAppContext, server_cx: &mu
     let does_not_exist_result =
         cx.update(|cx| read_tool.run(ToolInput::resolved(input), event_stream, cx));
     does_not_exist_result.await.unwrap_err();
-}
-
-#[gpui::test]
-async fn test_remote_external_agent_server(
-    cx: &mut TestAppContext,
-    server_cx: &mut TestAppContext,
-) {
-    let fs = FakeFs::new(server_cx.executor());
-    fs.insert_tree(path!("/project"), json!({})).await;
-
-    let (project, _headless_project) = init_test(&fs, cx, server_cx).await;
-    project
-        .update(cx, |project, cx| {
-            project.find_or_create_worktree(path!("/project"), true, cx)
-        })
-        .await
-        .unwrap();
-    let names = project.update(cx, |project, cx| {
-        project
-            .agent_server_store()
-            .read(cx)
-            .external_agents()
-            .map(|name| name.to_string())
-            .collect::<Vec<_>>()
-    });
-    pretty_assertions::assert_eq!(names, Vec::<String>::new());
-    server_cx.update_global::<SettingsStore, _>(|settings_store, cx| {
-        settings_store
-            .set_server_settings(
-                &json!({
-                    "agent_servers": {
-                        "foo": {
-                            "type": "custom",
-                            "command": "foo-cli",
-                            "args": ["--flag"],
-                            "env": {
-                                "VAR": "val"
-                            }
-                        }
-                    }
-                })
-                .to_string(),
-                cx,
-            )
-            .unwrap();
-    });
-    server_cx.run_until_parked();
-    cx.run_until_parked();
-    let names = project.update(cx, |project, cx| {
-        project
-            .agent_server_store()
-            .read(cx)
-            .external_agents()
-            .map(|name| name.to_string())
-            .collect::<Vec<_>>()
-    });
-    pretty_assertions::assert_eq!(names, ["foo"]);
-    let command = project
-        .update(cx, |project, cx| {
-            project.agent_server_store().update(cx, |store, cx| {
-                store
-                    .get_external_agent(&"foo".into())
-                    .unwrap()
-                    .get_command(
-                        vec![],
-                        HashMap::from_iter([("OTHER_VAR".into(), "other-val".into())]),
-                        &mut cx.to_async(),
-                    )
-            })
-        })
-        .await
-        .unwrap();
-    assert_eq!(
-        command,
-        AgentServerCommand {
-            path: "foo-cli".into(),
-            args: vec!["--flag".into()],
-            env: Some(HashMap::from_iter([
-                ("NO_BROWSER".into(), "1".into()),
-                ("VAR".into(), "val".into()),
-                ("OTHER_VAR".into(), "other-val".into())
-            ]))
-        }
-    );
 }
 
 #[gpui::test]

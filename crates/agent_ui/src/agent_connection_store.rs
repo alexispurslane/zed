@@ -5,10 +5,9 @@ use agent_servers::{AgentServer, AgentServerDelegate};
 use anyhow::Result;
 use collections::HashMap;
 use futures::{FutureExt, future::Shared};
-use gpui::{App, AppContext, Context, Entity, EventEmitter, SharedString, Subscription, Task};
+use gpui::{App, AppContext, Context, Entity, Task};
 
-use project::{AgentServerStore, AgentServersUpdated, Project};
-use watch::Receiver;
+use project::Project;
 
 use crate::Agent;
 
@@ -52,12 +51,6 @@ impl AgentConnectionEntry {
     }
 }
 
-pub enum AgentConnectionEntryEvent {
-    NewVersionAvailable(SharedString),
-}
-
-impl EventEmitter<AgentConnectionEntryEvent> for AgentConnectionEntry {}
-
 #[derive(Clone)]
 pub struct ActiveAgentConnection {
     pub agent_id: project::AgentId,
@@ -67,17 +60,13 @@ pub struct ActiveAgentConnection {
 pub struct AgentConnectionStore {
     project: Entity<Project>,
     entries: HashMap<Agent, Entity<AgentConnectionEntry>>,
-    _subscriptions: Vec<Subscription>,
 }
 
 impl AgentConnectionStore {
-    pub fn new(project: Entity<Project>, cx: &mut Context<Self>) -> Self {
-        let agent_server_store = project.read(cx).agent_server_store().clone();
-        let subscription = cx.subscribe(&agent_server_store, Self::handle_agent_servers_updated);
+    pub fn new(project: Entity<Project>, _cx: &mut Context<Self>) -> Self {
         Self {
             project,
             entries: HashMap::default(),
-            _subscriptions: vec![subscription],
         }
     }
 
@@ -94,13 +83,6 @@ impl AgentConnectionStore {
             .get(key)
             .map(|entry| entry.read(cx).status())
             .unwrap_or(AgentConnectionStatus::Disconnected)
-    }
-
-    pub fn agent_version(&self, key: &Agent, cx: &App) -> Option<SharedString> {
-        match self.entries.get(key)?.read(cx) {
-            AgentConnectionEntry::Connected(state) => state.connection.agent_version(),
-            AgentConnectionEntry::Connecting { .. } | AgentConnectionEntry::Error { .. } => None,
-        }
     }
 
     pub fn active_agent_connections(&self, cx: &App) -> Vec<ActiveAgentConnection> {
@@ -144,7 +126,7 @@ impl AgentConnectionStore {
             return entry.clone();
         }
 
-        let (mut new_version_rx, connect_task) = self.start_connection(server, cx);
+        let connect_task = self.start_connection(server, cx);
         let connect_task = connect_task.shared();
 
         let entry = cx.new(|_cx| AgentConnectionEntry::Connecting {
@@ -199,76 +181,22 @@ impl AgentConnectionStore {
         })
         .detach();
 
-        cx.spawn({
-            let entry = entry.downgrade();
-            async move |this, cx| {
-                while let Ok(version) = new_version_rx.recv().await {
-                    let Some(version) = version else {
-                        continue;
-                    };
-
-                    this.update(cx, move |this, cx| {
-                        if this.entries.get(&key) != entry.upgrade().as_ref() {
-                            return;
-                        }
-
-                        entry
-                            .update(cx, move |_entry, cx| {
-                                cx.emit(AgentConnectionEntryEvent::NewVersionAvailable(
-                                    version.into(),
-                                ));
-                            })
-                            .ok();
-                        this.entries.remove(&key);
-                        cx.notify();
-                    })
-                    .ok();
-                    break;
-                }
-            }
-        })
-        .detach();
-
         entry
-    }
-
-    fn handle_agent_servers_updated(
-        &mut self,
-        store: Entity<AgentServerStore>,
-        _: &AgentServersUpdated,
-        cx: &mut Context<Self>,
-    ) {
-        let store = store.read(cx);
-        self.entries.retain(|key, _| match key {
-            Agent::NativeAgent => true,
-            Agent::Custom { id } => store.external_agents.contains_key(id),
-            #[cfg(any(test, feature = "test-support"))]
-            Agent::Stub => true,
-        });
-        cx.notify();
     }
 
     fn start_connection(
         &self,
         server: Rc<dyn AgentServer>,
         cx: &mut Context<Self>,
-    ) -> (
-        Receiver<Option<String>>,
-        Task<Result<AgentConnectedState, LoadError>>,
-    ) {
-        let (new_version_tx, new_version_rx) = watch::channel::<Option<String>>(None);
-
-        let agent_server_store = self.project.read(cx).agent_server_store().clone();
-        let delegate = AgentServerDelegate::new(agent_server_store, Some(new_version_tx));
-
+    ) -> Task<Result<AgentConnectedState, LoadError>> {
+        let delegate = AgentServerDelegate;
         let connect_task = server.connect(delegate, self.project.clone(), cx);
-        let connect_task = cx.spawn(async move |_this, _cx| match connect_task.await {
+        cx.spawn(async move |_this, _cx| match connect_task.await {
             Ok(connection) => Ok(AgentConnectedState { connection }),
             Err(err) => match err.downcast::<LoadError>() {
                 Ok(load_error) => Err(load_error),
-                Err(err) => Err(LoadError::Other(SharedString::from(err.to_string()))),
+                Err(err) => Err(LoadError::Other(gpui::SharedString::from(err.to_string()))),
             },
-        });
-        (new_version_rx, connect_task)
+        })
     }
 }

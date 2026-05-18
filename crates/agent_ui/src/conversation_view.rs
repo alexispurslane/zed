@@ -40,7 +40,7 @@ use markdown::{
     CodeBlockRenderer, CopyButtonVisibility, Markdown, MarkdownElement, MarkdownFont, MarkdownStyle,
 };
 use parking_lot::RwLock;
-use project::{AgentId, AgentServerStore, Project, ProjectEntryId};
+use project::{AgentId, Project, ProjectEntryId};
 use prompt_store::{PromptId, PromptStore};
 
 use crate::DEFAULT_THREAD_TITLE;
@@ -74,7 +74,7 @@ use xenomorphic_actions::assistant::OpenRulesLibrary;
 use super::entry_view_state::EntryViewState;
 use crate::ModelSelectorPopover;
 use crate::agent_connection_store::{
-    AgentConnectedState, AgentConnectionEntryEvent, AgentConnectionStore,
+    AgentConnectedState, AgentConnectionStore,
 };
 use crate::agent_diff::AgentDiff;
 use crate::completion_provider::AgentContextSelection;
@@ -116,7 +116,6 @@ enum ThreadFeedback {
 pub(crate) enum ThreadError {
     PaymentRequired,
     Refusal,
-    AuthenticationRequired(SharedString),
     RateLimitExceeded {
         provider: SharedString,
     },
@@ -144,7 +143,6 @@ pub(crate) enum ThreadError {
     },
     Other {
         message: SharedString,
-        acp_error_code: Option<SharedString>,
     },
 }
 
@@ -156,10 +154,6 @@ impl From<anyhow::Error> for ThreadError {
             Self::NoModelSelected
         } else if error.is::<language_model::PaymentRequiredError>() {
             Self::PaymentRequired
-        } else if let Some(acp_error) = error.downcast_ref::<schema::Error>()
-            && acp_error.code == schema::ErrorCode::AuthRequired
-        {
-            Self::AuthenticationRequired(acp_error.message.clone().into())
         } else if let Some(lm_error) = error.downcast_ref::<LanguageModelCompletionError>() {
             use LanguageModelCompletionError::*;
             match lm_error {
@@ -197,21 +191,14 @@ impl From<anyhow::Error> for ThreadError {
                     let message: SharedString = format!("{:#}", error).into();
                     Self::Other {
                         message,
-                        acp_error_code: None,
                     }
                 }
             }
         } else {
             let message: SharedString = format!("{:#}", error).into();
 
-            // Extract ACP error code if available
-            let acp_error_code = error
-                .downcast_ref::<schema::Error>()
-                .map(|acp_error| SharedString::from(acp_error.code.to_string()));
-
             Self::Other {
                 message,
-                acp_error_code,
             }
         }
     }
@@ -480,17 +467,16 @@ fn affects_thread_metadata(event: &AgentThreadEvent) -> bool {
     }
 }
 
-pub enum AcpServerViewEvent {
+pub enum AgentServerViewEvent {
     ActiveThreadChanged,
 }
 
-impl EventEmitter<AcpServerViewEvent> for ConversationView {}
+impl EventEmitter<AgentServerViewEvent> for ConversationView {}
 
 pub struct ConversationView {
     agent: Rc<dyn AgentServer>,
     connection_store: Entity<AgentConnectionStore>,
     connection_key: Agent,
-    agent_server_store: Entity<AgentServerStore>,
     workspace: WeakEntity<Workspace>,
     project: Entity<Project>,
     thread_store: Option<Entity<ThreadStore>>,
@@ -587,7 +573,7 @@ impl ConversationView {
         if let Some(view) = self.active_thread() {
             view.focus_handle(cx).focus(window, cx);
         }
-        cx.emit(AcpServerViewEvent::ActiveThreadChanged);
+        cx.emit(AgentServerViewEvent::ActiveThreadChanged);
         cx.notify();
     }
 
@@ -613,7 +599,6 @@ pub struct ConnectedServerState {
     pub(crate) threads: HashMap<schema::SessionId, Entity<ThreadView>>,
     connection: Rc<dyn AgentConnection>,
     conversation: Entity<Conversation>,
-    _connection_entry_subscription: Subscription,
 }
 
 struct LoadingView {
@@ -657,7 +642,7 @@ impl ConversationView {
         agent: Rc<dyn AgentServer>,
         connection_store: Entity<AgentConnectionStore>,
         connection_key: Agent,
-        resume_session_id: Option<schema::SessionId>,
+        session_id_to_load: Option<schema::SessionId>,
         thread_id: Option<ThreadId>,
         work_dirs: Option<PathList>,
         title: Option<SharedString>,
@@ -670,16 +655,10 @@ impl ConversationView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let agent_server_store = project.read(cx).agent_server_store().clone();
         let subscriptions = vec![
             cx.observe_global_in::<SettingsStore>(window, Self::agent_ui_font_size_changed),
             cx.observe_global_in::<AgentUiFontSize>(window, Self::agent_ui_font_size_changed),
             cx.observe_global_in::<AgentBufferFontSize>(window, Self::agent_ui_font_size_changed),
-            cx.subscribe_in(
-                &agent_server_store,
-                window,
-                Self::handle_agent_servers_updated,
-            ),
         ];
 
         cx.on_release(|this, cx| {
@@ -702,18 +681,17 @@ impl ConversationView {
             agent: agent.clone(),
             connection_store: connection_store.clone(),
             connection_key: connection_key.clone(),
-            agent_server_store,
             workspace,
             project: project.clone(),
             thread_store,
             prompt_store,
             thread_id,
-            root_session_id: resume_session_id.clone(),
+            root_session_id: session_id_to_load.clone(),
             server_state: Self::initial_state(
                 agent.clone(),
                 connection_store,
                 connection_key,
-                resume_session_id,
+                session_id_to_load,
                 work_dirs,
                 title,
                 project,
@@ -735,12 +713,12 @@ impl ConversationView {
         }
 
         self.server_state = state;
-        cx.emit(AcpServerViewEvent::ActiveThreadChanged);
+        cx.emit(AgentServerViewEvent::ActiveThreadChanged);
         cx.notify();
     }
 
-    fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (resume_session_id, work_dirs, title) = self
+    pub(crate) fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (session_id_to_load, work_dirs, title) = self
             .root_thread_view()
             .map(|thread_view| {
                 let tv = thread_view.read(cx);
@@ -768,7 +746,7 @@ impl ConversationView {
             self.agent.clone(),
             self.connection_store.clone(),
             self.connection_key.clone(),
-            resume_session_id,
+            session_id_to_load,
             work_dirs,
             title,
             self.project.clone(),
@@ -793,7 +771,7 @@ impl ConversationView {
         agent: Rc<dyn AgentServer>,
         connection_store: Entity<AgentConnectionStore>,
         connection_key: Agent,
-        resume_session_id: Option<schema::SessionId>,
+        session_id_to_load: Option<schema::SessionId>,
         work_dirs: Option<PathList>,
         title: Option<SharedString>,
         project: Entity<Project>,
@@ -816,18 +794,6 @@ impl ConversationView {
         let connection_entry = connection_store.update(cx, |store, cx| {
             store.request_connection(connection_key, agent.clone(), cx)
         });
-
-        let connection_entry_subscription =
-            cx.subscribe(&connection_entry, |this, _entry, event, cx| match event {
-                AgentConnectionEntryEvent::NewVersionAvailable(version) => {
-                    if let Some(thread) = this.root_thread_view() {
-                        thread.update(cx, |thread, cx| {
-                            thread.new_server_version_available = Some(version.clone());
-                            cx.notify();
-                        });
-                    }
-                }
-            });
 
         let connect_result = connection_entry.read(cx).wait_for_connection();
 
@@ -859,7 +825,7 @@ impl ConversationView {
             );
 
             let resumed_without_history = false;
-            let result = if let Some(session_id) = resume_session_id.clone() {
+            let result = if let Some(session_id) = session_id_to_load.clone() {
                 cx.update(|_, cx| {
                     if connection.supports_load_session() {
                         connection.clone().load_session(
@@ -929,7 +895,6 @@ impl ConversationView {
                                 active_id: Some(root_session_id.clone()),
                                 threads: HashMap::from_iter([(root_session_id, current)]),
                                 conversation,
-                                _connection_entry_subscription: connection_entry_subscription,
                             }),
                             cx,
                         );
@@ -1074,17 +1039,9 @@ impl ConversationView {
                 })
             });
 
-        let agent_display_name = self
-            .agent_server_store
-            .read(cx)
-            .agent_display_name(&agent_id.clone())
-            .unwrap_or_else(|| agent_id.0.clone());
+        let agent_display_name = agent_id.0.clone();
 
         let agent_icon = self.agent.logo();
-        let agent_icon_from_external_svg = self
-            .agent_server_store
-            .read(cx)
-            .agent_icon(&self.agent.agent_id());
 
         let weak = cx.weak_entity();
         cx.new(|cx| {
@@ -1093,7 +1050,6 @@ impl ConversationView {
                 conversation,
                 weak,
                 agent_icon,
-                agent_icon_from_external_svg,
                 agent_id,
                 agent_display_name,
                 self.workspace.clone(),
@@ -1127,34 +1083,6 @@ impl ConversationView {
         }
         self.emit_load_error_telemetry(&err);
         self.set_server_state(ServerState::LoadError { error: err }, cx);
-    }
-
-    fn handle_agent_servers_updated(
-        &mut self,
-        _agent_server_store: &Entity<project::AgentServerStore>,
-        _event: &project::AgentServersUpdated,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // If we're in a LoadError state OR have a thread_error set (which can happen
-        // when agent.connect() fails during loading), retry loading the thread.
-        // This handles the case where a thread is restored before authentication completes.
-        let should_retry = match &self.server_state {
-            ServerState::Loading { .. } => false,
-            ServerState::LoadError { .. } => true,
-            ServerState::Connected(connected) => {
-                connected.has_thread_error(cx)
-            }
-        };
-
-        if should_retry {
-            if let Some(active) = self.root_thread_view() {
-                active.update(cx, |active, cx| {
-                    active.clear_thread_error(cx);
-                });
-            }
-            self.reset(window, cx);
-        }
     }
 
     pub fn agent_key(&self) -> &Agent {
@@ -1466,11 +1394,8 @@ impl ConversationView {
                 if let Some(thread_view) = self.thread_view(&session_id) {
                     let has_commands = !available_commands.is_empty();
 
-                    let agent_display_name = self
-                        .agent_server_store
-                        .read(cx)
-                        .agent_display_name(&self.agent.agent_id())
-                        .unwrap_or_else(|| self.agent.agent_id().0.to_string().into());
+                    let agent_display_name: SharedString =
+                        self.agent.agent_id().0.to_string().into();
 
                     let new_placeholder =
                         placeholder_text(agent_display_name.as_ref(), has_commands);
@@ -2221,7 +2146,7 @@ impl ConversationView {
 
     fn current_model_name(&self, cx: &App) -> SharedString {
         // For native agent (Xenomorphic Agent), use the specific model name (e.g., "Claude 3.5 Sonnet")
-        // For ACP agents, use the agent name (e.g., "Claude Agent", "Gemini CLI")
+        // For external agents, use the agent name (e.g., "Claude Agent", "Gemini CLI")
         // This provides better clarity about what refused the request
         if self.as_native_connection(cx).is_some() {
             self.root_thread_view()
@@ -2230,7 +2155,7 @@ impl ConversationView {
                 .map(|model| model.name.clone())
                 .unwrap_or_else(|| SharedString::from("The model"))
         } else {
-            // ACP agent - use the agent name (e.g., "Claude Agent", "Gemini CLI")
+            // External agent - use the agent name (e.g., "Claude Agent", "Gemini CLI")
             self.agent.agent_id().0
         }
     }
@@ -2640,7 +2565,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::new(RestoredAvailableCommandsConnection)),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     Some(schema::SessionId::new("restored-session")),
                     None,
                     None,
@@ -2722,7 +2647,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::new(connection)),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     Some(schema::SessionId::new("session-1")),
                     None,
                     Some(PathList::new(&[PathBuf::from("/project/subdir")])),
@@ -2830,14 +2755,14 @@ pub(crate) mod tests {
             cx.update(|_window, cx| cx.new(|cx| AgentConnectionStore::new(project.clone(), cx)));
 
         // Simulate a previous run that persisted metadata for this session.
-        let resume_session_id = schema::SessionId::new("persistent-session");
+        let session_id_to_load = schema::SessionId::new("persistent-session");
         let stored_title: SharedString = "Persistent chat".into();
         cx.update(|_window, cx| {
             ThreadMetadataStore::global(cx).update(cx, |store, cx| {
                 store.save(
                     ThreadMetadata {
                         thread_id: ThreadId::new(),
-                        session_id: Some(resume_session_id.clone()),
+                        session_id: Some(session_id_to_load.clone()),
                         agent_id: ProjectAgentId::new("Flaky"),
                         title: Some(stored_title.clone()),
                         updated_at: Utc::now(),
@@ -2860,8 +2785,8 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(server),
                     connection_store,
-                    Agent::Custom { id: "Flaky".into() },
-                    Some(resume_session_id.clone()),
+                    Agent::Stub,
+                    Some(session_id_to_load.clone()),
                     None,
                     None,
                     None,
@@ -2886,18 +2811,19 @@ pub(crate) mod tests {
             );
             assert_eq!(
                 view.root_session_id.as_ref(),
-                Some(&resume_session_id),
+                Some(&session_id_to_load),
                 "root_session_id should still hold the original id while in LoadError"
             );
         });
 
-        // Now let the agent come online and emit AgentServersUpdated. This is
-        // the moment the bug would have stomped on root_session_id.
+        // Now let the agent come online. Trigger reset() which retries
+        // the connection. This is the moment the bug would have stomped
+        // on root_session_id.
         fail.store(false, Ordering::SeqCst);
-        project.update(cx, |project, cx| {
-            project
-                .agent_server_store()
-                .update(cx, |_store, cx| cx.emit(project::AgentServersUpdated));
+        cx.update(|window, cx| {
+            conversation_view.update(cx, |view, cx| {
+                view.reset(window, cx);
+            });
         });
         cx.run_until_parked();
 
@@ -2912,7 +2838,7 @@ pub(crate) mod tests {
                 .as_ref()
                 .expect("Connected state should have an active_id");
             assert_eq!(
-                active_id, &resume_session_id,
+                active_id, &session_id_to_load,
                 "reset() must resume the original session id, not call new_session()"
             );
             let active_thread = view
@@ -2920,7 +2846,7 @@ pub(crate) mod tests {
                 .expect("should have an active thread view");
             let thread_session = active_thread.read(cx).thread.read(cx).session_id().clone();
             assert_eq!(
-                thread_session, resume_session_id,
+                thread_session, session_id_to_load,
                 "the live AgentThread should hold the resumed session id"
             );
         });
@@ -3088,7 +3014,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::default_response()),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,
@@ -3186,7 +3112,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::default_response()),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,
@@ -3255,7 +3181,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::default_response()),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,
@@ -3377,7 +3303,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::new(RestoredAvailableCommandsConnection)),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,
@@ -3592,7 +3518,7 @@ pub(crate) mod tests {
         let connection_store =
             cx.update(|_window, cx| cx.new(|cx| AgentConnectionStore::new(project.clone(), cx)));
 
-        let agent_key = Agent::Custom { id: "Test".into() };
+        let agent_key = Agent::Stub;
 
         let conversation_view = cx.update(|window, cx| {
             cx.new(|cx| {
@@ -3738,8 +3664,7 @@ pub(crate) mod tests {
         ) -> Task<gpui::Result<Rc<dyn AgentConnection>>> {
             Task::ready(Err(anyhow!(
                 "extracting downloaded asset for \
-                 https://github.com/zed-industries/codex-acp/releases/download/v0.9.4/\
-                 codex-acp-0.9.4-aarch64-pc-windows-msvc.zip: \
+                 https://example.com/agent-downloads/test-agent-1.0.0.zip: \
                  failed to iterate over archive: Invalid gzip header"
             )))
         }
@@ -3830,9 +3755,9 @@ pub(crate) mod tests {
     }
 
     #[derive(Clone)]
-    struct ResumeOnlyAgentConnection;
+    struct MinimalAgentConnection;
 
-    impl AgentConnection for ResumeOnlyAgentConnection {
+    impl AgentConnection for MinimalAgentConnection {
         fn agent_id(&self) -> AgentId {
             AgentId::new("resume-only")
         }
@@ -3850,7 +3775,7 @@ pub(crate) mod tests {
             let thread = build_test_thread(
                 self,
                 project,
-                "ResumeOnlyAgentConnection",
+                "MinimalAgentConnection",
                 schema::SessionId::new("new-session"),
                 cx,
             );
@@ -4096,7 +4021,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::new(connection.as_ref().clone())),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,
@@ -6113,7 +6038,7 @@ pub(crate) mod tests {
     }
 
     #[gpui::test]
-    async fn test_manually_editing_title_updates_acp_thread_title(cx: &mut TestAppContext) {
+    async fn test_manually_editing_title_updates_agent_thread_title(cx: &mut TestAppContext) {
         init_test(cx);
 
         let (conversation_view, cx) =
@@ -6149,7 +6074,7 @@ pub(crate) mod tests {
         init_test(cx);
 
         let (conversation_view, cx) =
-            setup_conversation_view(StubAgentServer::new(ResumeOnlyAgentConnection), cx).await;
+            setup_conversation_view(StubAgentServer::new(MinimalAgentConnection), cx).await;
 
         let active = active_thread(&conversation_view, cx);
         let title_editor = cx.read(|cx| active.read(cx).title_editor.clone());
@@ -6207,7 +6132,7 @@ pub(crate) mod tests {
         });
     }
 
-    fn create_test_acp_thread(
+    fn create_test_agent_thread(
         parent_session_id: Option<schema::SessionId>,
         session_id: &str,
         connection: Rc<dyn AgentConnection>,
@@ -6270,7 +6195,7 @@ pub(crate) mod tests {
         let session_id = schema::SessionId::new("session-1");
         let (thread, conversation) = cx.update(|cx| {
             let thread =
-                create_test_acp_thread(None, "session-1", connection.clone(), project.clone(), cx);
+                create_test_agent_thread(None, "session-1", connection.clone(), project.clone(), cx);
             let conversation = cx.new(|cx| {
                 let mut conversation = Conversation::default();
                 conversation.register_thread(thread.clone(), cx);
@@ -6353,8 +6278,8 @@ pub(crate) mod tests {
         let subagent_session_id = schema::SessionId::new("subagent");
         let (parent_thread, subagent_thread, conversation) = cx.update(|cx| {
             let parent_thread =
-                create_test_acp_thread(None, "parent", connection.clone(), project.clone(), cx);
-            let subagent_thread = create_test_acp_thread(
+                create_test_agent_thread(None, "parent", connection.clone(), project.clone(), cx);
+            let subagent_thread = create_test_agent_thread(
                 Some(schema::SessionId::new("parent")),
                 "subagent",
                 connection.clone(),
@@ -6412,9 +6337,9 @@ pub(crate) mod tests {
         let session_id_b = schema::SessionId::new("thread-b");
         let (thread_a, thread_b, conversation) = cx.update(|cx| {
             let thread_a =
-                create_test_acp_thread(None, "thread-a", connection.clone(), project.clone(), cx);
+                create_test_agent_thread(None, "thread-a", connection.clone(), project.clone(), cx);
             let thread_b =
-                create_test_acp_thread(None, "thread-b", connection.clone(), project.clone(), cx);
+                create_test_agent_thread(None, "thread-b", connection.clone(), project.clone(), cx);
             let conversation = cx.new(|cx| {
                 let mut conversation = Conversation::default();
                 conversation.register_thread(thread_a.clone(), cx);
@@ -6682,7 +6607,7 @@ pub(crate) mod tests {
                 ConversationView::new(
                     Rc::new(StubAgentServer::default_response()),
                     connection_store,
-                    Agent::Custom { id: "Test".into() },
+                    Agent::Stub,
                     None,
                     None,
                     None,

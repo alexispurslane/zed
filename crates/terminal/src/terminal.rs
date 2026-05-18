@@ -1305,7 +1305,7 @@ impl Terminal {
         // This bypasses the PTY/event loop for display-only terminals.
         //
         // We first convert LF to CRLF, to get the expected line wrapping in Alacritty.
-        // When output comes from piped commands (not a PTY) such as codex-acp, and that
+        // When output comes from piped commands (not a PTY) such as external agents, and that
         // output only contains LF (\n) without a CR (\r) after it, such as the output
         // of the `ls` command when running outside a PTY, Alacritty moves the cursor
         // cursor down a line but does not move it back to the initial column. This makes
