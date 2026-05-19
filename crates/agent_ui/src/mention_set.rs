@@ -22,7 +22,6 @@ use language_model::{LanguageModelImage, LanguageModelImageExt};
 use multi_buffer::MultiBufferRow;
 use postage::stream::Stream as _;
 use project::{Project, ProjectItem, ProjectPath, Worktree};
-use prompt_store::{PromptId, PromptStore};
 use rope::Point;
 use std::{
     cell::RefCell,
@@ -61,7 +60,6 @@ pub struct MentionImage {
 pub struct MentionSet {
     project: WeakEntity<Project>,
     thread_store: Option<Entity<ThreadStore>>,
-    prompt_store: Option<Entity<PromptStore>>,
     mentions: HashMap<CreaseId, (MentionUri, MentionTask)>,
 }
 
@@ -69,12 +67,10 @@ impl MentionSet {
     pub fn new(
         project: WeakEntity<Project>,
         thread_store: Option<Entity<ThreadStore>>,
-        prompt_store: Option<Entity<PromptStore>>,
     ) -> Self {
         Self {
             project,
             thread_store,
-            prompt_store,
             mentions: HashMap::default(),
         }
     }
@@ -139,7 +135,6 @@ impl MentionSet {
                 line_range,
                 ..
             } => self.confirm_mention_for_symbol(abs_path, line_range, cx),
-            MentionUri::Rule { id, .. } => self.confirm_mention_for_rule(id, cx),
             MentionUri::Diagnostics {
                 include_errors,
                 include_warnings,
@@ -288,7 +283,6 @@ impl MentionSet {
                 line_range,
                 ..
             } => self.confirm_mention_for_symbol(abs_path, line_range, cx),
-            MentionUri::Rule { id, .. } => self.confirm_mention_for_rule(id, cx),
             MentionUri::Diagnostics {
                 include_errors,
                 include_warnings,
@@ -437,24 +431,6 @@ impl MentionSet {
                 }
             });
             Ok(mention)
-        })
-    }
-
-    fn confirm_mention_for_rule(
-        &mut self,
-        id: PromptId,
-        cx: &mut Context<Self>,
-    ) -> Task<Result<Mention>> {
-        let Some(prompt_store) = self.prompt_store.as_ref() else {
-            return Task::ready(Err(anyhow!("Missing prompt store")));
-        };
-        let prompt = prompt_store.read(cx).load(id, cx);
-        cx.spawn(async move |_, _| {
-            let prompt = prompt.await?;
-            Ok(Mention::Text {
-                content: prompt,
-                tracked_buffers: Vec::new(),
-            })
         })
     }
 
@@ -649,7 +625,6 @@ mod tests {
     use fs::FakeFs;
     use gpui::TestAppContext;
     use project::Project;
-    use prompt_store;
     use release_channel;
     use semver::Version;
     use serde_json::json;
@@ -664,7 +639,6 @@ mod tests {
         cx.update(|cx| {
             theme_settings::init(theme::LoadThemes::JustBase, cx);
             release_channel::init(Version::new(0, 0, 0), cx);
-            prompt_store::init(cx);
         });
     }
 
@@ -676,7 +650,7 @@ mod tests {
         fs.insert_tree("/project", json!({"file": ""})).await;
         let project = Project::test(fs, [Path::new(path!("/project"))], cx).await;
         let thread_store = None;
-        let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), thread_store, None));
+        let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), thread_store));
 
         let task = mention_set.update(cx, |mention_set, cx| {
             mention_set.confirm_mention_for_thread(schema::SessionId::new("thread-1"), cx)
@@ -702,7 +676,7 @@ mod tests {
         )
         .await;
         let project = Project::test(fs, [Path::new(path!("/project"))], cx).await;
-        let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), None, None));
+        let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), None));
 
         let mention_task = mention_set.update(cx, |mention_set, cx| {
             let http_client = project.read(cx).client().http_client();

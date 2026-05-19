@@ -1826,7 +1826,6 @@ mod tests {
                     settings.editor.diff_view_style = Some(DiffViewStyle::Unified);
                 });
             });
-            prompt_store::init(cx);
             theme_settings::init(theme::LoadThemes::JustBase, cx);
             language_model::init(cx);
         });
@@ -1983,7 +1982,6 @@ mod tests {
         cx.update(|cx| {
             let settings_store = SettingsStore::test(cx);
             cx.set_global(settings_store);
-            prompt_store::init(cx);
             theme_settings::init(theme::LoadThemes::JustBase, cx);
             language_model::init(cx);
             workspace::register_project_item::<Editor>(cx);

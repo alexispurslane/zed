@@ -40,8 +40,8 @@ use markdown::{
     CodeBlockRenderer, CopyButtonVisibility, Markdown, MarkdownElement, MarkdownFont, MarkdownStyle,
 };
 use parking_lot::RwLock;
-use project::{AgentId, Project, ProjectEntryId};
-use prompt_store::{PromptId, PromptStore};
+use project::{AgentId, Project};
+
 
 use crate::DEFAULT_THREAD_TITLE;
 use crate::message_editor::SessionCapabilities;
@@ -69,7 +69,6 @@ use workspace::{
     CollaboratorId, MultiWorkspace, NewTerminal, Toast, Workspace, notifications::NotificationId,
 };
 use xenomorphic_actions::agent::{Chat, ToggleModelSelector};
-use xenomorphic_actions::assistant::OpenRulesLibrary;
 
 use super::entry_view_state::EntryViewState;
 use crate::ModelSelectorPopover;
@@ -480,7 +479,6 @@ pub struct ConversationView {
     workspace: WeakEntity<Workspace>,
     project: Entity<Project>,
     thread_store: Option<Entity<ThreadStore>>,
-    prompt_store: Option<Entity<PromptStore>>,
     pub(crate) thread_id: ThreadId,
     pub(crate) root_session_id: Option<schema::SessionId>,
     server_state: ServerState,
@@ -650,7 +648,6 @@ impl ConversationView {
         workspace: WeakEntity<Workspace>,
         project: Entity<Project>,
         thread_store: Option<Entity<ThreadStore>>,
-        prompt_store: Option<Entity<PromptStore>>,
         source: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -684,7 +681,7 @@ impl ConversationView {
             workspace,
             project: project.clone(),
             thread_store,
-            prompt_store,
+
             thread_id,
             root_session_id: session_id_to_load.clone(),
             server_state: Self::initial_state(
@@ -942,7 +939,6 @@ impl ConversationView {
                 self.workspace.clone(),
                 self.project.downgrade(),
                 self.thread_store.clone(),
-                self.prompt_store.clone(),
                 session_capabilities.clone(),
                 self.agent.agent_id(),
             )
@@ -1061,7 +1057,6 @@ impl ConversationView {
                 resumed_without_history,
                 self.project.downgrade(),
                 self.thread_store.clone(),
-                self.prompt_store.clone(),
                 initial_content,
                 subscriptions,
                 window,
@@ -1738,7 +1733,6 @@ impl ConversationView {
                 let mut editor = MessageEditor::new(
                     workspace.clone(),
                     project.clone(),
-                    None,
                     None,
                     session_capabilities.clone(),
                     agent_name.clone(),
@@ -2574,7 +2568,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project,
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -2656,7 +2649,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project,
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -2794,7 +2786,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project.clone(),
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -2982,7 +2973,7 @@ pub(crate) mod tests {
         let cx = &mut VisualTestContext::from_window(multi_workspace_handle.into(), cx);
 
         let panel = workspace.update_in(cx, |workspace, window, cx| {
-            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, None, window, cx));
+            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, window, cx));
             workspace.add_panel(panel.clone(), window, cx);
             workspace.focus_panel::<crate::AgentPanel>(window, cx);
             panel
@@ -3023,7 +3014,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project.clone(),
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -3121,7 +3111,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project.clone(),
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -3190,7 +3179,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project.clone(),
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -3266,7 +3254,7 @@ pub(crate) mod tests {
         let cx = &mut VisualTestContext::from_window(multi_workspace_handle.into(), cx);
 
         let panel = workspace1.update_in(cx, |workspace, window, cx| {
-            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, None, window, cx));
+            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, window, cx));
             workspace.add_panel(panel.clone(), window, cx);
 
             // Open the dock and activate the agent panel so it's visible
@@ -3312,7 +3300,6 @@ pub(crate) mod tests {
                     workspace1.downgrade(),
                     project1.clone(),
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -3534,7 +3521,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project,
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,
@@ -3968,7 +3954,6 @@ pub(crate) mod tests {
             editor::init(cx);
             agent_panel::init(cx);
             release_channel::init(semver::Version::new(0, 0, 0), cx);
-            prompt_store::init(cx)
         });
     }
 
@@ -4030,8 +4015,7 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project.clone(),
                     Some(thread_store.clone()),
-                    None,
-                    "agent_panel",
+                                        "agent_panel",
                     window,
                     cx,
                 )
@@ -6616,7 +6600,6 @@ pub(crate) mod tests {
                     workspace.downgrade(),
                     project,
                     Some(thread_store),
-                    None,
                     "agent_panel",
                     window,
                     cx,

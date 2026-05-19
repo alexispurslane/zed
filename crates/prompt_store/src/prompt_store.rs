@@ -1,895 +1,464 @@
-mod prompts;
-
-use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc};
-use collections::HashMap;
-use futures::FutureExt as _;
-use futures::future::Shared;
-use fuzzy::StringMatchCandidate;
-use gpui::{
-    App, AppContext, Context, Entity, EventEmitter, Global, ReadGlobal, SharedString, Task,
-};
-use heed::{
-    Database, RoTxn,
-    types::{SerdeBincode, SerdeJson, Str},
-};
-use parking_lot::RwLock;
-pub use prompts::*;
-use rope::Rope;
-use serde::{Deserialize, Serialize};
+use anyhow::Result;
+use assets::Assets;
+use fs::Fs;
+use futures::StreamExt;
+use gpui::{App, AppContext as _, AssetSource};
+use handlebars::{Handlebars, RenderError};
+use language::{BufferSnapshot, LanguageName, Point};
+use parking_lot::Mutex;
+use serde::Serialize;
 use std::{
-    cmp::Reverse,
-    future::Future,
-    path::PathBuf,
-    sync::{Arc, atomic::AtomicBool},
+    ops::Range,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
-use strum::{EnumIter, IntoEnumIterator as _};
 use text::LineEnding;
-use util::ResultExt;
-use uuid::Uuid;
+use util::{
+    ResultExt, get_default_system_shell_preferring_bash, rel_path::RelPath, shell::ShellKind,
+};
 
-/// Init starts loading the PromptStore in the background and assigns
-/// a shared future to a global.
-pub fn init(cx: &mut App) {
-    let db_path = paths::prompts_dir().join("prompts-library-db.0.mdb");
-    let prompt_store_task = PromptStore::new(db_path, cx);
-    let prompt_store_entity_task = cx
-        .spawn(async move |cx| {
-            prompt_store_task
-                .await
-                .map(|prompt_store| cx.new(|_cx| prompt_store))
-                .map_err(Arc::new)
-        })
-        .shared();
-    cx.set_global(GlobalPromptStore(prompt_store_entity_task))
+pub const RULES_FILE_NAMES: &[&str] = &[
+    ".rules",
+    ".cursorrules",
+    ".windsurfrules",
+    ".clinerules",
+    ".github/copilot-instructions.md",
+    "AGENT.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+];
+
+#[derive(Default, Debug, Clone, Serialize)]
+pub struct ProjectContext {
+    pub worktrees: Vec<WorktreeContext>,
+    /// Whether any worktree has a rules_file. Provided as a field because handlebars can't do this.
+    pub has_rules: bool,
+    pub os: String,
+    pub arch: String,
+    pub shell: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PromptMetadata {
-    pub id: PromptId,
-    pub title: Option<SharedString>,
-    pub default: bool,
-    pub saved_at: DateTime<Utc>,
-}
-
-impl PromptMetadata {
-    fn builtin(builtin: BuiltInPrompt) -> Self {
+impl ProjectContext {
+    pub fn new(worktrees: Vec<WorktreeContext>) -> Self {
+        let has_rules = worktrees
+            .iter()
+            .any(|worktree| worktree.rules_file.is_some());
         Self {
-            id: PromptId::BuiltIn(builtin),
-            title: Some(builtin.title().into()),
-            default: false,
-            saved_at: DateTime::default(),
+            worktrees,
+            has_rules,
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            shell: ShellKind::new(&get_default_system_shell_preferring_bash(), false)
+                .to_string(),
         }
     }
 }
 
-/// Built-in prompts that have default content and can be customized by users.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
-pub enum BuiltInPrompt {
-    CommitMessage,
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct WorktreeContext {
+    pub root_name: String,
+    pub abs_path: Arc<Path>,
+    pub rules_file: Option<RulesFileContext>,
 }
 
-impl BuiltInPrompt {
-    pub fn title(&self) -> &'static str {
-        match self {
-            Self::CommitMessage => "Commit message",
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct RulesFileContext {
+    pub path_in_worktree: Arc<RelPath>,
+    pub text: String,
+    // This used for opening rules files. TODO: Since it isn't related to prompt templating, this
+    // should be moved elsewhere.
+    #[serde(skip)]
+    pub project_entry_id: usize,
+}
+
+#[derive(Serialize)]
+pub struct ContentPromptDiagnosticContext {
+    pub line_number: usize,
+    pub error_message: String,
+    pub code_content: String,
+}
+
+#[derive(Serialize)]
+pub struct ContentPromptContext {
+    pub content_type: String,
+    pub language_name: Option<String>,
+    pub is_insert: bool,
+    pub is_truncated: bool,
+    pub document_content: String,
+    pub user_prompt: String,
+    pub rewrite_section: Option<String>,
+    pub diagnostic_errors: Vec<ContentPromptDiagnosticContext>,
+}
+
+#[derive(Serialize)]
+pub struct ContentPromptContextV2 {
+    pub content_type: String,
+    pub language_name: Option<String>,
+    pub is_truncated: bool,
+    pub document_content: String,
+    pub rewrite_section: String,
+    pub diagnostic_errors: Vec<ContentPromptDiagnosticContext>,
+}
+
+#[derive(Serialize)]
+pub struct TerminalAssistantPromptContext {
+    pub os: String,
+    pub arch: String,
+    pub shell: Option<String>,
+    pub working_directory: Option<String>,
+    pub latest_output: Vec<String>,
+    pub user_prompt: String,
+}
+
+pub struct PromptLoadingParams<'a> {
+    pub fs: Arc<dyn Fs>,
+    pub repo_path: Option<PathBuf>,
+    pub cx: &'a gpui::App,
+}
+
+pub struct PromptBuilder {
+    handlebars: Arc<Mutex<Handlebars<'static>>>,
+}
+
+impl PromptBuilder {
+    pub fn load(fs: Arc<dyn Fs>, stdout_is_a_pty: bool, cx: &mut App) -> Arc<Self> {
+        Self::new(Some(PromptLoadingParams {
+            fs: fs.clone(),
+            repo_path: stdout_is_a_pty
+                .then(|| std::env::current_dir().log_err())
+                .flatten(),
+            cx,
+        }))
+        .log_err()
+        .map(Arc::new)
+        .unwrap_or_else(|| Arc::new(Self::new(None).unwrap()))
+    }
+
+    pub fn new(loading_params: Option<PromptLoadingParams>) -> Result<Self> {
+        let mut handlebars = Handlebars::new();
+        Self::register_built_in_templates(&mut handlebars)?;
+
+        let handlebars = Arc::new(Mutex::new(handlebars));
+
+        if let Some(params) = loading_params {
+            Self::watch_fs_for_template_overrides(params, handlebars.clone());
         }
+
+        Ok(Self { handlebars })
     }
 
-    /// Returns the default content for this built-in prompt.
-    pub fn default_content(&self) -> &'static str {
-        match self {
-            Self::CommitMessage => include_str!("../../git_ui/src/commit_message_prompt.txt"),
-        }
-    }
-}
-
-impl std::fmt::Display for BuiltInPrompt {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CommitMessage => write!(f, "Commit message"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum PromptId {
-    User { uuid: UserPromptId },
-    BuiltIn(BuiltInPrompt),
-}
-
-impl PromptId {
-    pub fn new() -> PromptId {
-        UserPromptId::new().into()
-    }
-
-    pub fn as_user(&self) -> Option<UserPromptId> {
-        match self {
-            Self::User { uuid } => Some(*uuid),
-            Self::BuiltIn { .. } => None,
-        }
-    }
-
-    pub fn as_built_in(&self) -> Option<BuiltInPrompt> {
-        match self {
-            Self::User { .. } => None,
-            Self::BuiltIn(builtin) => Some(*builtin),
-        }
-    }
-
-    pub fn is_built_in(&self) -> bool {
-        matches!(self, Self::BuiltIn { .. })
-    }
-
-    pub fn can_edit(&self) -> bool {
-        match self {
-            Self::User { .. } => true,
-            Self::BuiltIn(builtin) => match builtin {
-                BuiltInPrompt::CommitMessage => true,
-            },
-        }
-    }
-}
-
-impl From<BuiltInPrompt> for PromptId {
-    fn from(builtin: BuiltInPrompt) -> Self {
-        PromptId::BuiltIn(builtin)
-    }
-}
-
-impl From<UserPromptId> for PromptId {
-    fn from(uuid: UserPromptId) -> Self {
-        PromptId::User { uuid }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct UserPromptId(pub Uuid);
-
-impl UserPromptId {
-    pub fn new() -> UserPromptId {
-        UserPromptId(Uuid::new_v4())
-    }
-}
-
-impl From<Uuid> for UserPromptId {
-    fn from(uuid: Uuid) -> Self {
-        UserPromptId(uuid)
-    }
-}
-
-impl std::fmt::Display for PromptId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PromptId::User { uuid } => write!(f, "{}", uuid.0),
-            PromptId::BuiltIn(builtin) => write!(f, "{}", builtin),
-        }
-    }
-}
-
-pub struct PromptStore {
-    env: heed::Env,
-    metadata_cache: RwLock<MetadataCache>,
-    metadata: Database<SerdeJson<PromptId>, SerdeJson<PromptMetadata>>,
-    bodies: Database<SerdeJson<PromptId>, Str>,
-}
-
-pub struct PromptsUpdatedEvent;
-
-impl EventEmitter<PromptsUpdatedEvent> for PromptStore {}
-
-#[derive(Default)]
-struct MetadataCache {
-    metadata: Vec<PromptMetadata>,
-    metadata_by_id: HashMap<PromptId, PromptMetadata>,
-}
-
-impl MetadataCache {
-    fn from_db(
-        db: Database<SerdeJson<PromptId>, SerdeJson<PromptMetadata>>,
-        txn: &RoTxn,
-    ) -> Result<Self> {
-        let mut cache = MetadataCache::default();
-        for result in db.iter(txn)? {
-            // Fail-open: skip records that can't be decoded (e.g. from a different branch)
-            // rather than failing the entire prompt store initialization.
-            let Ok((prompt_id, metadata)) = result else {
-                log::warn!(
-                    "Skipping unreadable prompt record in database: {:?}",
-                    result.err()
-                );
-                continue;
+    /// Watches the filesystem for changes to prompt template overrides.
+    ///
+    /// This function sets up a file watcher on the prompt templates directory. It performs
+    /// an initial scan of the directory and registers any existing template overrides.
+    /// Then it continuously monitors for changes, reloading templates as they are
+    /// modified or added.
+    ///
+    /// If the templates directory doesn't exist initially, it waits for it to be created.
+    /// If the directory is removed, it restores the built-in templates and waits for the
+    /// directory to be recreated.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - A `PromptLoadingParams` struct containing the filesystem, repository path,
+    ///   and application context.
+    /// * `handlebars` - An `Arc<Mutex<Handlebars>>` for registering and updating templates.
+    fn watch_fs_for_template_overrides(
+        params: PromptLoadingParams,
+        handlebars: Arc<Mutex<Handlebars<'static>>>,
+    ) {
+        let templates_dir = paths::prompt_overrides_dir(params.repo_path.as_deref());
+        params.cx.background_spawn(async move {
+            let Some(parent_dir) = templates_dir.parent() else {
+                return;
             };
-            cache.metadata.push(metadata.clone());
-            cache.metadata_by_id.insert(prompt_id, metadata);
-        }
 
-        // Insert all the built-in prompts that were not customized by the user
-        for builtin in BuiltInPrompt::iter() {
-            let builtin_id = PromptId::BuiltIn(builtin);
-            if !cache.metadata_by_id.contains_key(&builtin_id) {
-                let metadata = PromptMetadata::builtin(builtin);
-                cache.metadata.push(metadata.clone());
-                cache.metadata_by_id.insert(builtin_id, metadata);
+            let mut found_dir_once = false;
+            loop {
+                // Check if the templates directory exists and handle its status
+                // If it exists, log its presence and check if it's a symlink
+                // If it doesn't exist:
+                //   - Log that we're using built-in prompts
+                //   - Check if it's a broken symlink and log if so
+                //   - Set up a watcher to detect when it's created
+                // After the first check, set the `found_dir_once` flag
+                // This allows us to avoid logging when looping back around after deleting the prompt overrides directory.
+                let dir_status = params.fs.is_dir(&templates_dir).await;
+                let symlink_status = params.fs.read_link(&templates_dir).await.ok();
+                if dir_status {
+                    let mut log_message = format!("Prompt template overrides directory found at {}", templates_dir.display());
+                    if let Some(target) = symlink_status {
+                        log_message.push_str(" -> ");
+                        log_message.push_str(&target.display().to_string());
+                    }
+                    log::trace!("{}.", log_message);
+                } else {
+                    if !found_dir_once {
+                        log::trace!("No prompt template overrides directory found at {}. Using built-in prompts.", templates_dir.display());
+                        if let Some(target) = symlink_status {
+                            log::trace!("Symlink found pointing to {}, but target is invalid.", target.display());
+                        }
+                    }
+
+                    if params.fs.is_dir(parent_dir).await {
+                        let (mut changes, _watcher) = params.fs.watch(parent_dir, Duration::from_secs(1)).await;
+                        while let Some(changed_paths) = changes.next().await {
+                            if changed_paths.iter().any(|p| &p.path == &templates_dir) {
+                                let mut log_message = format!("Prompt template overrides directory detected at {}", templates_dir.display());
+                                if let Ok(target) = params.fs.read_link(&templates_dir).await {
+                                    log_message.push_str(" -> ");
+                                    log_message.push_str(&target.display().to_string());
+                                }
+                                log::trace!("{}.", log_message);
+                                break;
+                            }
+                        }
+                    } else {
+                        return;
+                    }
+                }
+
+                found_dir_once = true;
+
+                // Initial scan of the prompt overrides directory
+                if let Ok(mut entries) = params.fs.read_dir(&templates_dir).await {
+                    while let Some(Ok(file_path)) = entries.next().await {
+                        if file_path.to_string_lossy().ends_with(".hbs")
+                            && let Ok(content) = params.fs.load(&file_path).await {
+                                let file_name = file_path.file_stem().unwrap().to_string_lossy();
+                                log::debug!("Registering prompt template override: {}", file_name);
+                                handlebars.lock().register_template_string(&file_name, content).log_err();
+                            }
+                    }
+                }
+
+                // Watch both the parent directory and the template overrides directory:
+                // - Monitor the parent directory to detect if the template overrides directory is deleted.
+                // - Monitor the template overrides directory to re-register templates when they change.
+                // Combine both watch streams into a single stream.
+                let (parent_changes, parent_watcher) = params.fs.watch(parent_dir, Duration::from_secs(1)).await;
+                let (changes, watcher) = params.fs.watch(&templates_dir, Duration::from_secs(1)).await;
+                let mut combined_changes = futures::stream::select(changes, parent_changes);
+
+                while let Some(changed_paths) = combined_changes.next().await {
+                    if changed_paths.iter().any(|p| &p.path == &templates_dir)
+                        && !params.fs.is_dir(&templates_dir).await {
+                            log::info!("Prompt template overrides directory removed. Restoring built-in prompt templates.");
+                            Self::register_built_in_templates(&mut handlebars.lock()).log_err();
+                            break;
+                        }
+                    for event in changed_paths {
+                        if event.path.starts_with(&templates_dir) && event.path.extension().is_some_and(|ext| ext == "hbs") {
+                            log::info!("Reloading prompt template override: {}", event.path.display());
+                            if let Some(content) = params.fs.load(&event.path).await.log_err() {
+                                let file_name = event.path.file_stem().unwrap().to_string_lossy();
+                                handlebars.lock().register_template_string(&file_name, content).log_err();
+                            }
+                        }
+                    }
+                }
+
+                drop(watcher);
+                drop(parent_watcher);
             }
-        }
-        cache.sort();
-        Ok(cache)
-    }
-
-    fn insert(&mut self, metadata: PromptMetadata) {
-        self.metadata_by_id.insert(metadata.id, metadata.clone());
-        if let Some(old_metadata) = self.metadata.iter_mut().find(|m| m.id == metadata.id) {
-            *old_metadata = metadata;
-        } else {
-            self.metadata.push(metadata);
-        }
-        self.sort();
-    }
-
-    fn remove(&mut self, id: PromptId) {
-        self.metadata.retain(|metadata| metadata.id != id);
-        self.metadata_by_id.remove(&id);
-    }
-
-    fn sort(&mut self) {
-        self.metadata.sort_unstable_by(|a, b| {
-            a.title
-                .cmp(&b.title)
-                .then_with(|| b.saved_at.cmp(&a.saved_at))
-        });
-    }
-}
-
-impl PromptStore {
-    pub fn global(cx: &App) -> impl Future<Output = Result<Entity<Self>>> + use<> {
-        let store = GlobalPromptStore::global(cx).0.clone();
-        async move { store.await.map_err(|err| anyhow!(err)) }
-    }
-
-    pub fn new(db_path: PathBuf, cx: &App) -> Task<Result<Self>> {
-        cx.background_spawn(async move {
-            std::fs::create_dir_all(&db_path)?;
-
-            let db_env = unsafe {
-                heed::EnvOpenOptions::new()
-                    .map_size(1024 * 1024 * 1024) // 1GB
-                    .max_dbs(4) // Metadata and bodies (possibly v1 of both as well)
-                    .open(db_path)?
-            };
-
-            let mut txn = db_env.write_txn()?;
-            let metadata = db_env.create_database(&mut txn, Some("metadata.v2"))?;
-            let bodies = db_env.create_database(&mut txn, Some("bodies.v2"))?;
-            txn.commit()?;
-
-            Self::upgrade_dbs(&db_env, metadata, bodies).log_err();
-
-            let txn = db_env.read_txn()?;
-            let metadata_cache = MetadataCache::from_db(metadata, &txn)?;
-            txn.commit()?;
-
-            Ok(PromptStore {
-                env: db_env,
-                metadata_cache: RwLock::new(metadata_cache),
-                metadata,
-                bodies,
-            })
         })
+            .detach();
     }
 
-    fn upgrade_dbs(
-        env: &heed::Env,
-        metadata_db: heed::Database<SerdeJson<PromptId>, SerdeJson<PromptMetadata>>,
-        bodies_db: heed::Database<SerdeJson<PromptId>, Str>,
-    ) -> Result<()> {
-        let mut txn = env.write_txn()?;
-        let Some(bodies_v1_db) = env
-            .open_database::<SerdeBincode<PromptIdV1>, SerdeBincode<String>>(
-                &txn,
-                Some("bodies"),
-            )?
-        else {
-            return Ok(());
-        };
-        let mut bodies_v1 = bodies_v1_db
-            .iter(&txn)?
-            .collect::<heed::Result<HashMap<_, _>>>()?;
-
-        let Some(metadata_v1_db) = env
-            .open_database::<SerdeBincode<PromptIdV1>, SerdeBincode<PromptMetadataV1>>(
-                &txn,
-                Some("metadata"),
-            )?
-        else {
-            return Ok(());
-        };
-        let metadata_v1 = metadata_v1_db
-            .iter(&txn)?
-            .collect::<heed::Result<HashMap<_, _>>>()?;
-
-        for (prompt_id_v1, metadata_v1) in metadata_v1 {
-            let prompt_id_v2 = UserPromptId(prompt_id_v1.0).into();
-            let Some(body_v1) = bodies_v1.remove(&prompt_id_v1) else {
-                continue;
-            };
-
-            if metadata_db
-                .get(&txn, &prompt_id_v2)?
-                .is_none_or(|metadata_v2| metadata_v1.saved_at > metadata_v2.saved_at)
+    fn register_built_in_templates(handlebars: &mut Handlebars) -> Result<()> {
+        for path in Assets.list("prompts")? {
+            if let Some(id) = path
+                .split('/')
+                .next_back()
+                .and_then(|s| s.strip_suffix(".hbs"))
+                && let Some(prompt) = Assets.load(path.as_ref()).log_err().flatten()
             {
-                metadata_db.put(
-                    &mut txn,
-                    &prompt_id_v2,
-                    &PromptMetadata {
-                        id: prompt_id_v2,
-                        title: metadata_v1.title.clone(),
-                        default: metadata_v1.default,
-                        saved_at: metadata_v1.saved_at,
-                    },
-                )?;
-                bodies_db.put(&mut txn, &prompt_id_v2, &body_v1)?;
+                log::debug!("Registering built-in prompt template: {}", id);
+                let prompt = String::from_utf8_lossy(prompt.as_ref());
+                handlebars.register_template_string(id, LineEnding::normalize_cow(prompt))?
             }
         }
-
-        txn.commit()?;
 
         Ok(())
     }
 
-    pub fn load(&self, id: PromptId, cx: &App) -> Task<Result<String>> {
-        let env = self.env.clone();
-        let bodies = self.bodies;
-        cx.background_spawn(async move {
-            let txn = env.read_txn()?;
-            let mut prompt: String = match bodies.get(&txn, &id)? {
-                Some(body) => body.into(),
-                None => {
-                    if let Some(built_in) = id.as_built_in() {
-                        built_in.default_content().into()
-                    } else {
-                        anyhow::bail!("prompt not found")
-                    }
-                }
-            };
-            LineEnding::normalize(&mut prompt);
-            Ok(prompt)
-        })
-    }
-
-    pub fn all_prompt_metadata(&self) -> Vec<PromptMetadata> {
-        self.metadata_cache.read().metadata.clone()
-    }
-
-    pub fn default_prompt_metadata(&self) -> Vec<PromptMetadata> {
-        return self
-            .metadata_cache
-            .read()
-            .metadata
-            .iter()
-            .filter(|metadata| metadata.default)
-            .cloned()
-            .collect::<Vec<_>>();
-    }
-
-    pub fn delete(&self, id: PromptId, cx: &Context<Self>) -> Task<Result<()>> {
-        self.metadata_cache.write().remove(id);
-
-        let db_connection = self.env.clone();
-        let bodies = self.bodies;
-        let metadata = self.metadata;
-
-        let task = cx.background_spawn(async move {
-            let mut txn = db_connection.write_txn()?;
-
-            metadata.delete(&mut txn, &id)?;
-            bodies.delete(&mut txn, &id)?;
-
-            if let PromptId::User { uuid } = id {
-                let prompt_id_v1 = PromptIdV1::from(uuid);
-
-                if let Some(metadata_v1_db) = db_connection
-                    .open_database::<SerdeBincode<PromptIdV1>, SerdeBincode<()>>(
-                        &txn,
-                        Some("metadata"),
-                    )?
-                {
-                    metadata_v1_db.delete(&mut txn, &prompt_id_v1)?;
-                }
-
-                if let Some(bodies_v1_db) = db_connection
-                    .open_database::<SerdeBincode<PromptIdV1>, SerdeBincode<()>>(
-                        &txn,
-                        Some("bodies"),
-                    )?
-                {
-                    bodies_v1_db.delete(&mut txn, &prompt_id_v1)?;
-                }
-            }
-
-            txn.commit()?;
-            anyhow::Ok(())
-        });
-
-        cx.spawn(async move |this, cx| {
-            task.await?;
-            this.update(cx, |_, cx| cx.emit(PromptsUpdatedEvent)).ok();
-            anyhow::Ok(())
-        })
-    }
-
-    pub fn metadata(&self, id: PromptId) -> Option<PromptMetadata> {
-        self.metadata_cache.read().metadata_by_id.get(&id).cloned()
-    }
-
-    pub fn first(&self) -> Option<PromptMetadata> {
-        self.metadata_cache.read().metadata.first().cloned()
-    }
-
-    pub fn id_for_title(&self, title: &str) -> Option<PromptId> {
-        let metadata_cache = self.metadata_cache.read();
-        let metadata = metadata_cache
-            .metadata
-            .iter()
-            .find(|metadata| metadata.title.as_deref() == Some(title))?;
-        Some(metadata.id)
-    }
-
-    pub fn search(
+    pub fn generate_inline_transformation_prompt_tools(
         &self,
-        query: String,
-        cancellation_flag: Arc<AtomicBool>,
-        cx: &App,
-    ) -> Task<Vec<PromptMetadata>> {
-        let cached_metadata = self.metadata_cache.read().metadata.clone();
-        let executor = cx.background_executor().clone();
-        cx.background_spawn(async move {
-            let mut matches = if query.is_empty() {
-                cached_metadata
-            } else {
-                let candidates = cached_metadata
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(ix, metadata)| {
-                        Some(StringMatchCandidate::new(ix, metadata.title.as_ref()?))
-                    })
-                    .collect::<Vec<_>>();
-                let matches = fuzzy::match_strings(
-                    &candidates,
-                    &query,
-                    false,
-                    true,
-                    100,
-                    &cancellation_flag,
-                    executor,
-                )
-                .await;
-                matches
-                    .into_iter()
-                    .map(|mat| cached_metadata[mat.candidate_id].clone())
-                    .collect()
-            };
-            matches.sort_by_key(|metadata| Reverse(metadata.default));
-            matches
-        })
-    }
+        language_name: Option<&LanguageName>,
+        buffer: BufferSnapshot,
+        range: Range<usize>,
+    ) -> Result<String, RenderError> {
+        let content_type = match language_name.as_ref().map(|l| l.as_ref()) {
+            None | Some("Markdown" | "Plain Text") => "text",
+            Some(_) => "code",
+        };
 
-    pub fn save(
-        &self,
-        id: PromptId,
-        title: Option<SharedString>,
-        default: bool,
-        body: Rope,
-        cx: &Context<Self>,
-    ) -> Task<Result<()>> {
-        if !id.can_edit() {
-            return Task::ready(Err(anyhow!("this prompt cannot be edited")));
-        }
+        const MAX_CTX: usize = 50000;
+        let mut is_truncated = false;
 
-        let body = body.to_string();
-        let is_default_content = id
-            .as_built_in()
-            .is_some_and(|builtin| body.trim() == builtin.default_content().trim());
-
-        let metadata = if let Some(builtin) = id.as_built_in() {
-            PromptMetadata::builtin(builtin)
+        let before_range = 0..range.start;
+        let truncated_before = if before_range.len() > MAX_CTX {
+            is_truncated = true;
+            let start = buffer.clip_offset(range.start - MAX_CTX, text::Bias::Right);
+            start..range.start
         } else {
-            PromptMetadata {
-                id,
-                title,
-                default,
-                saved_at: Utc::now(),
-            }
+            before_range
         };
 
-        self.metadata_cache.write().insert(metadata.clone());
+        let after_range = range.end..buffer.len();
+        let truncated_after = if after_range.len() > MAX_CTX {
+            is_truncated = true;
+            let end = buffer.clip_offset(range.end + MAX_CTX, text::Bias::Left);
+            range.end..end
+        } else {
+            after_range
+        };
 
-        let db_connection = self.env.clone();
-        let bodies = self.bodies;
-        let metadata_db = self.metadata;
+        let mut document_content = String::new();
+        for chunk in buffer.text_for_range(truncated_before) {
+            document_content.push_str(chunk);
+        }
 
-        let task = cx.background_spawn(async move {
-            let mut txn = db_connection.write_txn()?;
+        document_content.push_str("<rewrite_this>\n");
+        for chunk in buffer.text_for_range(range.clone()) {
+            document_content.push_str(chunk);
+        }
+        document_content.push_str("\n</rewrite_this>");
 
-            if is_default_content {
-                metadata_db.delete(&mut txn, &id)?;
-                bodies.delete(&mut txn, &id)?;
-            } else {
-                metadata_db.put(&mut txn, &id, &metadata)?;
-                bodies.put(&mut txn, &id, &body)?;
-            }
+        for chunk in buffer.text_for_range(truncated_after) {
+            document_content.push_str(chunk);
+        }
 
-            txn.commit()?;
+        let rewrite_section: String = buffer.text_for_range(range.clone()).collect();
 
-            anyhow::Ok(())
-        });
+        let diagnostics = buffer.diagnostics_in_range::<_, Point>(range, false);
+        let diagnostic_errors: Vec<ContentPromptDiagnosticContext> = diagnostics
+            .map(|entry| {
+                let start = entry.range.start;
+                ContentPromptDiagnosticContext {
+                    line_number: (start.row + 1) as usize,
+                    error_message: entry.diagnostic.message.clone(),
+                    code_content: buffer.text_for_range(entry.range).collect(),
+                }
+            })
+            .collect();
 
-        cx.spawn(async move |this, cx| {
-            task.await?;
-            this.update(cx, |_, cx| cx.emit(PromptsUpdatedEvent)).ok();
-            anyhow::Ok(())
-        })
+        let context = ContentPromptContextV2 {
+            content_type: content_type.to_string(),
+            language_name: language_name.map(|s| s.to_string()),
+            is_truncated,
+            document_content,
+            rewrite_section,
+            diagnostic_errors,
+        };
+        self.handlebars.lock().render("content_prompt_v2", &context)
     }
 
-    pub fn save_metadata(
+    pub fn generate_inline_transformation_prompt(
         &self,
-        id: PromptId,
-        mut title: Option<SharedString>,
-        default: bool,
-        cx: &Context<Self>,
-    ) -> Task<Result<()>> {
-        let mut cache = self.metadata_cache.write();
-
-        if !id.can_edit() {
-            title = cache
-                .metadata_by_id
-                .get(&id)
-                .and_then(|metadata| metadata.title.clone());
-        }
-
-        let prompt_metadata = PromptMetadata {
-            id,
-            title,
-            default,
-            saved_at: Utc::now(),
+        user_prompt: String,
+        language_name: Option<&LanguageName>,
+        buffer: BufferSnapshot,
+        range: Range<usize>,
+    ) -> Result<String, RenderError> {
+        let content_type = match language_name.as_ref().map(|l| l.as_ref()) {
+            None | Some("Markdown" | "Plain Text") => "text",
+            Some(_) => "code",
         };
 
-        cache.insert(prompt_metadata.clone());
+        const MAX_CTX: usize = 50000;
+        let is_insert = range.is_empty();
+        let mut is_truncated = false;
 
-        let db_connection = self.env.clone();
-        let metadata = self.metadata;
+        let before_range = 0..range.start;
+        let truncated_before = if before_range.len() > MAX_CTX {
+            is_truncated = true;
+            let start = buffer.clip_offset(range.start - MAX_CTX, text::Bias::Right);
+            start..range.start
+        } else {
+            before_range
+        };
 
-        let task = cx.background_spawn(async move {
-            let mut txn = db_connection.write_txn()?;
-            metadata.put(&mut txn, &id, &prompt_metadata)?;
-            txn.commit()?;
+        let after_range = range.end..buffer.len();
+        let truncated_after = if after_range.len() > MAX_CTX {
+            is_truncated = true;
+            let end = buffer.clip_offset(range.end + MAX_CTX, text::Bias::Left);
+            range.end..end
+        } else {
+            after_range
+        };
 
-            anyhow::Ok(())
-        });
+        let mut document_content = String::new();
+        for chunk in buffer.text_for_range(truncated_before) {
+            document_content.push_str(chunk);
+        }
+        if is_insert {
+            document_content.push_str("<insert_here></insert_here>");
+        } else {
+            document_content.push_str("<rewrite_this>\n");
+            for chunk in buffer.text_for_range(range.clone()) {
+                document_content.push_str(chunk);
+            }
+            document_content.push_str("\n</rewrite_this>");
+        }
+        for chunk in buffer.text_for_range(truncated_after) {
+            document_content.push_str(chunk);
+        }
 
-        cx.spawn(async move |this, cx| {
-            task.await?;
-            this.update(cx, |_, cx| cx.emit(PromptsUpdatedEvent)).ok();
-            anyhow::Ok(())
-        })
-    }
-}
-
-/// Deprecated: Legacy V1 prompt ID format, used only for migrating data from old databases. Use `PromptId` instead.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
-struct PromptIdV1(Uuid);
-
-impl From<UserPromptId> for PromptIdV1 {
-    fn from(id: UserPromptId) -> Self {
-        PromptIdV1(id.0)
-    }
-}
-
-/// Deprecated: Legacy V1 prompt metadata format, used only for migrating data from old databases. Use `PromptMetadata` instead.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct PromptMetadataV1 {
-    id: PromptIdV1,
-    title: Option<SharedString>,
-    default: bool,
-    saved_at: DateTime<Utc>,
-}
-
-/// Wraps a shared future to a prompt store so it can be assigned as a context global.
-pub struct GlobalPromptStore(Shared<Task<Result<Entity<PromptStore>, Arc<anyhow::Error>>>>);
-
-impl Global for GlobalPromptStore {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use gpui::TestAppContext;
-
-    #[gpui::test]
-    async fn test_built_in_prompt_load_save(cx: &mut TestAppContext) {
-        cx.executor().allow_parking();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("prompts-db");
-
-        let store = cx.update(|cx| PromptStore::new(db_path, cx)).await.unwrap();
-        let store = cx.new(|_cx| store);
-
-        let commit_message_id = PromptId::BuiltIn(BuiltInPrompt::CommitMessage);
-
-        let loaded_content = store
-            .update(cx, |store, cx| store.load(commit_message_id, cx))
-            .await
-            .unwrap();
-
-        let mut expected_content = BuiltInPrompt::CommitMessage.default_content().to_string();
-        LineEnding::normalize(&mut expected_content);
-        assert_eq!(
-            loaded_content.trim(),
-            expected_content.trim(),
-            "Loading a built-in prompt not in DB should return default content"
-        );
-
-        let metadata = store.read_with(cx, |store, _| store.metadata(commit_message_id));
-        assert!(
-            metadata.is_some(),
-            "Built-in prompt should always have metadata"
-        );
-        assert!(
-            store.read_with(cx, |store, _| {
-                store
-                    .metadata_cache
-                    .read()
-                    .metadata_by_id
-                    .contains_key(&commit_message_id)
-            }),
-            "Built-in prompt should always be in cache"
-        );
-
-        let custom_content = "Custom commit message prompt";
-        store
-            .update(cx, |store, cx| {
-                store.save(
-                    commit_message_id,
-                    Some("Commit message".into()),
-                    false,
-                    Rope::from(custom_content),
-                    cx,
-                )
+        let rewrite_section = if !is_insert {
+            let mut section = String::new();
+            for chunk in buffer.text_for_range(range.clone()) {
+                section.push_str(chunk);
+            }
+            Some(section)
+        } else {
+            None
+        };
+        let diagnostics = buffer.diagnostics_in_range::<_, Point>(range, false);
+        let diagnostic_errors: Vec<ContentPromptDiagnosticContext> = diagnostics
+            .map(|entry| {
+                let start = entry.range.start;
+                ContentPromptDiagnosticContext {
+                    line_number: (start.row + 1) as usize,
+                    error_message: entry.diagnostic.message.clone(),
+                    code_content: buffer.text_for_range(entry.range).collect(),
+                }
             })
-            .await
-            .unwrap();
+            .collect();
 
-        let loaded_custom = store
-            .update(cx, |store, cx| store.load(commit_message_id, cx))
-            .await
-            .unwrap();
-        assert_eq!(
-            loaded_custom.trim(),
-            custom_content.trim(),
-            "Custom content should be loaded after saving"
-        );
-
-        assert!(
-            store
-                .read_with(cx, |store, _| store.metadata(commit_message_id))
-                .is_some(),
-            "Built-in prompt should have metadata after customization"
-        );
-
-        store
-            .update(cx, |store, cx| {
-                store.save(
-                    commit_message_id,
-                    Some("Commit message".into()),
-                    false,
-                    Rope::from(BuiltInPrompt::CommitMessage.default_content()),
-                    cx,
-                )
-            })
-            .await
-            .unwrap();
-
-        let metadata_after_reset =
-            store.read_with(cx, |store, _| store.metadata(commit_message_id));
-        assert!(
-            metadata_after_reset.is_some(),
-            "Built-in prompt should still have metadata after reset"
-        );
-        assert_eq!(
-            metadata_after_reset
-                .as_ref()
-                .and_then(|m| m.title.as_ref().map(|t| t.as_ref())),
-            Some("Commit message"),
-            "Built-in prompt should have default title after reset"
-        );
-
-        let loaded_after_reset = store
-            .update(cx, |store, cx| store.load(commit_message_id, cx))
-            .await
-            .unwrap();
-        let mut expected_content_after_reset =
-            BuiltInPrompt::CommitMessage.default_content().to_string();
-        LineEnding::normalize(&mut expected_content_after_reset);
-        assert_eq!(
-            loaded_after_reset.trim(),
-            expected_content_after_reset.trim(),
-            "Content should be back to default after saving default content"
-        );
+        let context = ContentPromptContext {
+            content_type: content_type.to_string(),
+            language_name: language_name.map(|s| s.to_string()),
+            is_insert,
+            is_truncated,
+            document_content,
+            user_prompt,
+            rewrite_section,
+            diagnostic_errors,
+        };
+        self.handlebars.lock().render("content_prompt", &context)
     }
 
-    /// Test that the prompt store initializes successfully even when the database
-    /// contains records with incompatible/undecodable PromptId keys (e.g., from
-    /// a different branch that used a different serialization format).
-    ///
-    /// This is a regression test for the "fail-open" behavior: we should skip
-    /// bad records rather than failing the entire store initialization.
-    #[gpui::test]
-    async fn test_prompt_store_handles_incompatible_db_records(cx: &mut TestAppContext) {
-        cx.executor().allow_parking();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("prompts-db-with-bad-records");
-        std::fs::create_dir_all(&db_path).unwrap();
-
-        // First, create the DB and write an incompatible record directly.
-        // We simulate a record written by a different branch that used
-        // `{"kind":"CommitMessage"}` instead of `{"kind":"BuiltIn", ...}`.
-        {
-            let db_env = unsafe {
-                heed::EnvOpenOptions::new()
-                    .map_size(1024 * 1024 * 1024)
-                    .max_dbs(4)
-                    .open(&db_path)
-                    .unwrap()
-            };
-
-            let mut txn = db_env.write_txn().unwrap();
-            // Create the metadata.v2 database with raw bytes so we can write
-            // an incompatible key format.
-            let metadata_db: Database<heed::types::Bytes, heed::types::Bytes> = db_env
-                .create_database(&mut txn, Some("metadata.v2"))
-                .unwrap();
-
-            // Write an incompatible PromptId key: `{"kind":"CommitMessage"}`
-            // This is the old/branch format that current code can't decode.
-            let bad_key = br#"{"kind":"CommitMessage"}"#;
-            let dummy_metadata = br#"{"id":{"kind":"CommitMessage"},"title":"Bad Record","default":false,"saved_at":"2024-01-01T00:00:00Z"}"#;
-            metadata_db.put(&mut txn, bad_key, dummy_metadata).unwrap();
-
-            // Also write a valid record to ensure we can still read good data.
-            let good_key = br#"{"kind":"User","uuid":"550e8400-e29b-41d4-a716-446655440000"}"#;
-            let good_metadata = br#"{"id":{"kind":"User","uuid":"550e8400-e29b-41d4-a716-446655440000"},"title":"Good Record","default":false,"saved_at":"2024-01-01T00:00:00Z"}"#;
-            metadata_db.put(&mut txn, good_key, good_metadata).unwrap();
-
-            txn.commit().unwrap();
-        }
-
-        // Now try to create a PromptStore from this DB.
-        // With fail-open behavior, this should succeed and skip the bad record.
-        // Without fail-open, this would return an error.
-        let store_result = cx.update(|cx| PromptStore::new(db_path, cx)).await;
-
-        assert!(
-            store_result.is_ok(),
-            "PromptStore should initialize successfully even with incompatible DB records. \
-             Got error: {:?}",
-            store_result.err()
-        );
-
-        let store = cx.new(|_cx| store_result.unwrap());
-
-        // Verify the good record was loaded.
-        let good_id = PromptId::User {
-            uuid: UserPromptId("550e8400-e29b-41d4-a716-446655440000".parse().unwrap()),
-        };
-        let metadata = store.read_with(cx, |store, _| store.metadata(good_id));
-        assert!(
-            metadata.is_some(),
-            "Valid records should still be loaded after skipping bad ones"
-        );
-        assert_eq!(
-            metadata
-                .as_ref()
-                .and_then(|m| m.title.as_ref().map(|t| t.as_ref())),
-            Some("Good Record"),
-            "Valid record should have correct title"
-        );
-    }
-
-    #[gpui::test]
-    async fn test_deleted_prompt_does_not_reappear_after_migration(cx: &mut TestAppContext) {
-        cx.executor().allow_parking();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let db_path = temp_dir.path().join("prompts-db-v1-migration");
-        std::fs::create_dir_all(&db_path).unwrap();
-
-        let prompt_uuid: Uuid = "550e8400-e29b-41d4-a716-446655440001".parse().unwrap();
-        let prompt_id_v1 = PromptIdV1(prompt_uuid);
-        let prompt_id_v2 = PromptId::User {
-            uuid: UserPromptId(prompt_uuid),
+    pub fn generate_terminal_assistant_prompt(
+        &self,
+        user_prompt: &str,
+        shell: Option<&str>,
+        working_directory: Option<&str>,
+        latest_output: &[String],
+    ) -> Result<String, RenderError> {
+        let context = TerminalAssistantPromptContext {
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            shell: shell.map(|s| s.to_string()),
+            working_directory: working_directory.map(|s| s.to_string()),
+            latest_output: latest_output.to_vec(),
+            user_prompt: user_prompt.to_string(),
         };
 
-        // Create V1 database with a prompt
-        {
-            let db_env = unsafe {
-                heed::EnvOpenOptions::new()
-                    .map_size(1024 * 1024 * 1024)
-                    .max_dbs(4)
-                    .open(&db_path)
-                    .unwrap()
-            };
-
-            let mut txn = db_env.write_txn().unwrap();
-
-            let metadata_v1_db: Database<SerdeBincode<PromptIdV1>, SerdeBincode<PromptMetadataV1>> =
-                db_env.create_database(&mut txn, Some("metadata")).unwrap();
-
-            let bodies_v1_db: Database<SerdeBincode<PromptIdV1>, SerdeBincode<String>> =
-                db_env.create_database(&mut txn, Some("bodies")).unwrap();
-
-            let metadata_v1 = PromptMetadataV1 {
-                id: prompt_id_v1.clone(),
-                title: Some("V1 Prompt".into()),
-                default: false,
-                saved_at: Utc::now(),
-            };
-
-            metadata_v1_db
-                .put(&mut txn, &prompt_id_v1, &metadata_v1)
-                .unwrap();
-            bodies_v1_db
-                .put(&mut txn, &prompt_id_v1, &"V1 prompt body".to_string())
-                .unwrap();
-
-            txn.commit().unwrap();
-        }
-
-        // Migrate V1 to V2 by creating PromptStore
-        let store = cx
-            .update(|cx| PromptStore::new(db_path.clone(), cx))
-            .await
-            .unwrap();
-        let store = cx.new(|_cx| store);
-
-        // Verify the prompt was migrated
-        let metadata = store.read_with(cx, |store, _| store.metadata(prompt_id_v2));
-        assert!(metadata.is_some(), "V1 prompt should be migrated to V2");
-        assert_eq!(
-            metadata
-                .as_ref()
-                .and_then(|m| m.title.as_ref().map(|t| t.as_ref())),
-            Some("V1 Prompt"),
-            "Migrated prompt should have correct title"
-        );
-
-        // Delete the prompt
-        store
-            .update(cx, |store, cx| store.delete(prompt_id_v2, cx))
-            .await
-            .unwrap();
-
-        // Verify prompt is deleted
-        let metadata_after_delete = store.read_with(cx, |store, _| store.metadata(prompt_id_v2));
-        assert!(
-            metadata_after_delete.is_none(),
-            "Prompt should be deleted from V2"
-        );
-
-        drop(store);
-
-        // "Restart" by creating a new PromptStore from the same path
-        let store_after_restart = cx.update(|cx| PromptStore::new(db_path, cx)).await.unwrap();
-        let store_after_restart = cx.new(|_cx| store_after_restart);
-
-        // Test the prompt does not reappear
-        let metadata_after_restart =
-            store_after_restart.read_with(cx, |store, _| store.metadata(prompt_id_v2));
-        assert!(
-            metadata_after_restart.is_none(),
-            "Deleted prompt should NOT reappear after restart/migration"
-        );
+        self.handlebars
+            .lock()
+            .render("terminal_assistant_prompt", &context)
     }
 }

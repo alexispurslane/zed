@@ -386,7 +386,6 @@ async fn run_agent(
         NativeAgent::new(
             thread_store,
             Templates::new(),
-            None,
             app_state.fs.clone(),
             cx,
         )

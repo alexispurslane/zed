@@ -363,7 +363,6 @@ impl ThreadView {
         resumed_without_history: bool,
         project: WeakEntity<Project>,
         thread_store: Option<Entity<ThreadStore>>,
-        prompt_store: Option<Entity<PromptStore>>,
         initial_content: Option<AgentInitialContent>,
         mut subscriptions: Vec<Subscription>,
         window: &mut Window,
@@ -383,7 +382,6 @@ impl ThreadView {
                 workspace.clone(),
                 project.clone(),
                 thread_store,
-                prompt_store,
                 session_capabilities.clone(),
                 agent_id.clone(),
                 &placeholder,
@@ -3443,30 +3441,6 @@ impl ThreadView {
 
         let tooltip_separator_color = Color::Custom(cx.theme().colors().text_disabled.opacity(0.6));
 
-        let (user_rules_count, first_user_rules_id, project_rules_count, project_entry_ids) = self
-            .as_native_thread(cx)
-            .map(|thread| {
-                let project_context = thread.read(cx).project_context().read(cx);
-                let user_rules_count = project_context.user_rules.len();
-                let first_user_rules_id = project_context.user_rules.first().map(|r| r.uuid.0);
-                let project_entry_ids = project_context
-                    .worktrees
-                    .iter()
-                    .filter_map(|wt| wt.rules_file.as_ref())
-                    .map(|rf| ProjectEntryId::from_usize(rf.project_entry_id))
-                    .collect::<Vec<_>>();
-                let project_rules_count = project_entry_ids.len();
-                (
-                    user_rules_count,
-                    first_user_rules_id,
-                    project_rules_count,
-                    project_entry_ids,
-                )
-            })
-            .unwrap_or_default();
-
-        let workspace = self.workspace.clone();
-
         let max_output_tokens = self
             .as_native_thread(cx)
             .and_then(|thread| thread.read(cx).model())
@@ -3485,8 +3459,6 @@ impl ThreadView {
                 let output_tokens_label = output_tokens_label.clone();
                 let input_max_label = input_max_label.clone();
                 let output_max_label = output_max_label.clone();
-                let project_entry_ids = project_entry_ids.clone();
-                let workspace = workspace.clone();
                 let cost_label = cost_label.clone();
                 cx.new(move |_cx| TokenUsageTooltip {
                     percentage,
@@ -3499,11 +3471,6 @@ impl ThreadView {
                     show_split,
                     cost_label,
                     separator_color: tooltip_separator_color,
-                    user_rules_count,
-                    first_user_rules_id,
-                    project_rules_count,
-                    project_entry_ids,
-                    workspace,
                 })
                 .into()
             }
@@ -4063,21 +4030,6 @@ impl ThreadView {
                         }),
                 )
                 .item(
-                    ContextMenuEntry::new("Rules")
-                        .icon(IconName::Reader)
-                        .icon_color(Color::Muted)
-                        .icon_size(IconSize::XSmall)
-                        .handler({
-                            let message_editor = message_editor.clone();
-                            move |window, cx| {
-                                message_editor.focus_handle(cx).focus(window, cx);
-                                message_editor.update(cx, |editor, cx| {
-                                    editor.insert_context_type("rule", window, cx);
-                                });
-                            }
-                        }),
-                )
-                .item(
                     ContextMenuEntry::new("Image")
                         .icon(IconName::Image)
                         .icon_color(Color::Muted)
@@ -4176,11 +4128,6 @@ struct TokenUsageTooltip {
     show_split: bool,
     cost_label: Option<String>,
     separator_color: Color,
-    user_rules_count: usize,
-    first_user_rules_id: Option<uuid::Uuid>,
-    project_rules_count: usize,
-    project_entry_ids: Vec<ProjectEntryId>,
-    workspace: WeakEntity<Workspace>,
 }
 
 impl Render for TokenUsageTooltip {
@@ -4195,11 +4142,6 @@ impl Render for TokenUsageTooltip {
         let output_max = self.output_max.clone();
         let show_split = self.show_split;
         let cost_label = self.cost_label.clone();
-        let user_rules_count = self.user_rules_count;
-        let first_user_rules_id = self.first_user_rules_id;
-        let project_rules_count = self.project_rules_count;
-        let project_entry_ids = self.project_entry_ids.clone();
-        let workspace = self.workspace.clone();
 
         ui::tooltip_container(cx, move |container, cx| {
             container
@@ -4258,89 +4200,6 @@ impl Render for TokenUsageTooltip {
                             .child(Label::new(cost_label)),
                     )
                 })
-                .when(
-                    user_rules_count > 0 || project_rules_count > 0,
-                    move |this| {
-                        this.child(
-                            v_flex()
-                                .mt_1p5()
-                                .pt_1p5()
-                                .pb_0p5()
-                                .gap_0p5()
-                                .border_t_1()
-                                .border_color(cx.theme().colors().border_variant)
-                                .child(
-                                    Label::new("Rules")
-                                        .color(Color::Muted)
-                                        .size(LabelSize::Small),
-                                )
-                                .child(
-                                    v_flex()
-                                        .mx_neg_1()
-                                        .when(user_rules_count > 0, move |this| {
-                                            this.child(
-                                                Button::new(
-                                                    "open-user-rules",
-                                                    format!("{} user rules", user_rules_count),
-                                                )
-                                                .end_icon(
-                                                    Icon::new(IconName::ArrowUpRight)
-                                                        .color(Color::Muted)
-                                                        .size(IconSize::XSmall),
-                                                )
-                                                .on_click(move |_, window, cx| {
-                                                    window.dispatch_action(
-                                                        Box::new(OpenRulesLibrary {
-                                                            prompt_to_select: first_user_rules_id,
-                                                        }),
-                                                        cx,
-                                                    );
-                                                }),
-                                            )
-                                        })
-                                        .when(project_rules_count > 0, move |this| {
-                                            let workspace = workspace.clone();
-                                            let project_entry_ids = project_entry_ids.clone();
-                                            this.child(
-                                                Button::new(
-                                                    "open-project-rules",
-                                                    format!(
-                                                        "{} project rules",
-                                                        project_rules_count
-                                                    ),
-                                                )
-                                                .end_icon(
-                                                    Icon::new(IconName::ArrowUpRight)
-                                                        .color(Color::Muted)
-                                                        .size(IconSize::XSmall),
-                                                )
-                                                .on_click(move |_, window, cx| {
-                                                    let _ =
-                                                        workspace.update(cx, |workspace, cx| {
-                                                            let project =
-                                                                workspace.project().read(cx);
-                                                            let paths = project_entry_ids
-                                                                .iter()
-                                                                .flat_map(|id| {
-                                                                    project.path_for_entry(*id, cx)
-                                                                })
-                                                                .collect::<Vec<_>>();
-                                                            for path in paths {
-                                                                workspace
-                                                                    .open_path(
-                                                                        path, None, true, window,
-                                                                        cx,
-                                                                    )
-                                                                    .detach_and_log_err(cx);
-                                                            }
-                                                        });
-                                                }),
-                                            )
-                                        }),
-                                ),
-                        )
-                    },
-                )
         })
     }
 }
@@ -8996,17 +8855,6 @@ pub(crate) fn open_link(
                         panel.open_thread(id, None, Some(name.into()), window, cx)
                     });
                 }
-            }
-            MentionUri::Rule { id, .. } => {
-                let PromptId::User { uuid } = id else {
-                    return;
-                };
-                window.dispatch_action(
-                    Box::new(OpenRulesLibrary {
-                        prompt_to_select: Some(uuid.0),
-                    }),
-                    cx,
-                )
             }
             MentionUri::Fetch { url } => {
                 cx.open_url(url.as_str());

@@ -700,27 +700,25 @@ mod test_support {
                 "Use either send_update or set_next_prompt_updates"
             );
 
-            self.sessions
-                .lock()
-                .get(&session_id)
-                .unwrap()
-                .thread
-                .update(cx, |thread, cx| {
-                    thread.handle_session_update(update, cx).unwrap();
-                })
-                .unwrap();
+            if let Some(session) = self.sessions.lock().get(&session_id) {
+                session
+                    .thread
+                    .update(cx, |thread, cx| {
+                        thread.handle_session_update(update, cx).unwrap();
+                    })
+                    .unwrap();
+            }
         }
 
         pub fn end_turn(&self, session_id: schema::SessionId, stop_reason: schema::StopReason) {
-            self.sessions
-                .lock()
-                .get_mut(&session_id)
-                .unwrap()
-                .response_tx
-                .take()
-                .expect("No pending turn")
-                .send(stop_reason)
-                .unwrap();
+            if let Some(session) = self.sessions.lock().get_mut(&session_id) {
+                session
+                    .response_tx
+                    .take()
+                    .expect("No pending turn")
+                    .send(stop_reason)
+                    .unwrap();
+            }
         }
     }
 

@@ -1763,7 +1763,6 @@ mod tests {
             theme_settings::init(theme::LoadThemes::JustBase, cx);
             editor::init(cx);
             release_channel::init("0.0.0".parse().unwrap(), cx);
-            prompt_store::init(cx);
             <dyn Fs>::set_global(fs, cx);
             ThreadMetadataStore::init_global(cx);
             ThreadStore::init_global(cx);
@@ -1783,7 +1782,7 @@ mod tests {
             .unwrap();
         let mut vcx = VisualTestContext::from_window(multi_workspace.into(), cx);
         let panel = workspace_entity.update_in(&mut vcx, |workspace, window, cx| {
-            cx.new(|cx| crate::AgentPanel::new(workspace, None, window, cx))
+            cx.new(|cx| crate::AgentPanel::new(workspace, window, cx))
         });
         (panel, vcx)
     }

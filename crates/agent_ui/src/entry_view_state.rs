@@ -11,7 +11,7 @@ use gpui::{
 };
 use language::language_settings::SoftWrap;
 use project::{AgentId, Project};
-use prompt_store::PromptStore;
+
 use rope::Point;
 use settings::Settings as _;
 use terminal_view::TerminalView;
@@ -25,7 +25,6 @@ pub struct EntryViewState {
     workspace: WeakEntity<Workspace>,
     project: WeakEntity<Project>,
     thread_store: Option<Entity<ThreadStore>>,
-    prompt_store: Option<Entity<PromptStore>>,
     entries: Vec<Entry>,
     session_capabilities: SharedSessionCapabilities,
     agent_id: AgentId,
@@ -36,7 +35,6 @@ impl EntryViewState {
         workspace: WeakEntity<Workspace>,
         project: WeakEntity<Project>,
         thread_store: Option<Entity<ThreadStore>>,
-        prompt_store: Option<Entity<PromptStore>>,
         session_capabilities: SharedSessionCapabilities,
         agent_id: AgentId,
     ) -> Self {
@@ -44,7 +42,7 @@ impl EntryViewState {
             workspace,
             project,
             thread_store,
-            prompt_store,
+
             entries: Vec::new(),
             session_capabilities,
             agent_id,
@@ -86,7 +84,6 @@ impl EntryViewState {
                             self.workspace.clone(),
                             self.project.clone(),
                             self.thread_store.clone(),
-                            self.prompt_store.clone(),
                             self.session_capabilities.clone(),
                             self.agent_id.clone(),
                             "Edit message － @ to include context",
@@ -545,7 +542,6 @@ mod tests {
                 workspace.downgrade(),
                 project.downgrade(),
                 thread_store,
-                None,
                 Arc::new(RwLock::new(SessionCapabilities::default())),
                 "Test Agent".into(),
             )

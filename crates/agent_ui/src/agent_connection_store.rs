@@ -184,6 +184,28 @@ impl AgentConnectionStore {
         entry
     }
 
+    /// Like `request_connection`, but replaces any existing entry for the same key.
+    /// This is needed in tests where different connections are used for the same
+    /// agent key (e.g. loadable vs non-loadable stub connections both keyed as `Agent::Stub`).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn force_request_connection(
+        &mut self,
+        key: Agent,
+        server: Rc<dyn AgentServer>,
+        cx: &mut Context<Self>,
+    ) -> Entity<AgentConnectionEntry> {
+        // Remove the existing entry if present so a new connection is established.
+        self.entries.remove(&key);
+        self.request_connection(key, server, cx)
+    }
+
+    /// Removes the cached connection entry for the given agent key.
+    /// This allows a subsequent `request_connection` call to establish a new connection.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn clear_connection(&mut self, key: &Agent) {
+        self.entries.remove(key);
+    }
+
     fn start_connection(
         &self,
         server: Rc<dyn AgentServer>,

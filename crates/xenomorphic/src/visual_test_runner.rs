@@ -199,7 +199,6 @@ fn run_visual_tests(project_path: PathBuf, update_baseline: bool) -> Result<()> 
             },
             wrap_div_with_search_actions: search::buffer_search::register_pane_search_actions,
         });
-        prompt_store::init(cx);
         let prompt_builder = prompt_store::PromptBuilder::load(app_state.fs.clone(), false, cx);
         language_model::init(cx);
         client::RefreshLlmTokenListener::register(

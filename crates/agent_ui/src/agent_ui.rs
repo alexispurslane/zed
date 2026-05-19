@@ -251,7 +251,7 @@ pub struct NewNativeAgentThreadFromSummary {
     from_session_id: schema::SessionId,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum Agent {
@@ -260,6 +260,64 @@ pub enum Agent {
     NativeAgent,
     #[cfg(any(test, feature = "test-support"))]
     Stub,
+}
+
+impl Serialize for Agent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::NativeAgent => serializer.serialize_str("native_agent"),
+            #[cfg(any(test, feature = "test-support"))]
+            Self::Stub => serializer.serialize_str("stub"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Agent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor, MapAccess};
+
+        struct AgentVisitor;
+
+        impl<'de> Visitor<'de> for AgentVisitor {
+            type Value = Agent;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("an agent variant")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Agent, E>
+            where
+                E: de::Error,
+            {
+                match v {
+                    "native_agent" | "NativeAgent" | "TextThread" => Ok(Agent::NativeAgent),
+                    #[cfg(any(test, feature = "test-support"))]
+                    "stub" | "Stub" => Ok(Agent::Stub),
+                    // Unknown variants (e.g. removed "Custom") fall back to NativeAgent
+                    _ => Ok(Agent::NativeAgent),
+                }
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Agent, M::Error>
+    where
+                M: MapAccess<'de>,
+            {
+                // Consume the key (e.g. "custom") and discard its value
+                let _ = map.next_key::<String>()?;
+                let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                // Map any struct variant (like the removed "Custom") to NativeAgent
+                Ok(Agent::NativeAgent)
+            }
+        }
+
+        deserializer.deserialize_any(AgentVisitor)
+    }
 }
 
 impl Agent {
@@ -395,7 +453,6 @@ pub fn init(
     cx: &mut App,
 ) {
     agent::ThreadStore::init_global(cx);
-    rules_library::init(cx);
     if !is_eval {
         // Initializing the language model from the user settings messes with the eval, so we only initialize them when
         // we're not running inside of the eval.

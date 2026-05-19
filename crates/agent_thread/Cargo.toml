@@ -37,7 +37,6 @@ parking_lot = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 portable-pty.workspace = true
 project.workspace = true
-prompt_store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

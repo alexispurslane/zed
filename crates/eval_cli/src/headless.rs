@@ -113,7 +113,6 @@ pub fn init(cx: &mut App) -> Arc<AgentCliAppState> {
     RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
     language_models::init(user_store.clone(), client.clone(), cx);
     languages::init(languages.clone(), fs.clone(), node_runtime.clone(), cx);
-    prompt_store::init(cx);
     terminal_view::init(cx);
 
     let stdout_is_a_pty = false;

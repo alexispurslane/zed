@@ -17,7 +17,7 @@ use language_model::{LanguageModel, LanguageModelRegistry};
 use markdown::{HeadingLevelStyles, Markdown, MarkdownElement, MarkdownStyle};
 use parking_lot::Mutex;
 use project::Project;
-use prompt_store::PromptStore;
+
 use settings::Settings;
 use std::cmp;
 use std::ops::Range;
@@ -63,7 +63,6 @@ pub struct PromptEditor<T> {
     pub editor: Entity<Editor>,
     mode: PromptEditorMode,
     mention_set: Entity<MentionSet>,
-    prompt_store: Option<Entity<PromptStore>>,
     workspace: WeakEntity<Workspace>,
     model_selector: Entity<AgentModelSelector>,
     edited_since_done: bool,
@@ -334,7 +333,6 @@ impl<T: 'static> PromptEditor<T> {
                 PromptEditorCompletionProviderDelegate,
                 cx.weak_entity(),
                 self.mention_set.clone(),
-                self.prompt_store.clone(),
                 self.workspace.clone(),
             ))));
         });
@@ -1213,7 +1211,6 @@ impl PromptCompletionProviderDelegate for PromptEditorCompletionProviderDelegate
             PromptContextType::Symbol,
             PromptContextType::Thread,
             PromptContextType::Fetch,
-            PromptContextType::Rules,
         ]
     }
 
@@ -1238,7 +1235,6 @@ impl PromptEditor<BufferCodegen> {
         session_id: Uuid,
         fs: Arc<dyn Fs>,
         thread_store: Entity<ThreadStore>,
-        prompt_store: Option<Entity<PromptStore>>,
         project: WeakEntity<Project>,
         workspace: WeakEntity<Workspace>,
         window: &mut Window,
@@ -1278,14 +1274,14 @@ impl PromptEditor<BufferCodegen> {
         });
 
         let mention_set = cx
-            .new(|_cx| MentionSet::new(project, Some(thread_store.clone()), prompt_store.clone()));
+            .new(|_cx| MentionSet::new(project, Some(thread_store.clone())));
 
         let model_selector_menu_handle = PopoverMenuHandle::default();
 
         let mut this: PromptEditor<BufferCodegen> = PromptEditor {
             editor: prompt_editor.clone(),
             mention_set,
-            prompt_store,
+
             workspace,
             model_selector: cx.new(|cx| {
                 AgentModelSelector::new(
@@ -1395,7 +1391,6 @@ impl PromptEditor<TerminalCodegen> {
         session_id: Uuid,
         fs: Arc<dyn Fs>,
         thread_store: Entity<ThreadStore>,
-        prompt_store: Option<Entity<PromptStore>>,
         project: WeakEntity<Project>,
         workspace: WeakEntity<Workspace>,
         window: &mut Window,
@@ -1430,14 +1425,14 @@ impl PromptEditor<TerminalCodegen> {
         });
 
         let mention_set = cx
-            .new(|_cx| MentionSet::new(project, Some(thread_store.clone()), prompt_store.clone()));
+            .new(|_cx| MentionSet::new(project, Some(thread_store.clone())));
 
         let model_selector_menu_handle = PopoverMenuHandle::default();
 
         let mut this = Self {
             editor: prompt_editor.clone(),
             mention_set,
-            prompt_store,
+
             workspace,
             model_selector: cx.new(|cx| {
                 AgentModelSelector::new(
@@ -1662,7 +1657,6 @@ mod tests {
             editor::init(cx);
             release_channel::init(semver::Version::new(0, 0, 0), cx);
             language_model::LanguageModelRegistry::test(cx);
-            prompt_store::init(cx);
         });
     }
 
@@ -1708,8 +1702,7 @@ mod tests {
                     session_id,
                     fs,
                     thread_store,
-                    None,
-                    project,
+                                        project,
                     workspace.downgrade(),
                     window,
                     cx,

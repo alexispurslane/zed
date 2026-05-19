@@ -7,7 +7,6 @@ use gpui::{
     Animation, AnimationExt, AnyView, Context, IntoElement, TaskExt, WeakEntity, Window,
     pulsating_between,
 };
-use prompt_store::PromptId;
 use rope::Point;
 use settings::Settings;
 use theme_settings::ThemeSettings;
@@ -179,9 +178,6 @@ fn open_mention_uri(
         MentionUri::Thread { id, name } => {
             open_thread(workspace, id, name, window, cx);
         }
-        MentionUri::Rule { id, .. } => {
-            open_rule(workspace, id, window, cx);
-        }
         MentionUri::Fetch { url } => {
             cx.open_url(url.as_str());
         }
@@ -290,24 +286,4 @@ fn open_thread(
             cx,
         )
     });
-}
-
-fn open_rule(
-    _workspace: &mut Workspace,
-    id: PromptId,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) {
-    use xenomorphic_actions::assistant::OpenRulesLibrary;
-
-    let PromptId::User { uuid } = id else {
-        return;
-    };
-
-    window.dispatch_action(
-        Box::new(OpenRulesLibrary {
-            prompt_to_select: Some(uuid.0),
-        }),
-        cx,
-    );
 }
