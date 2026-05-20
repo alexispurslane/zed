@@ -43,7 +43,6 @@ use agent::{NativeAgent, NativeAgentConnection, Templates, ThreadStore};
 use agent_thread::schema;
 use anyhow::{Context, Result};
 use clap::Parser;
-use feature_flags::FeatureFlagAppExt as _;
 
 use futures::{FutureExt, select_biased};
 use gpui::{AppContext as _, AsyncApp, Entity, UpdateGlobal};

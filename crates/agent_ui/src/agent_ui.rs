@@ -38,7 +38,6 @@ use ::ui::IconName;
 use agent_thread::schema;
 use agent_settings::{AgentProfileId, AgentSettings};
 use command_palette_hooks::CommandPaletteFilter;
-use feature_flags::FeatureFlagAppExt as _;
 use fs::Fs;
 use gpui::{Action, App, Context, Entity, SharedString, Window, actions};
 use language::{

@@ -100,7 +100,6 @@ use {
     anyhow::{Context as _, Result},
     assets::Assets,
     editor::display_map::DisplayRow,
-    feature_flags::FeatureFlagAppExt as _,
     git_ui::project_diff::ProjectDiff,
     gpui::{
         App, AppContext as _, Bounds, Entity, KeyBinding, Modifiers, VisualTestAppContext,
