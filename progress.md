@@ -1,92 +1,96 @@
-# Phase 2 Progress: Delete onboarding cloud-gated crates and trim onboarding
+# Phase 4: Delete Call/Audio/LiveKit/Channel Crates - COMPLETED ✅
 
-## Status: COMPLETE (our targeted packages compile; full workspace has pre-existing errors from other phases)
+## Crates Deleted (6 crates, ~10,913 lines removed)
 
-## Part A: Deleted entire crates ✅
+| Crate | Lines | Status |
+|-------|------:|--------|
+| `denoise` | 507 | ✅ Deleted |
+| `audio` | 1,183 | ✅ Deleted |
+| `livekit_api` | 302 | ✅ Deleted |
+| `livekit_client` | 3,991 | ✅ Deleted |
+| `call` | 3,001 | ✅ Deleted |
+| `channel` | 1,929 | ✅ Deleted |
 
-- Deleted `crates/ai_onboarding/` directory
-- Deleted `crates/language_onboarding/` directory
-- Removed both from workspace `Cargo.toml` members list and workspace dependency table
-- Removed `language_onboarding.workspace = true` from `crates/xenomorphic/Cargo.toml`
-- Removed `use language_onboarding::BasedPyrightBanner;` from `crates/xenomorphic/src/xenomorphic_app.rs`
-- Removed BasedPyrightBanner toolbar item creation from `xenomorphic_app.rs`
+## Cargo.toml Changes
 
-## Part B: Trimmed the onboarding crate ✅
+- **Root `Cargo.toml`**: Removed 6 workspace members, removed workspace dependency entries for `audio`, `call`, `channel`, `livekit_api`, `livekit_client`, `libwebrtc`, `webrtc-sys`, removed `[patch.crates-io]` entries for livekit-rust-sdks/libwebrtc/webrtc-sys
+- **`crates/xenomorphic/Cargo.toml`**: Removed `audio`, `call`, `channel` deps; removed `features = ["audio"]` from `agent_ui`; removed `call` from dev-dependencies
+- **`crates/title_bar/Cargo.toml`**: Removed `call`, `channel`, `livekit_client` deps; removed `call` from test-support and dev-deps; removed `screen-capture` gpui feature
+- **`crates/git_ui/Cargo.toml`**: Removed `call` dep
+- **`crates/notifications/Cargo.toml`**: Removed `channel` dep and test-support feature
+- **`crates/settings_ui/Cargo.toml`**: Removed `audio`, `cpal`, `rodio` deps
+- **`crates/file_finder/Cargo.toml`**: Removed `channel` dep
+- **`crates/agent_ui/Cargo.toml`**: Removed `audio` feature and optional dep
+- **`crates/sidebar/Cargo.toml`**: Removed `features = ["audio"]` from `agent_ui` dep
 
-### `crates/onboarding/src/onboarding.rs`:
-- Removed `use client::{Client, UserStore, xenomorphic_urls};`
-- Removed `use cloud_api_types::Plan;`
-- Removed `notifications::NotifyResultExt as _` import (unused after changes)
-- Removed `SignIn` and `OpenAccount` actions from the actions! macro
-- Removed `user_store` field from `Onboarding` struct
-- Removed `user_store` field from `clone_on_split()` method
-- Removed `handle_sign_in()` method
-- Removed `handle_open_account()` method
-- Removed `.on_action(cx.listener(Self::handle_sign_in))` and `.on_action(Self::handle_open_account)` from Render impl
-- Removed cloud status/plan checking logic from `Onboarding::new()`
-- Simplified `render_page()` to call `crate::basics_page::render_basics_page(cx)` (no longer takes `user_store` param)
-- Kept: theme picker, base keymap picker, vim mode toggle, import VS Code/Cursor settings, auto-trust
+## Source Code Changes
 
-### `crates/onboarding/src/basics_page.rs`:
-- Removed `render_ai_section()` function entirely
-- Removed `render_zed_agent_button()` function entirely
-- Removed `render_telemetry_section()` function entirely
-- Removed `use client::{Client, TelemetrySettings, UserStore, xenomorphic_urls};`
-- Removed `use cloud_api_types::Plan;`
-- Removed `use ui::{AgentSetupButton, ...Animation, AnimationExt, ...pulsating_between};`
-- Updated `render_basics_page()` signature: removed `user_store` parameter
-- Updated `render_basics_page()` body: removed calls to `render_ai_section()` and `render_telemetry_section()`
-- Kept: `render_theme_section`, `render_base_keymap_section`, `render_import_settings_section`, `render_vim_mode_switch`, `render_worktree_auto_trust_switch`
+### `crates/xenomorphic/` (3 files)
+- **`xenomorphic_app.rs`**: Removed `audio::init()`, `channel::init()`, `call::init()` calls
+- **`main.rs`**: Removed same init calls
+- **`visual_test_runner.rs`**: Removed `audio::init()`, `call::init()` calls
+- **`xenomorphic_app/visual_tests.rs`**: Removed `audio::init()` call
 
-### `crates/onboarding/Cargo.toml`:
-- Removed `client.workspace = true`
-- Removed `cloud_api_types.workspace = true`
-- Removed `collections.workspace = true`
-- Kept `telemetry.workspace = true` (still used for telemetry events)
+### `crates/title_bar/` (3 files deleted, 1 heavily modified)
+- **Deleted `collab.rs`** (722 lines): All call/channel/livekit UI (toggle_screen_sharing, toggle_mute, toggle_deafen, render_collaborator_list, render_call_controls)
+- **`title_bar.rs`**: 
+  - Removed `call::ActiveCall`, `cloud_api_types::Plan` direct imports (kept Plan via cloud_api_types re-add)
+  - Changed `actions!(collab, [...])` to `actions!(title_bar, [...])`, removed call-related actions (SimulateUpdateAvailable)
+  - Removed `screen_share_popover_handle` and `_diagnostics_subscription` fields from `TitleBar` struct
+  - Removed `ActiveCall::global(cx)` subscriptions in `new()`
+  - Removed `window_activation_changed` ActiveCall tracking
+  - Removed `active_call_changed()`, `observe_diagnostics()`, `share_project()`, `unshare_project()` methods
+  - Removed `render_collaborator_list()` and `render_call_controls()` calls from render
+  - Simplified `render_project_host()` to remove collab host display
+  - Removed `toggle_update_simulation()` method
+  - Kept `PlanChip` in user menu (cloud_api_types not yet removed)
 
-## Part C: Removed AI onboarding from agent_ui ✅
+### `crates/git_ui/`
+- **`git_panel.rs`**: Stubbed `potential_co_authors()` to return `Vec::default()`, removed `local_committer()` method, replaced `ActiveCall`/room references in render with `has_co_authors = false`
 
-### `crates/agent_ui/Cargo.toml`:
-- Removed `ai_onboarding.workspace = true`
+### `crates/notifications/`
+- **`notification_store.rs`**: Removed `channel::ChannelStore` import and field, removed `ChannelInvitation` handling in `respond_to_notification()` and `add_notifications()`, removed `ChannelId` import
 
-### `crates/agent_ui/src/agent_panel.rs`:
-- Removed `use ai_onboarding::AgentPanelOnboarding;`
-- Removed `use client::UserStore;`
-- Removed `use cloud_api_types::Plan;`
-- Removed `use db::kvp::{Dismissable, ...}` → changed to `use db::kvp::KeyValueStore;`
-- Removed `new_user_onboarding: Entity<AgentPanelOnboarding>` field from struct
-- Removed `new_user_onboarding_upsell_dismissed: AtomicBool` field from struct
-- Removed `user_store: Entity<UserStore>` field from struct
-- Removed local `user_store` and `client` variables from `new()`
-- Removed `OnboardingUpsell::set_dismissed(false, cx)` from `ResetOnboarding` action handler
-- Removed `ResetTrialUpsell` and `ResetTrialEndUpsell` action registrations
-- Removed `dismiss_ai_onboarding()` method
-- Removed `should_render_new_user_onboarding()` method
-- Removed `render_new_user_onboarding()` method
-- Removed `should_render_trial_end_upsell()` method
-- Removed `render_trial_end_upsell()` method
-- Removed calls to `render_new_user_onboarding()` and `render_trial_end_upsell()` from Render impl
-- Removed `OnboardingUpsell` struct and its `Dismissable` impl
-- Removed `TrialEndUpsell` struct and its `Dismissable` impl
-- Removed `ui::EndTrialUpsell` import
-- Removed `ResetTrialEndUpsell, ResetTrialUpsell` from crate imports
-- Removed `atomic::{AtomicBool, Ordering}` import
+### `crates/settings_ui/` (2 files deleted, 2 modified)
+- **Deleted `pages/audio_input_output_setup.rs`**: Audio device selection UI
+- **Deleted `pages/audio_test_window.rs`**: Audio test window
+- **`pages.rs`**: Removed audio module declarations and re-exports
+- **`page_data.rs`**: Removed `open_audio_test_window` import, emptied `collaboration_page()`, removed `calls_section()`, `audio_settings()`, removed `AudioInputDeviceName`/`AudioOutputDeviceName` imports and DEFAULT_AUDIO constants
+- **`settings_ui.rs`**: Removed audio renderer registrations
 
-### `crates/agent_ui/src/ui.rs`:
-- Removed `mod end_trial_upsell;` and `pub use end_trial_upsell::*;`
+### `crates/file_finder/`
+- **`file_finder.rs`**: 
+  - Removed `channel::ChannelStore` and `client::ChannelId` imports
+  - Removed `channel_store` field from `FileFinderDelegate`
+  - Removed `Match::Channel` enum variant
+  - Removed all channel matching logic (~55 lines)
+  - Removed `OpenChannelNotesById` import and dispatch
+  - Removed `Match::Channel` rendering (hash icon, channel name display)
+  - Fixed `file_icon` from match expression to direct `maybe!()` macro
 
-### `crates/agent_ui/src/ui/end_trial_upsell.rs`:
-- Deleted entirely
+### `crates/agent_ui/`
+- **`conversation_view.rs`**: Removed `audio` feature-gated imports and `play_notification_sound()` method, removed `#[cfg(feature = "audio")]` guard on notification call
 
-### `crates/agent_ui/src/agent_ui.rs`:
-- Removed `ResetTrialUpsell` and `ResetTrialEndUpsell` action definitions
+### `crates/workspace/` (1 file deleted, 1 heavily modified)
+- **Deleted `shared_screen.rs`**: Shared screen viewing during calls
+- **`workspace.rs`**:
+  - Removed `pub mod shared_screen` and `pub use SharedScreen`
+  - Removed `open_shared_screen()` method and all calls
+  - Removed `shared_screen_for_peer()` method
+  - Removed all `open_shared_screen` invocations in auto-watch code
+  - Removed call-related close prompt ("Do you want to leave the current call?")
+  - Removed call-related actions from `actions!(collab, [...])`: Mute, Deafen, LeaveCall, ShareProject, ScreenShare, CopyRoomId
+  - Removed `create_shared_screen` from `AnyActiveCall` trait
+  - Kept `AnyActiveCall` trait, `GlobalAnyActiveCall`, `RemoteCollaborator`, `ParticipantLocation`, `ActiveCallEvent` types (they're part of public API, no one implements them now so they're effectively dead code)
 
-## Other fixes:
+### `crates/edit_prediction/`
+- **`onboarding_modal.rs`**: Added missing `Entity` import from gpui
 
-### `crates/language_models/src/provider/cloud.rs`:
-- Replaced `use ai_onboarding::YoungAccountBanner;` with a comment
-- Replaced `this.child(YoungAccountBanner)` with `this.child(div())` (placeholder; cloud.rs will be fully deleted in Phase 7)
+## Build Status
+- `cargo check` passes ✅ with only warnings (unused variables, unused imports from prior phases)
+- No compilation errors
 
-## Build verification:
-- `cargo check -p onboarding -p agent_ui -p language_models` passes cleanly
-- Full workspace `cargo check -p xenomorphic` has errors from other phases (git_ui references `call` crate, edit_prediction has UserStore references) — these are pre-existing from Phase 1 or will be addressed in later phases
+## Notes
+- The `AnyActiveCall` trait and related types in `workspace` are now dead code (no implementers), but kept to minimize cascading changes. They can be removed in Phase 8 (client crate stripping).
+- The `collaboration_page` in settings_ui is now empty (no items). It could be removed entirely in a later cleanup.
+- The `livekit` workspace dependency is still present since it's used transitively by the crate graph. The patch entries were removed.
