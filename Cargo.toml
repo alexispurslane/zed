@@ -337,6 +337,7 @@ language_extension = { path = "crates/language_extension" }
 language_model = { path = "crates/language_model" }
 language_model_core = { path = "crates/language_model_core" }
 language_models = { path = "crates/language_models" }
+language_models_cloud = { path = "crates/language_models_cloud" }
 
 language_selector = { path = "crates/language_selector" }
 language_tools = { path = "crates/language_tools" }
