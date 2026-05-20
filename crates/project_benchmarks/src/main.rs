@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::anyhow;
 use askpass::EncryptedPassword;
 use clap::Parser;
-use client::{Client, UserStore};
+use client::Client;
 use futures::channel::oneshot;
 use gpui::AppContext as _;
 use gpui::TaskExt;
@@ -133,7 +133,6 @@ fn main() -> Result<(), anyhow::Error> {
         let http_client = FakeHttpClient::with_200_response();
         let (_, rx) = watch::channel(None);
         let node = NodeRuntime::new(http_client, None, rx);
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let registry = Arc::new(LanguageRegistry::new(cx.background_executor().clone()));
         let fs = Arc::new(RealFs::new(None, cx.background_executor().clone()));
 
@@ -151,13 +150,12 @@ fn main() -> Result<(), anyhow::Error> {
                     let (_tx, rx) = oneshot::channel();
                     let remote_client =  cx.update(|cx| remote::RemoteClient::new(ConnectionIdentifier::setup(), remote_connection, rx, delegate.clone(), cx )).await?.ok_or_else(|| anyhow!("ssh initialization returned None"))?;
 
-                    cx.update(|cx| Project::remote(remote_client,  client, node, user_store, registry, fs, false, cx))
+                    cx.update(|cx| Project::remote(remote_client, client, node, registry, fs, false, cx))
                 } else {
                     println!("Setting up local project");
                     cx.update(|cx| Project::local(
                     client,
                     node,
-                    user_store,
                     registry,
                     fs,
                     Some(Default::default()),

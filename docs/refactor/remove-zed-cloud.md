@@ -524,3 +524,33 @@ That's ~7.1% of the 1,259,791-line codebase. The collab server alone is 43,606 l
 | UserStore/Plan references | 🔄 ~15 files | Still importing `client::UserStore` — needs incremental removal |
 | xenomorphic_urls references | 🔄 ~6 files | Still referenced in agent_ui, title_bar, client, edit_prediction_ui |
 | Proto/RPC deeper cleanup | 🔄 Deferred | Depends on Phase 8 completion; cloud oneof entries commented out but some temporarily kept |
+
+---
+
+## Progress Tracker (Final Update)
+
+### ✅ All Phases Complete
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| Phase 1: Trivial removals | ✅ Done | Deleted `journal`, `feedback`, `nc` |
+| Phase 2: Onboarding | ✅ Done | Deleted `ai_onboarding`, `language_onboarding`; trimmed `onboarding` crate |
+| Phase 3: Auto-update | ✅ Done | Deleted `auto_update`, `auto_update_helper`, `auto_update_ui` |
+| Phase 4: Call/Audio/LiveKit | ✅ Done | Deleted `denoise`, `audio`, `livekit_api`, `livekit_client`, `call`, `channel` |
+| Phase 5: Collab UI | ✅ Done | Deleted `collab_ui` |
+| Phase 6: Collab server | ✅ Done | Deleted `collab` |
+| Phase 7: Cloud LLM proxy | ✅ Done | Deleted `cloud_api_client`, `cloud_api_types`, `cloud_llm_client`, `language_models_cloud`; deleted `provider/cloud.rs` |
+| Phase 8: Strip client crate | ✅ Done | Removed `is_via_collab()`, `xenomorphic_urls` module, cloud auth, subscription plan-gating. `UserStore` kept as local stub. `cloud_types.rs` kept as local type definitions. |
+| Phase 9: Proto/RPC cleanup | ✅ Done | Removed `is_via_collab()` from `ProtoClient` trait, deleted `channel.proto`, stripped `call.proto` cloud messages |
+| Phase 10: Feature flags | ✅ Done | Removed cloud-fetching mechanism |
+| Phase 11: Settings UI | ✅ Done | Removed audio pages, collab panel, feature flags page |
+| Phase 12: Recent Projects | ✅ Done | Deleted `dev_container_suggest.rs` |
+
+**20 crates deleted, ~68,633 lines removed. Build passes with only warnings.**
+
+### Items intentionally kept
+
+- `UserStore` entity in `client` crate — still used by `workspace`, `title_bar`, and various test code. Could be further stripped in a future pass.
+- `cloud_types.rs` in `client` — local type stubs (Plan, Organization, etc.) used by `UserStore`. Could be removed when `UserStore` is fully stripped.
+- `ProjectClientState::Collab` enum variant — still exists in the enum but is only reached via `mark_as_collab_for_testing()`. Could be removed with more invasive refactoring of `from_join_project_response`.
+- `client` crate WebSocket/reconnection code — still present but unused without cloud auth. Could be removed in a future pass.
