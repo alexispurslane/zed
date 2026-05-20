@@ -320,12 +320,10 @@ async fn start_remote_project(
             http_client::FakeHttpClient::with_404_response(),
             cx,
         );
-        let user_store = cx.new(|cx| client::UserStore::new(project_client.clone(), cx));
         project::Project::remote(
             remote_client,
             project_client,
             node_runtime::NodeRuntime::unavailable(),
-            user_store,
             app_state.languages.clone(),
             app_state.fs.clone(),
             false,
@@ -10189,12 +10187,10 @@ async fn test_remote_project_integration_does_not_briefly_render_as_separate_pro
             http_client::FakeHttpClient::with_404_response(),
             cx,
         );
-        let user_store = cx.new(|cx| client::UserStore::new(project_client.clone(), cx));
         project::Project::remote(
             remote_client,
             project_client,
             node_runtime::NodeRuntime::unavailable(),
-            user_store,
             app_state.languages.clone(),
             app_state.fs.clone(),
             false,

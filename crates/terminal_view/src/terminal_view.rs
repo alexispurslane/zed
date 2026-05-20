@@ -2320,7 +2320,6 @@ mod tests {
                 remote_client,
                 params.client.clone(),
                 params.node_runtime.clone(),
-                params.user_store.clone(),
                 params.languages.clone(),
                 params.fs.clone(),
                 false,

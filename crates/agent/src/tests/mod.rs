@@ -6,7 +6,7 @@ use agent_thread::{
 use agent_thread::schema;
 use agent_settings::AgentProfileId;
 use anyhow::Result;
-use client::{Client, UserStore};
+use client::Client;
 use collections::IndexMap;
 use context_server::{ContextServer, ContextServerCommand, ContextServerId};
 use fs::{FakeFs, Fs};
@@ -3439,9 +3439,9 @@ async fn test_agent_connection(cx: &mut TestAppContext) {
         let http_client = FakeHttpClient::with_404_response();
         let clock = Arc::new(clock::FakeSystemClock::new());
         let client = Client::new(clock, http_client, cx);
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
+        
         language_model::init(cx);
-        language_models::init(user_store, client.clone(), cx);
+        language_models::init(client.clone(), cx);
         LanguageModelRegistry::test(cx);
     });
     cx.executor().forbid_parking();
@@ -4274,9 +4274,9 @@ async fn setup(cx: &mut TestAppContext, model: TestModel) -> ThreadTest {
                 let http_client = ReqwestClient::user_agent("agent tests").unwrap();
                 cx.set_http_client(Arc::new(http_client));
                 let client = Client::production(cx);
-                let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
+                
                 language_model::init(cx);
-                language_models::init(user_store, client.clone(), cx);
+                language_models::init(client.clone(), cx);
             }
         };
 
