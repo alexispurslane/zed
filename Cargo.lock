@@ -11960,6 +11960,7 @@ dependencies = [
  "anyhow",
  "askpass",
  "chrono",
+ "db",
  "dev_container",
  "editor",
  "extension",
@@ -11992,6 +11993,7 @@ dependencies = [
  "ui",
  "ui_input",
  "util",
+ "windows-registry 0.6.1",
  "workspace",
  "worktree",
  "xenomorphic_actions",
@@ -13473,6 +13475,7 @@ dependencies = [
  "chrono",
  "client",
  "clock",
+ "cloud_api_types",
  "db",
  "editor",
  "extension",
@@ -14819,6 +14822,7 @@ dependencies = [
  "arrayvec",
  "chrono",
  "client",
+ "cloud_api_types",
  "db",
  "fs",
  "git_ui",
@@ -17463,6 +17467,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows-registry"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
+dependencies = [
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
+ "windows-strings 0.5.1",
+]
+
+[[package]]
 name = "windows-result"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18879,7 +18894,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "windows-registry",
+ "windows-registry 0.4.0",
 ]
 
 [[package]]

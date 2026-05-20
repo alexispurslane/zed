@@ -681,12 +681,12 @@ fn main() {
             app_state.user_store.clone(),
             cx,
         );
-        language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
+        language_models::init(app_state.client.clone(), cx);
         xenomorphic_app::telemetry_log::init(cx);
         xenomorphic_app::remote_debug::init(cx);
         edit_prediction_ui::init(cx);
         web_search::init(cx);
-        web_search_providers::init(app_state.client.clone(), app_state.user_store.clone(), cx);
+        web_search_providers::init(cx);
         snippet_provider::init(cx);
         edit_prediction_registry::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         let prompt_builder = PromptBuilder::load(app_state.fs.clone(), stdout_is_a_pty(), cx);

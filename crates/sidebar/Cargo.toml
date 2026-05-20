@@ -19,6 +19,7 @@ agent_thread.workspace = true
 action_log.workspace = true
 async-channel.workspace = true
 agent.workspace = true
+cloud_api_types.workspace = true
 agent_settings.workspace = true
 agent_ui.workspace = true
 anyhow.workspace = true

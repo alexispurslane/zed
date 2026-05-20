@@ -598,11 +598,11 @@ impl Sidebar {
 
         AgentThreadWorktreeLabelFlag::watch(cx);
         let weak_self = cx.weak_entity();
-        cx.observe_global::<feature_flags::FeatureFlagStore>(move |cx| {
+        cx.observe_global::<feature_flags::FeatureFlagStore>(move |_store, cx| {
             let enabled = cx.flag_value::<AgentPanelTerminalFeatureFlag>();
             weak_self
                 .update(cx, |this, cx| {
-                    if !enabled && matches!(this.active_entry, Some(ActiveEntry::Terminal { .. })) {
+                    if enabled == feature_flags::PresenceFlag::Off && matches!(this.active_entry, Some(ActiveEntry::Terminal { .. })) {
                         this.active_entry = None;
                     }
                     this.sync_active_entry_from_active_workspace(cx);
