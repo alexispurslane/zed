@@ -65,3 +65,33 @@ In Progress
    - Fixed `_user = None` without type annotation in menu builder
 
 ### Build status: ✅ PASSING (0 errors, warnings only)
+
+### Additional fixes during Task B:
+
+1. **`crates/project/src/project.rs`**: Re-added `user_store: Entity<UserStore>` field and accessor.
+   The field was removed by a parallel subagent but was still referenced by `editor`, `workspace`,
+   and `component_preview`. Rather than rip UserStore from all callers (which would be a massive
+   change touching 20+ files), kept it in Project as a stub that creates UserStore on construction.
+   Removed `user_store` parameter from `in_room()` and `from_join_project_response()`.
+
+2. **`crates/inspector_ui/src/inspector.rs`**: Removed extra `user_store` argument from `Project::local()` call.
+
+3. **`crates/client/src/client.rs`**: Added type annotations to `Ok(Credentials { ... })` to fix inference errors.
+
+4. **`crates/xenomorphic/src/xenomorphic_app.rs`**: Removed unused `OpenAccountSettings` import.
+
+5. **`crates/settings_ui/src/pages/feature_flags.rs`**: Deleted (cloud feature flags page).
+
+### Summary of all Task B changes:
+
+| File | Change |
+|------|--------|
+| `title_bar/src/plan_chip.rs` | **DELETED** |
+| `title_bar/src/title_bar.rs` | Removed Plan, PlanChip; simplified org list |
+| `agent_ui/src/agent_configuration.rs` | Removed Plan, XENOMORPHIC_CLOUD_PROVIDER_ID, render_zed_plan_info |
+| `agent/src/thread.rs` | Removed UserStore, Plan fields/params; simplified handle_completion_error |
+| `edit_prediction_ui/src/edit_prediction_button.rs` | Fixed stale cloud references |
+| `project/src/project.rs` | Re-added user_store field; removed from constructor params |
+| `inspector_ui/src/inspector.rs` | Fixed Project::local() call |
+| `client/src/client.rs` | Fixed type inference |
+| `settings_ui/src/pages/feature_flags.rs` | **DELETED** |
