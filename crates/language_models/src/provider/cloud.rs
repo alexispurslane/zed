@@ -1,4 +1,4 @@
-use ai_onboarding::YoungAccountBanner;
+// YoungAccountBanner removed (ai_onboarding crate deleted)
 use anyhow::Result;
 use client::{Client, RefreshLlmTokenListener, UserStore, global_llm_token, xenomorphic_urls};
 use cloud_api_client::LlmApiToken;
@@ -389,7 +389,7 @@ impl RenderOnce for XenomorphicAiConfiguration {
 
         v_flex().gap_2().w_full().map(|this| {
             if self.account_too_young {
-                this.child(YoungAccountBanner).child(
+                this.child(div()).child(
                     Button::new("upgrade", "Upgrade to Pro")
                         .style(ui::ButtonStyle::Tinted(ui::TintColor::Accent))
                         .full_width()

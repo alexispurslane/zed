@@ -16,8 +16,7 @@ pub mod path_list {
 mod persistence;
 pub mod searchable;
 mod security_modal;
-pub mod shared_screen;
-pub use shared_screen::SharedScreen;
+
 pub mod focus_follows_mouse;
 mod status_bar;
 pub mod tasks;
@@ -3257,54 +3256,6 @@ impl Workspace {
                 close_intent != CloseIntent::ReplaceWindow && remaining_workspaces == 0
             };
 
-            if let Some(active_call) = active_call
-                && workspace_count == 1
-                && cx
-                    .update(|_window, cx| active_call.0.is_in_room(cx))
-                    .unwrap_or(false)
-            {
-                if close_intent == CloseIntent::CloseWindow {
-                    this.update(cx, |_, cx| cx.emit(Event::Activate))?;
-                    let answer = cx.update(|window, cx| {
-                        window.prompt(
-                            PromptLevel::Warning,
-                            "Do you want to leave the current call?",
-                            None,
-                            &["Close window and hang up", "Cancel"],
-                            cx,
-                        )
-                    })?;
-
-                    if answer.await.log_err() == Some(1) {
-                        return anyhow::Ok(false);
-                    } else {
-                        if let Ok(task) = cx.update(|_window, cx| active_call.0.hang_up(cx)) {
-                            task.await.log_err();
-                        }
-                    }
-                }
-                if close_intent == CloseIntent::ReplaceWindow {
-                    _ = cx.update(|_window, cx| {
-                        let multi_workspace = cx
-                            .windows()
-                            .iter()
-                            .filter_map(|window| window.downcast::<MultiWorkspace>())
-                            .next()
-                            .unwrap();
-                        let project = multi_workspace
-                            .read(cx)?
-                            .workspace()
-                            .read(cx)
-                            .project
-                            .clone();
-                        if project.read(cx).is_shared() {
-                            active_call.0.unshare_project(project, cx)?;
-                        }
-                        Ok::<_, anyhow::Error>(())
-                    });
-                }
-            }
-
             // Hot-exit silently writes dirty buffers to the DB; only allow it
             // if the workspace will be reachable again, either via session
             // restore or by reopening its folder paths. Otherwise prompt, so
@@ -4810,21 +4761,6 @@ impl Workspace {
         item
     }
 
-    pub fn open_shared_screen(
-        &mut self,
-        peer_id: PeerId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(shared_screen) =
-            self.shared_screen_for_peer(peer_id, &self.active_pane, window, cx)
-        {
-            self.active_pane.update(cx, |pane, cx| {
-                pane.add_item(Box::new(shared_screen), false, true, None, window, cx)
-            });
-        }
-    }
-
     pub fn auto_watch_state(&self) -> &AutoWatch {
         &self.auto_watch
     }
@@ -4855,7 +4791,7 @@ impl Workspace {
             self.auto_watch = AutoWatch::Active { watched_peer };
 
             if let Some(peer_id) = watched_peer {
-                self.open_shared_screen(peer_id, window, cx);
+                
             }
         }
 
@@ -4889,8 +4825,8 @@ impl Workspace {
                 watched_peer: next_watched_peer,
             };
 
-            if let Some(next_watched_peer) = next_watched_peer {
-                self.open_shared_screen(next_watched_peer, window, cx);
+            if let Some(_next_watched_peer) = next_watched_peer {
+                // Screen sharing removed - no call support
             }
         }
     }
@@ -4908,7 +4844,7 @@ impl Workspace {
         self.auto_watch = AutoWatch::Active { watched_peer };
 
         if let Some(peer_id) = watched_peer {
-            self.open_shared_screen(peer_id, window, cx);
+            
         }
     }
 
@@ -6585,23 +6521,8 @@ impl Workspace {
             {
                 item_to_activate = Some((item.location, item.view.boxed_clone()));
             }
-        } else if let Some(shared_screen) =
-            self.shared_screen_for_peer(peer_id, &state.center_pane, window, cx)
-        {
-            item_to_activate = Some((None, Box::new(shared_screen)));
         }
         item_to_activate
-    }
-
-    fn shared_screen_for_peer(
-        &self,
-        peer_id: PeerId,
-        pane: &Entity<Pane>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Option<Entity<SharedScreen>> {
-        self.active_call()?
-            .create_shared_screen(peer_id, pane, window, cx)
     }
 
     pub fn on_window_activation_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -8054,13 +7975,6 @@ pub trait AnyActiveCall {
         _: &mut Context<Workspace>,
         _: Box<dyn Fn(&mut Workspace, &ActiveCallEvent, &mut Window, &mut Context<Workspace>)>,
     ) -> Subscription;
-    fn create_shared_screen(
-        &self,
-        _: PeerId,
-        _: &Entity<Pane>,
-        _: &mut Window,
-        _: &mut App,
-    ) -> Option<Entity<SharedScreen>>;
     fn peer_ids_with_video_tracks(&self, _: &App) -> Vec<PeerId>;
 }
 
@@ -9160,18 +9074,6 @@ actions!(
         /// can be copied via "Copy link to section" in the context menu of the channel notes
         /// buffer. These URLs look like `https://zed.dev/channel/channel-name-CHANNEL_ID/notes`.
         OpenChannelNotes,
-        /// Mutes your microphone.
-        Mute,
-        /// Deafens yourself (mute both microphone and speakers).
-        Deafen,
-        /// Leaves the current call.
-        LeaveCall,
-        /// Shares the current project with collaborators.
-        ShareProject,
-        /// Shares your screen with collaborators.
-        ScreenShare,
-        /// Copies the current room name and session id for debugging purposes.
-        CopyRoomId,
     ]
 );
 

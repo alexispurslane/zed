@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use crate::{EditPredictionStore, XenomorphicPredictUpsell};
-use ai_onboarding::EditPredictionOnboarding;
+use crate::XenomorphicPredictUpsell;
 use client::{Client, UserStore};
 use db::kvp::Dismissable;
 use fs::Fs;
 use gpui::{
-    ClickEvent, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable, MouseDownEvent, Render,
+    ClickEvent, DismissEvent, EventEmitter, Entity, FocusHandle, Focusable, MouseDownEvent, Render,
     linear_color_stop, linear_gradient,
 };
 use language::language_settings::EditPredictionProvider;
@@ -25,8 +24,8 @@ macro_rules! onboarding_event {
 }
 
 /// Introduces user to Xenomorphic's Edit Prediction feature
+/// TODO: Reimplement without ai_onboarding crate dependency
 pub struct XenomorphicPredictModal {
-    onboarding: Entity<EditPredictionOnboarding>,
     focus_handle: FocusHandle,
 }
 
@@ -45,46 +44,15 @@ pub(crate) fn set_edit_prediction_provider(provider: EditPredictionProvider, cx:
 impl XenomorphicPredictModal {
     pub fn toggle(
         workspace: &mut Workspace,
-        user_store: Entity<UserStore>,
-        client: Arc<Client>,
+        _user_store: Entity<UserStore>,
+        _client: Arc<Client>,
         window: &mut Window,
         cx: &mut Context<Workspace>,
     ) {
         let project = workspace.project().clone();
         workspace.toggle_modal(window, cx, |_window, cx| {
-            let weak_entity = cx.weak_entity();
-            let copilot = EditPredictionStore::try_global(cx)
-                .and_then(|store| store.read(cx).copilot_for_project(&project));
+            // TODO: Reimplement onboarding without ai_onboarding crate
             Self {
-                onboarding: cx.new(|cx| {
-                    EditPredictionOnboarding::new(
-                        user_store.clone(),
-                        client.clone(),
-                        copilot
-                            .as_ref()
-                            .is_some_and(|copilot| copilot.read(cx).status().is_configured()),
-                        Arc::new({
-                            let this = weak_entity.clone();
-                            move |_window, cx| {
-                                XenomorphicPredictUpsell::set_dismissed(true, cx);
-                                set_edit_prediction_provider(EditPredictionProvider::Xenomorphic, cx);
-                                this.update(cx, |_, cx| cx.emit(DismissEvent)).ok();
-                            }
-                        }),
-                        Arc::new({
-                            let this = weak_entity.clone();
-                            move |window, cx| {
-                                XenomorphicPredictUpsell::set_dismissed(true, cx);
-                                set_edit_prediction_provider(EditPredictionProvider::Copilot, cx);
-                                this.update(cx, |_, cx| cx.emit(DismissEvent)).ok();
-                                if let Some(copilot) = copilot.clone() {
-                                    copilot_ui::initiate_sign_in(copilot, window, cx);
-                                }
-                            }
-                        }),
-                        cx,
-                    )
-                }),
                 focus_handle: cx.focus_handle(),
             }
         });
@@ -153,7 +121,8 @@ impl Render for XenomorphicPredictModal {
                         linear_color_stop(color.panel_background, 1.0),
                         linear_color_stop(color.editor_background, 0.45),
                     ))
-                    .child(self.onboarding.clone()),
+                    // TODO: Reimplement onboarding content without ai_onboarding crate
+                    .child("Edit prediction oncoming soon"),
             )
             .child(h_flex().absolute().top_3().right_3().child(
                 IconButton::new("cancel", IconName::Close).on_click(cx.listener(
