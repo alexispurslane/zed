@@ -4,7 +4,7 @@
 use fs::RealFs;
 use gpui::{AppContext as _, Bounds, KeyBinding, WindowBounds, WindowOptions, actions, size};
 
-use client::{Client, UserStore};
+use client::Client;
 use language::LanguageRegistry;
 use node_runtime::NodeRuntime;
 use project::Project;
@@ -45,7 +45,6 @@ fn main() {
         let client = Client::production(cx);
         client::init(&client, cx);
 
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
         let session_id = uuid::Uuid::new_v4().to_string();
         let kvp = db::kvp::KeyValueStore::global(cx);
@@ -58,7 +57,6 @@ fn main() {
         let app_state = Arc::new(AppState {
             languages,
             client,
-            user_store,
             workspace_store,
             fs,
             build_window_options: |_, _| Default::default(),
