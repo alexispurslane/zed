@@ -28,20 +28,6 @@ pub fn init(client: Arc<Client>, cx: &mut App) {
         monitor_hangs(cx);
     }
 
-    cx.on_flags_ready({
-        let client = client.clone();
-        move |flags_ready, cx| {
-            if flags_ready.is_staff {
-                let client = client.clone();
-                cx.background_spawn(async move {
-                    upload_build_timings(client).await.warn_on_err();
-                })
-                .detach();
-            }
-        }
-    })
-    .detach();
-
     if client.telemetry().diagnostics_enabled() {
         let client = client.clone();
         cx.background_spawn(async move {

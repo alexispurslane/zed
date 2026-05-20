@@ -125,10 +125,6 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     #( #label_arms ),*
                 }
             }
-
-            fn from_wire(_: &str) -> ::std::option::Option<Self> {
-                ::std::option::Option::Some(#name::#default_ident)
-            }
         }
     })
 }

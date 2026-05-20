@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use editor::Editor;
 use feature_flags::{
     AgentPanelTerminalFeatureFlag, AgentThreadWorktreeLabel, AgentThreadWorktreeLabelFlag,
-    FeatureFlag, FeatureFlagAppExt as _, FeatureFlagViewExt as _,
+    FeatureFlag, FeatureFlagAppExt as _,
 };
 use gpui::{
     Action as _, AnyElement, App, ClickEvent, Context, DismissEvent, Entity, EntityId, FocusHandle,
@@ -597,16 +597,19 @@ impl Sidebar {
             .detach();
 
         AgentThreadWorktreeLabelFlag::watch(cx);
-        cx.observe_flag::<AgentPanelTerminalFeatureFlag, _>(
-            window,
-            |enabled, this, _window, cx| {
-                if !*enabled && matches!(this.active_entry, Some(ActiveEntry::Terminal { .. })) {
-                    this.active_entry = None;
-                }
-                this.sync_active_entry_from_active_workspace(cx);
-                this.update_entries(cx);
-            },
-        )
+        let weak_self = cx.weak_entity();
+        cx.observe_global::<feature_flags::FeatureFlagStore>(move |cx| {
+            let enabled = cx.flag_value::<AgentPanelTerminalFeatureFlag>();
+            weak_self
+                .update(cx, |this, cx| {
+                    if !enabled && matches!(this.active_entry, Some(ActiveEntry::Terminal { .. })) {
+                        this.active_entry = None;
+                    }
+                    this.sync_active_entry_from_active_workspace(cx);
+                    this.update_entries(cx);
+                })
+                .ok();
+        })
         .detach();
 
         let filter_editor = cx.new(|cx| {

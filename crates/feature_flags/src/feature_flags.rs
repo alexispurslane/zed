@@ -6,11 +6,9 @@ mod flags;
 mod settings;
 mod store;
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::LazyLock;
 
-use gpui::{App, Context, Global, Subscription, Window};
+use gpui::{App, Context, Global, Subscription};
 
 pub use feature_flags_macros::EnumFeatureFlag;
 pub use flags::*;
@@ -31,8 +29,6 @@ pub trait FeatureFlagValue:
 
     /// A stable identifier for this variant used when persisting overrides.
     fn override_key(&self) -> &'static str;
-
-    fn from_wire(wire: &str) -> Option<Self>;
 
     /// Human-readable label for use in the configuration UI.
     fn label(&self) -> &'static str {
@@ -96,10 +92,6 @@ impl FeatureFlagValue for PresenceFlag {
         }
     }
 
-    fn from_wire(_: &str) -> Option<Self> {
-        Some(PresenceFlag::On)
-    }
-
     fn on_variant() -> Self {
         PresenceFlag::On
     }
@@ -142,72 +134,6 @@ pub trait FeatureFlag {
     }
 }
 
-pub trait FeatureFlagViewExt<V: 'static> {
-    /// Fires the callback whenever the resolved [`T::Value`] transitions.
-    fn observe_flag<T: FeatureFlag, F>(&mut self, window: &Window, callback: F) -> Subscription
-    where
-        F: Fn(T::Value, &mut V, &mut Window, &mut Context<V>) + Send + Sync + 'static;
-
-    fn when_flag_enabled<T: FeatureFlag>(
-        &mut self,
-        window: &mut Window,
-        callback: impl Fn(&mut V, &mut Window, &mut Context<V>) + Send + Sync + 'static,
-    );
-}
-
-impl<V> FeatureFlagViewExt<V> for Context<'_, V>
-where
-    V: 'static,
-{
-    fn observe_flag<T: FeatureFlag, F>(&mut self, window: &Window, callback: F) -> Subscription
-    where
-        F: Fn(T::Value, &mut V, &mut Window, &mut Context<V>) + 'static,
-    {
-        let mut last_value: Option<T::Value> = None;
-        self.observe_global_in::<FeatureFlagStore>(window, move |v, window, cx| {
-            let value = cx.flag_value::<T>();
-            if last_value.as_ref() == Some(&value) {
-                return;
-            }
-            last_value = Some(value.clone());
-            callback(value, v, window, cx);
-        })
-    }
-
-    fn when_flag_enabled<T: FeatureFlag>(
-        &mut self,
-        window: &mut Window,
-        callback: impl Fn(&mut V, &mut Window, &mut Context<V>) + Send + Sync + 'static,
-    ) {
-        if self
-            .try_global::<FeatureFlagStore>()
-            .is_some_and(|f| f.has_flag::<T>(self))
-        {
-            self.defer_in(window, move |view, window, cx| {
-                callback(view, window, cx);
-            });
-            return;
-        }
-        let subscription = Rc::new(RefCell::new(None));
-        let inner = self.observe_global_in::<FeatureFlagStore>(window, {
-            let subscription = subscription.clone();
-            move |v, window, cx| {
-                let has_flag = cx.global::<FeatureFlagStore>().has_flag::<T>(cx);
-                if has_flag {
-                    callback(v, window, cx);
-                    subscription.take();
-                }
-            }
-        });
-        subscription.borrow_mut().replace(inner);
-    }
-}
-
-#[derive(Debug)]
-pub struct OnFlagsReady {
-    pub is_staff: bool,
-}
-
 pub trait FeatureFlagAppExt {
     fn update_flags(&mut self, staff: bool, flags: Vec<String>);
     fn set_staff(&mut self, staff: bool);
@@ -215,19 +141,17 @@ pub trait FeatureFlagAppExt {
     fn flag_value<T: FeatureFlag>(&self) -> T::Value;
     fn is_staff(&self) -> bool;
 
-    fn on_flags_ready<F>(&mut self, callback: F) -> Subscription
-    where
-        F: FnMut(OnFlagsReady, &mut App) + 'static;
-
     fn observe_flag<T: FeatureFlag, F>(&mut self, callback: F) -> Subscription
     where
         F: FnMut(T::Value, &mut App) + 'static;
 }
 
 impl FeatureFlagAppExt for App {
-    fn update_flags(&mut self, staff: bool, flags: Vec<String>) {
+    fn update_flags(&mut self, staff: bool, _flags: Vec<String>) {
+        // Cloud-delivered flags are no longer supported.
+        // This method is retained for test compatibility — it only sets staff status.
         let store = self.default_global::<FeatureFlagStore>();
-        store.update_server_flags(staff, flags);
+        store.set_staff(staff);
     }
 
     fn set_staff(&mut self, staff: bool) {
@@ -251,23 +175,6 @@ impl FeatureFlagAppExt for App {
         self.try_global::<FeatureFlagStore>()
             .map(|store| store.is_staff())
             .unwrap_or(false)
-    }
-
-    fn on_flags_ready<F>(&mut self, mut callback: F) -> Subscription
-    where
-        F: FnMut(OnFlagsReady, &mut App) + 'static,
-    {
-        self.observe_global::<FeatureFlagStore>(move |cx| {
-            let store = cx.global::<FeatureFlagStore>();
-            if store.server_flags_received() {
-                callback(
-                    OnFlagsReady {
-                        is_staff: store.is_staff(),
-                    },
-                    cx,
-                );
-            }
-        })
     }
 
     fn observe_flag<T: FeatureFlag, F>(&mut self, mut callback: F) -> Subscription

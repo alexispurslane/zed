@@ -1,7 +1,6 @@
 use std::any::TypeId;
 use std::sync::Arc;
 
-use collections::HashMap;
 use fs::Fs;
 use gpui::{App, BorrowAppContext, Subscription};
 use settings::{Settings, SettingsStore, update_settings_file};
@@ -69,8 +68,6 @@ macro_rules! register_feature_flag {
 #[derive(Default)]
 pub struct FeatureFlagStore {
     staff: bool,
-    server_flags: HashMap<String, String>,
-    server_flags_received: bool,
 
     _settings_subscription: Option<Subscription>,
 }
@@ -96,21 +93,8 @@ impl FeatureFlagStore {
         self.staff
     }
 
-    pub fn server_flags_received(&self) -> bool {
-        self.server_flags_received
-    }
-
     pub fn set_staff(&mut self, staff: bool) {
         self.staff = staff;
-    }
-
-    pub fn update_server_flags(&mut self, staff: bool, flags: Vec<String>) {
-        self.staff = staff;
-        self.server_flags_received = true;
-        self.server_flags.clear();
-        for flag in flags {
-            self.server_flags.insert(flag.clone(), flag);
-        }
     }
 
     /// The user's override key for this flag, read directly from
@@ -167,11 +151,6 @@ impl FeatureFlagStore {
             return Some(T::Value::on_variant());
         }
 
-        // Server-delivered flag.
-        if let Some(wire) = self.server_flags.get(T::NAME) {
-            return T::Value::from_wire(wire);
-        }
-
         None
     }
 
@@ -210,10 +189,6 @@ impl FeatureFlagStore {
             && !*XENOMORPHIC_DISABLE_STAFF
             && (descriptor.enabled_for_staff)()
         {
-            return on_variant_key;
-        }
-
-        if self.server_flags.contains_key(descriptor.name) {
             return on_variant_key;
         }
 
@@ -295,19 +270,10 @@ mod tests {
     }
 
     #[gpui::test]
-    fn server_flag_enables_presence(cx: &mut App) {
+    fn off_override_beats_staff(cx: &mut App) {
         init_settings_store(cx);
         let mut store = FeatureFlagStore::default();
-        assert!(!store.has_flag::<DemoFlag>(cx));
-        store.update_server_flags(false, vec!["demo".to_string()]);
-        assert!(store.has_flag::<DemoFlag>(cx));
-    }
-
-    #[gpui::test]
-    fn off_override_beats_server_flag(cx: &mut App) {
-        init_settings_store(cx);
-        let mut store = FeatureFlagStore::default();
-        store.update_server_flags(false, vec!["demo".to_string()]);
+        store.set_staff(false);
         set_override(DemoFlag::NAME, "off", cx);
         assert!(!store.has_flag::<DemoFlag>(cx));
         assert_eq!(
@@ -360,7 +326,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn on_override_enables_without_server_or_staff(cx: &mut App) {
+    fn on_override_enables_without_staff(cx: &mut App) {
         init_settings_store(cx);
         let store = FeatureFlagStore::default();
         set_override(DemoFlag::NAME, "on", cx);
@@ -378,31 +344,4 @@ mod tests {
         assert_eq!(PresenceFlag::default(), PresenceFlag::Off);
     }
 
-    #[gpui::test]
-    fn on_flags_ready_waits_for_server_flags(cx: &mut gpui::TestAppContext) {
-        use crate::FeatureFlagAppExt;
-        use std::cell::Cell;
-        use std::rc::Rc;
-
-        cx.update(|cx| {
-            init_settings_store(cx);
-            FeatureFlagStore::init(cx);
-        });
-
-        let fired = Rc::new(Cell::new(false));
-        cx.update({
-            let fired = fired.clone();
-            |cx| cx.on_flags_ready(move |_, _| fired.set(true)).detach()
-        });
-
-        // Settings-triggered no-op touch must not fire on_flags_ready.
-        cx.update(|cx| cx.update_default_global::<FeatureFlagStore, _>(|_, _| {}));
-        cx.run_until_parked();
-        assert!(!fired.get());
-
-        // Server flags arrive — now it should fire.
-        cx.update(|cx| cx.update_flags(true, vec![]));
-        cx.run_until_parked();
-        assert!(fired.get());
-    }
 }

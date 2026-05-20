@@ -490,11 +490,6 @@ pub fn init(
     })
     .detach();
 
-    cx.on_flags_ready(|_, cx| {
-        update_command_palette_filter(cx);
-    })
-    .detach();
-
     maybe_backfill_editor_layout(fs, is_new_install, cx);
 }
 

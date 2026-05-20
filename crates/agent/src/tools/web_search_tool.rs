@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
 use agent_thread::schema;
 use anyhow::Result;
-use cloud_llm_client::WebSearchResponse;
+use web_search::WebSearchResponse;
 use futures::FutureExt as _;
 use gpui::{App, Task};
 use language_model::{
