@@ -17,6 +17,9 @@ members = [
     "crates/buffer_diff",
 
     "crates/cli",
+    "crates/cloud_api_client",
+    "crates/cloud_api_types",
+    "crates/cloud_llm_client",
     "crates/client",
     "crates/clock",
 
@@ -101,6 +104,7 @@ members = [
     "crates/language_model",
     "crates/language_model_core",
     "crates/language_models",
+    "crates/language_models_cloud",
 
     "crates/language_selector",
     "crates/language_tools",
@@ -260,6 +264,9 @@ buffer_diff = { path = "crates/buffer_diff" }
 cli = { path = "crates/cli" }
 client = { path = "crates/client" }
 clock = { path = "crates/clock" }
+cloud_api_client = { path = "crates/cloud_api_client" }
+cloud_api_types = { path = "crates/cloud_api_types" }
+cloud_llm_client = { path = "crates/cloud_llm_client" }
 
 collections = { path = "crates/collections", version = "0.1.0" }
 command_palette = { path = "crates/command_palette" }
@@ -337,6 +344,7 @@ language_extension = { path = "crates/language_extension" }
 language_model = { path = "crates/language_model" }
 language_model_core = { path = "crates/language_model_core" }
 language_models = { path = "crates/language_models" }
+language_models_cloud = { path = "crates/language_models_cloud" }
 
 language_selector = { path = "crates/language_selector" }
 language_tools = { path = "crates/language_tools" }
