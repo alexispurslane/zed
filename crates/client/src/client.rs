@@ -1,7 +1,7 @@
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
 
-mod cloud_types;
+mod llm_token;
 mod proxy;
 pub mod telemetry;
 pub mod user;
@@ -14,6 +14,10 @@ use async_tungstenite::tungstenite::{
     http::{HeaderValue, Request, StatusCode},
 };
 use clock::SystemClock;
+use cloud_api_client::LlmApiToken;
+use cloud_api_client::websocket_protocol::MessageToClient;
+use cloud_api_client::{ClientApiError, CloudApiClient};
+use cloud_api_types::OrganizationId;
 use credentials_provider::CredentialsProvider;
 use feature_flags::FeatureFlagAppExt as _;
 use futures::{
@@ -51,7 +55,7 @@ use tokio::net::TcpStream;
 use url::Url;
 use util::{ConnectionResult, ResultExt};
 
-pub use cloud_types::*;
+pub use llm_token::*;
 pub use rpc::*;
 pub use telemetry_events::Event;
 pub use user::*;
@@ -194,6 +198,7 @@ pub fn init(client: &Arc<Client>, cx: &mut App) {
     });
 }
 
+pub type MessageToClientHandler = Box<dyn Fn(&MessageToClient, &mut App) + Send + Sync + 'static>;
 
 struct GlobalClient(Arc<Client>);
 
@@ -203,10 +208,12 @@ pub struct Client {
     id: AtomicU64,
     peer: Arc<Peer>,
     http: Arc<HttpClientWithUrl>,
+    cloud_client: Arc<CloudApiClient>,
     telemetry: Arc<Telemetry>,
     credentials_provider: ClientCredentialsProvider,
     state: RwLock<ClientState>,
     handler_set: Mutex<ProtoMessageHandlerSet>,
+    message_to_client_handlers: Mutex<Vec<MessageToClientHandler>>,
     sign_out_tx: Mutex<Option<mpsc::UnboundedSender<()>>>,
 
     #[allow(clippy::type_complexity)]
@@ -548,10 +555,12 @@ impl Client {
             id: AtomicU64::new(0),
             peer: Peer::new(0),
             telemetry: Telemetry::new(clock, http.clone(), cx),
+            cloud_client: Arc::new(CloudApiClient::new(http.clone())),
             http,
             credentials_provider: ClientCredentialsProvider::new(cx),
             state: Default::default(),
             handler_set: Default::default(),
+            message_to_client_handlers: Mutex::new(Vec::new()),
             sign_out_tx: Mutex::new(None),
 
             #[cfg(any(test, feature = "test-support"))]
@@ -585,6 +594,9 @@ impl Client {
         self.credentials_provider.provider.clone()
     }
 
+    pub fn cloud_client(&self) -> Arc<CloudApiClient> {
+        self.cloud_client.clone()
+    }
 
     pub fn set_id(&self, id: u64) -> &Self {
         self.id.store(id, Ordering::SeqCst);
@@ -862,7 +874,9 @@ impl Client {
         let mut credentials = None;
 
         let old_credentials = self.state.read().credentials.clone();
-        if let Some(old_credentials) = old_credentials {
+        if let Some(old_credentials) = old_credentials
+            && self.validate_credentials(&old_credentials, cx).await?
+        {
             credentials = Some(old_credentials);
         }
 
@@ -870,7 +884,14 @@ impl Client {
             && try_provider
             && let Some(stored_credentials) = self.credentials_provider.read_credentials(cx).await
         {
-            credentials = Some(stored_credentials);
+            if self.validate_credentials(&stored_credentials, cx).await? {
+                credentials = Some(stored_credentials);
+            } else {
+                self.credentials_provider
+                    .delete_credentials(cx)
+                    .await
+                    .log_err();
+            }
         }
 
         if credentials.is_none() {
@@ -903,6 +924,8 @@ impl Client {
 
         let credentials = credentials.unwrap();
         self.set_id(credentials.user_id);
+        self.cloud_client
+            .set_credentials(credentials.user_id as u32, credentials.access_token.clone());
         self.state.write().credentials = Some(credentials.clone());
         self.set_status(
             if is_reauthenticating {
@@ -916,32 +939,93 @@ impl Client {
         Ok(credentials)
     }
 
+    async fn validate_credentials(
+        self: &Arc<Self>,
+        credentials: &Credentials,
+        cx: &AsyncApp,
+    ) -> Result<bool> {
+        match self
+            .cloud_client
+            .validate_credentials(credentials.user_id as u32, &credentials.access_token)
+            .await
+        {
+            Ok(valid) => Ok(valid),
+            Err(err) => {
+                self.set_status(Status::AuthenticationError, cx);
+                Err(anyhow!("failed to validate credentials: {}", err))
+            }
+        }
+    }
 
+    /// Establishes a WebSocket connection with Cloud for receiving updates from the server.
+    async fn connect_to_cloud(self: &Arc<Self>, cx: &AsyncApp) -> Result<()> {
+        let connect_task = cx.update({
+            let cloud_client = self.cloud_client.clone();
+            move |cx| cloud_client.connect(cx)
+        })?;
+        let connection = connect_task.await?;
+
+        let (mut messages, task) = cx.update(|cx| connection.spawn(cx));
+        task.detach();
+
+        cx.spawn({
+            let this = self.clone();
+            async move |cx| {
+                while let Some(message) = messages.next().await {
+                    if let Some(message) = message.log_err() {
+                        this.handle_message_to_client(message, cx);
+                    }
+                }
+            }
+        })
+        .detach();
+
+        Ok(())
+    }
 
     /// Performs a sign-in and also (optionally) connects to Collab.
-    /// Performs a sign-in and connects with credentials.
+    ///
+    /// Only Xenomorphic staff automatically connect to Collab.
     pub async fn sign_in_with_optional_connect(
         self: &Arc<Self>,
         try_provider: bool,
         cx: &AsyncApp,
     ) -> Result<()> {
+        // Don't try to sign in again if we're already connected to Collab, as it will temporarily disconnect us.
         if self.status().borrow().is_connected() {
             return Ok(());
         }
 
+        let (is_staff_tx, is_staff_rx) = oneshot::channel::<bool>();
+        let mut is_staff_tx = Some(is_staff_tx);
+        cx.update(|cx| {
+            cx.on_flags_ready(move |state, _cx| {
+                if let Some(is_staff_tx) = is_staff_tx.take() {
+                    is_staff_tx.send(state.is_staff).log_err();
+                }
+            })
+            .detach();
+        });
+
         let credentials = self.sign_in(try_provider, cx).await?;
 
+        self.connect_to_cloud(cx).await.log_err();
 
         cx.update(move |cx| {
             cx.spawn({
                 let client = self.clone();
                 async move |cx| {
-                    match client.connect_with_credentials(credentials, cx).await {
-                        ConnectionResult::Timeout => Err(anyhow!("connection timed out")),
-                        ConnectionResult::ConnectionReset => Err(anyhow!("connection reset")),
-                        ConnectionResult::Result(result) => {
-                            result.context("client auth and connect")
+                    let is_staff = is_staff_rx.await?;
+                    if is_staff {
+                        match client.connect_with_credentials(credentials, cx).await {
+                            ConnectionResult::Timeout => Err(anyhow!("connection timed out")),
+                            ConnectionResult::ConnectionReset => Err(anyhow!("connection reset")),
+                            ConnectionResult::Result(result) => {
+                                result.context("client auth and connect")
+                            }
                         }
+                    } else {
+                        Ok(())
                     }
                 }
             })
@@ -1455,8 +1539,69 @@ impl Client {
         })
     }
 
+    pub async fn acquire_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: Option<OrganizationId>,
+    ) -> Result<String> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        match llm_token
+            .acquire(&cloud_client, system_id, organization_id)
+            .await
+        {
+            Ok(token) => Ok(token),
+            Err(ClientApiError::Unauthorized) => {
+                self.request_sign_out();
+                Err(ClientApiError::Unauthorized).context("Failed to create LLM token")
+            }
+            Err(err) => Err(anyhow::Error::from(err)),
+        }
+    }
+
+    pub async fn refresh_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: Option<OrganizationId>,
+    ) -> Result<String> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        match llm_token
+            .refresh(&cloud_client, system_id, organization_id)
+            .await
+        {
+            Ok(token) => Ok(token),
+            Err(ClientApiError::Unauthorized) => {
+                self.request_sign_out();
+                return Err(ClientApiError::Unauthorized).context("Failed to create LLM token");
+            }
+            Err(err) => return Err(anyhow::Error::from(err)),
+        }
+    }
+
+    pub async fn clear_and_refresh_llm_token(
+        &self,
+        llm_token: &LlmApiToken,
+        organization_id: Option<OrganizationId>,
+    ) -> Result<String> {
+        let system_id = self.telemetry().system_id().map(|x| x.to_string());
+        let cloud_client = self.cloud_client();
+        match llm_token
+            .clear_and_refresh(&cloud_client, system_id, organization_id)
+            .await
+        {
+            Ok(token) => Ok(token),
+            Err(ClientApiError::Unauthorized) => {
+                self.request_sign_out();
+                return Err(ClientApiError::Unauthorized).context("Failed to create LLM token");
+            }
+            Err(err) => return Err(anyhow::Error::from(err)),
+        }
+    }
+
     pub async fn sign_out(self: &Arc<Self>, cx: &AsyncApp) {
         self.state.write().credentials = None;
+        self.cloud_client.clear_credentials();
         self.disconnect(cx);
 
         if self.has_credentials(cx).await {
@@ -1614,6 +1759,23 @@ impl Client {
         }
     }
 
+    pub fn add_message_to_client_handler(
+        self: &Arc<Client>,
+        handler: impl Fn(&MessageToClient, &mut App) + Send + Sync + 'static,
+    ) {
+        self.message_to_client_handlers
+            .lock()
+            .push(Box::new(handler));
+    }
+
+    fn handle_message_to_client(self: &Arc<Client>, message: MessageToClient, cx: &AsyncApp) {
+        cx.update(|cx| {
+            for handler in self.message_to_client_handlers.lock().iter() {
+                handler(&message, cx);
+            }
+        });
+    }
+
     pub fn telemetry(&self) -> &Arc<Telemetry> {
         &self.telemetry
     }
@@ -1685,13 +1847,13 @@ impl ProtoClient for Client {
     }
 }
 
-/// prefix for the xenomorphic:// url scheme
+/// prefix for the zed:// url scheme
 pub const XENOMORPHIC_URL_SCHEME: &str = "xenomorphic";
 
 /// A parsed Xenomorphic link that can be handled internally by the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XenomorphicLink {
-    /// Join a channel: `zed.dev/channel/channel-name-123` or `xenomorphic://channel/channel-name-123`
+    /// Join a channel: `zed.dev/channel/channel-name-123` or `zed://channel/channel-name-123`
     Channel { channel_id: u64 },
     /// Open channel notes: `zed.dev/channel/channel-name-123/notes` or with heading `notes#heading`
     ChannelNotes {

@@ -4851,7 +4851,6 @@ dependencies = [
  "collections",
  "criterion",
  "ctor",
- "dap",
  "extension",
  "fs",
  "futures 0.3.32",
