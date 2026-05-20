@@ -7,33 +7,26 @@ pub mod telemetry;
 pub mod user;
 
 use anyhow::{Context as _, Result, anyhow};
-use async_tungstenite::tungstenite::{
-    client::IntoClientRequest,
-    error::Error as WebsocketError,
-    http::{HeaderValue, StatusCode},
-};
 use clock::SystemClock;
-// LlmApiToken, MessageToClient, OrganizationId are re-exported via pub use below
 use credentials_provider::CredentialsProvider;
 use futures::{
-    FutureExt, SinkExt, Stream, StreamExt, TryFutureExt as _, TryStreamExt,
-    channel::{mpsc, oneshot},
+    FutureExt, Stream, StreamExt, TryFutureExt as _, TryStreamExt,
+    channel::mpsc,
     future::BoxFuture,
     stream::BoxStream,
 };
 use gpui::{App, AsyncApp, Entity, Global, Task, TaskExt, WeakEntity, actions};
-use http_client::{HttpClient, HttpClientWithUrl, http, read_proxy_from_env};
+use http_client::{HttpClientWithUrl, read_proxy_from_env};
 use parking_lot::{Mutex, RwLock};
 use postage::watch;
-use proxy::connect_proxy_stream;
 use rand::prelude::*;
-use release_channel::{AppVersion, ReleaseChannel};
+use rand::SeedableRng;
 use rpc::proto::{AnyTypedEnvelope, EnvelopedMessage, PeerId, RequestMessage};
 use serde::Deserialize;
 use settings::{RegisterSetting, Settings, SettingsContent};
 use std::{
     any::TypeId,
-    convert::TryFrom,
+    cmp,
     future::Future,
     marker::PhantomData,
     path::PathBuf,
@@ -43,21 +36,19 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use std::{cmp, pin::Pin};
+use std::pin::Pin;
 use telemetry::Telemetry;
 use thiserror::Error;
-use tokio::net::TcpStream;
 use url::Url;
 use util::{ConnectionResult, ResultExt};
 
 // Explicitly re-export cloud_types items needed by other crates.
-// Note: glob re-export `pub use cloud_types::*` alone doesn't reliably make items
-// visible to external crates, so we list the key types explicitly.
+// Re-export cloud_types items needed by other crates.
 pub use cloud_types::{
     AcceptEditPredictionBody, CurrentUsage, EditPredictionRejection,
     EditPredictionRejectReason, KnownOrUnknown,
-    LlmApiToken,
-    NeedsLlmTokenRefresh, Organization, OrganizationConfiguration,
+    LlmApiToken, NeedsLlmTokenRefresh,
+    Organization, OrganizationConfiguration,
     OrganizationEditPredictionConfiguration, OrganizationId, Plan, PlanInfo,
     PREDICT_EDITS_MODE_HEADER_NAME, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
     PREFERRED_EXPERIMENT_HEADER_NAME, XENOMORPHIC_VERSION_HEADER_NAME,
@@ -239,9 +230,6 @@ pub struct Client {
             >,
         >,
     >,
-
-    #[cfg(any(test, feature = "test-support"))]
-    rpc_url: RwLock<Option<Url>>,
 }
 
 #[derive(Error, Debug)]
@@ -252,25 +240,6 @@ pub enum EstablishConnectionError {
     Unauthorized,
     #[error("{0}")]
     Other(#[from] anyhow::Error),
-    #[error("{0}")]
-    InvalidHeaderValue(#[from] async_tungstenite::tungstenite::http::header::InvalidHeaderValue),
-    #[error("{0}")]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    Websocket(#[from] async_tungstenite::tungstenite::http::Error),
-}
-
-impl From<WebsocketError> for EstablishConnectionError {
-    fn from(error: WebsocketError) -> Self {
-        if let WebsocketError::Http(response) = &error {
-            match response.status() {
-                StatusCode::UNAUTHORIZED => return EstablishConnectionError::Unauthorized,
-                StatusCode::UPGRADE_REQUIRED => return EstablishConnectionError::UpgradeRequired,
-                _ => {}
-            }
-        }
-        EstablishConnectionError::Other(error.into())
-    }
 }
 
 impl EstablishConnectionError {
@@ -568,8 +537,6 @@ impl Client {
             authenticate: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
             establish_connection: Default::default(),
-            #[cfg(any(test, feature = "test-support"))]
-            rpc_url: RwLock::default(),
         })
     }
 
@@ -629,12 +596,6 @@ impl Client {
         self
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn override_rpc_url(&self, url: Url) -> &Self {
-        *self.rpc_url.write() = Some(url);
-        self
-    }
-
     pub fn global(cx: &App) -> Arc<Self> {
         cx.global::<GlobalClient>().0.clone()
     }
@@ -677,7 +638,7 @@ impl Client {
                     #[cfg(any(test, feature = "test-support"))]
                     let mut rng = StdRng::seed_from_u64(0);
                     #[cfg(not(any(test, feature = "test-support")))]
-                    let mut rng = StdRng::from_os_rng();
+                    let mut rng = StdRng::from_rng(&mut rand::rng());
 
                     let mut delay = INITIAL_RECONNECTION_DELAY;
                     loop {
@@ -1138,270 +1099,27 @@ impl Client {
 
     fn establish_connection(
         self: &Arc<Self>,
-        credentials: &Credentials,
-        cx: &AsyncApp,
+        _credentials: &Credentials,
+        _cx: &AsyncApp,
     ) -> Task<Result<Connection, EstablishConnectionError>> {
         #[cfg(any(test, feature = "test-support"))]
         if let Some(callback) = self.establish_connection.read().as_ref() {
-            return callback(credentials, cx);
+            return callback(_credentials, _cx);
         }
 
-        self.establish_websocket_connection(credentials, cx)
+        // Cloud WebSocket connection removed. Tests should use override_establish_connection.
+        Task::ready(Err(EstablishConnectionError::Other(anyhow!(
+            "cloud connection is not available in this build"
+        ))))
     }
 
-    fn rpc_url(
-        &self,
-        http: Arc<HttpClientWithUrl>,
-        release_channel: Option<ReleaseChannel>,
-    ) -> impl Future<Output = Result<url::Url>> + use<> {
-        #[cfg(any(test, feature = "test-support"))]
-        let url_override = self.rpc_url.read().clone();
-
-        async move {
-            #[cfg(any(test, feature = "test-support"))]
-            if let Some(url) = url_override {
-                return Ok(url);
-            }
-
-            if let Some(url) = &*XENOMORPHIC_RPC_URL {
-                return Url::parse(url).context("invalid rpc url");
-            }
-
-            let mut url = http.build_url("/rpc");
-            if let Some(preview_param) =
-                release_channel.and_then(|channel| channel.release_query_param())
-            {
-                url += "?";
-                url += preview_param;
-            }
-
-            let response = http.get(&url, Default::default(), false).await?;
-            anyhow::ensure!(
-                response.status().is_redirection(),
-                "unexpected /rpc response status {}",
-                response.status()
-            );
-            let collab_url = response
-                .headers()
-                .get("Location")
-                .context("missing location header in /rpc response")?
-                .to_str()
-                .map_err(EstablishConnectionError::other)?
-                .to_string();
-            Url::parse(&collab_url).with_context(|| format!("parsing collab rpc url {collab_url}"))
-        }
-    }
-
-    fn establish_websocket_connection(
-        self: &Arc<Self>,
-        credentials: &Credentials,
-        cx: &AsyncApp,
-    ) -> Task<Result<Connection, EstablishConnectionError>> {
-        let release_channel = cx.update(|cx| ReleaseChannel::try_global(cx));
-        let app_version = cx.update(|cx| AppVersion::global(cx).to_string());
-
-        let http = self.http.clone();
-        let proxy = http.proxy().cloned();
-        let user_agent = http.user_agent().cloned();
-        let credentials = credentials.clone();
-        let rpc_url = self.rpc_url(http, release_channel);
-        let system_id = self.telemetry.system_id();
-        let metrics_id = self.telemetry.metrics_id();
-        cx.spawn(async move |cx| {
-            use HttpOrHttps::*;
-
-            #[derive(Debug)]
-            enum HttpOrHttps {
-                Http,
-                Https,
-            }
-
-            let mut rpc_url = rpc_url.await?;
-            let url_scheme = match rpc_url.scheme() {
-                "https" => Https,
-                "http" => Http,
-                _ => Err(anyhow!("invalid rpc url: {}", rpc_url))?,
-            };
-
-            let stream = gpui_tokio::Tokio::spawn_result(cx, {
-                let rpc_url = rpc_url.clone();
-                async move {
-                    let rpc_host = rpc_url
-                        .host_str()
-                        .zip(rpc_url.port_or_known_default())
-                        .context("missing host in rpc url")?;
-                    Ok(match proxy {
-                        Some(proxy) => connect_proxy_stream(&proxy, rpc_host).await?,
-                        None => Box::new(TcpStream::connect(rpc_host).await?),
-                    })
-                }
-            })
-            .await?;
-
-            log::info!("connected to rpc endpoint {}", rpc_url);
-
-            rpc_url
-                .set_scheme(match url_scheme {
-                    Https => "wss",
-                    Http => "ws",
-                })
-                .unwrap();
-
-            // We call `into_client_request` to let `tungstenite` construct the WebSocket request
-            // for us from the RPC URL.
-            //
-            // Among other things, it will generate and set a `Sec-WebSocket-Key` header for us.
-            let mut request = IntoClientRequest::into_client_request(rpc_url.as_str())?;
-
-            // We then modify the request to add our desired headers.
-            let request_headers = request.headers_mut();
-            request_headers.insert(
-                http::header::AUTHORIZATION,
-                HeaderValue::from_str(&credentials.authorization_header())?,
-            );
-            request_headers.insert(
-                "x-xenomorphic-protocol-version",
-                HeaderValue::from_str(&rpc::PROTOCOL_VERSION.to_string())?,
-            );
-            request_headers.insert("x-zed-app-version", HeaderValue::from_str(&app_version)?);
-            request_headers.insert(
-                "x-xenomorphic-release-channel",
-                HeaderValue::from_str(release_channel.map(|r| r.dev_name()).unwrap_or("unknown"))?,
-            );
-            if let Some(user_agent) = user_agent {
-                request_headers.insert(http::header::USER_AGENT, user_agent);
-            }
-            if let Some(system_id) = system_id {
-                request_headers.insert("x-zed-system-id", HeaderValue::from_str(&system_id)?);
-            }
-            if let Some(metrics_id) = metrics_id {
-                request_headers.insert("x-zed-metrics-id", HeaderValue::from_str(&metrics_id)?);
-            }
-
-            let (stream, _) = async_tungstenite::tokio::client_async_tls_with_connector_and_config(
-                request,
-                stream,
-                Some(Arc::new(http_client_tls::tls_config()).into()),
-                None,
-            )
-            .await?;
-
-            Ok(Connection::new(
-                stream
-                    .map_err(|error| anyhow!(error))
-                    .sink_map_err(|error| anyhow!(error)),
-            ))
-        })
-    }
-
-    pub fn authenticate_with_browser(self: &Arc<Self>, cx: &AsyncApp) -> Task<Result<Credentials>> {
-        let http = self.http.clone();
-        let _this = self.clone();
-        cx.spawn(async move |cx| {
-            let background = cx.background_executor().clone();
-
-            let (open_url_tx, open_url_rx) = oneshot::channel::<String>();
-            cx.update(|cx| {
-                cx.spawn(async move |cx| {
-                    if let Ok(url) = open_url_rx.await {
-                        cx.update(|cx| cx.open_url(&url));
-                    }
-                })
-                .detach();
-            });
-
-            let credentials = background
-                .clone()
-                .spawn(async move {
-                    // Generate a pair of asymmetric encryption keys. The public key will be used by the
-                    // xenomorphic server to encrypt the user's access token, so that it can't be intercepted by
-                    // any other app running on the user's device.
-                    let (public_key, private_key) =
-                        rpc::auth::keypair().context("failed to generate keypair for auth")?;
-                    let public_key_string = String::try_from(public_key)
-                        .context("failed to serialize public key for auth")?;
-
-                    // Admin impersonation removed - cloud-only feature
-
-                    // Start an HTTP server to receive the redirect from Xenomorphic's sign-in page.
-                    let server = tiny_http::Server::http("127.0.0.1:0")
-                        .map_err(|e| anyhow!(e).context("failed to bind callback port"))?;
-                    let port = server
-                        .server_addr()
-                        .to_ip()
-                        .context("server not bound to a TCP address")?
-                        .port();
-
-                    // Open the Xenomorphic sign-in page in the user's browser, with query parameters that indicate
-                    // that the user is signing in from a Xenomorphic app running on the same device.
-                    let url = http.build_url(&format!(
-                        "/native_app_signin?native_app_port={}&native_app_public_key={}",
-                        port, public_key_string
-                    ));
-
-                    open_url_tx.send(url).log_err();
-
-                    #[derive(Deserialize)]
-                    struct CallbackParams {
-                        pub user_id: String,
-                        pub access_token: String,
-                    }
-
-                    // Receive the HTTP request from the user's browser. Retrieve the user id and encrypted
-                    // access token from the query params.
-                    //
-                    // TODO - Avoid ever starting more than one HTTP server. Maybe switch to using a
-                    // custom URL scheme instead of this local HTTP server.
-                    let (user_id, access_token) = background
-                        .spawn(async move {
-                            for _ in 0..100 {
-                                if let Some(req) = server.recv_timeout(Duration::from_secs(1))? {
-                                    let path = req.url();
-                                    let url = Url::parse(&format!("http://example.com{}", path))
-                                        .context("failed to parse login notification url")?;
-                                    let callback_params: CallbackParams =
-                                        serde_urlencoded::from_str(url.query().unwrap_or_default())
-                                            .context(
-                                                "failed to parse sign-in callback query parameters",
-                                            )?;
-
-                                    let post_auth_url =
-                                        http.build_url("/native_app_signin_succeeded");
-                                    req.respond(
-                                        tiny_http::Response::empty(302).with_header(
-                                            tiny_http::Header::from_bytes(
-                                                &b"Location"[..],
-                                                post_auth_url.as_bytes(),
-                                            )
-                                            .unwrap(),
-                                        ),
-                                    )
-                                    .context("failed to respond to login http request")?;
-                                    return Ok((
-                                        callback_params.user_id,
-                                        callback_params.access_token,
-                                    ));
-                                }
-                            }
-
-                            anyhow::bail!("didn't receive login redirect");
-                        })
-                        .await?;
-
-                    let access_token = private_key
-                        .decrypt_string(&access_token)
-                        .context("failed to decrypt access token")?;
-
-                    Ok::<_, anyhow::Error>(Credentials {
-                        user_id: user_id.parse()?,
-                        access_token,
-                    })
-                })
-                .await?;
-
-            cx.update(|cx| cx.activate(true));
-            Ok(credentials)
-        })
+    /// Stub: browser-based authentication removed with cloud infrastructure.
+    /// In production builds, authentication always fails since there is no cloud server.
+    /// Tests should use `override_authenticate` instead.
+    pub fn authenticate_with_browser(self: &Arc<Self>, _cx: &AsyncApp) -> Task<Result<Credentials>> {
+        Task::ready(Err(anyhow!(
+            "cloud authentication is not available in this build"
+        )))
     }
 
     pub async fn sign_out(self: &Arc<Self>, cx: &AsyncApp) {
@@ -1645,10 +1363,6 @@ impl ProtoClient for Client {
         &self.handler_set
     }
 
-    fn is_via_collab(&self) -> bool {
-        false
-    }
-
     fn has_wsl_interop(&self) -> bool {
         false
     }
@@ -1658,60 +1372,15 @@ impl ProtoClient for Client {
 pub const XENOMORPHIC_URL_SCHEME: &str = "xenomorphic";
 
 /// A parsed Xenomorphic link that can be handled internally by the application.
+/// Currently no link types are handled internally; channel links were removed
+/// with cloud infrastructure. Kept for API compatibility.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum XenomorphicLink {
-    /// Join a channel: `zed.dev/channel/channel-name-123` or `zed://channel/channel-name-123`
-    Channel { channel_id: u64 },
-    /// Open channel notes: `zed.dev/channel/channel-name-123/notes` or with heading `notes#heading`
-    ChannelNotes {
-        channel_id: u64,
-        heading: Option<String>,
-    },
-}
+pub enum XenomorphicLink {}
 
 /// Parses the given link into a Xenomorphic link.
 ///
-/// Returns a [`Some`] containing the parsed link if the link is a recognized Xenomorphic link
-/// that should be handled internally by the application.
-/// Returns [`None`] for links that should be opened in the browser.
-pub fn parse_zed_link(link: &str, cx: &App) -> Option<XenomorphicLink> {
-    let server_url = &ClientSettings::get_global(cx).server_url;
-    let path = link
-        .strip_prefix(server_url)
-        .and_then(|result| result.strip_prefix('/'))
-        .or_else(|| {
-            link.strip_prefix(XENOMORPHIC_URL_SCHEME)
-                .and_then(|result| result.strip_prefix("://"))
-        })?;
-
-    let mut parts = path.split('/');
-
-    if parts.next() != Some("channel") {
-        return None;
-    }
-
-    let slug = parts.next()?;
-    let id_str = slug.split('-').next_back()?;
-    let channel_id = id_str.parse::<u64>().ok()?;
-
-    let Some(next) = parts.next() else {
-        return Some(XenomorphicLink::Channel { channel_id });
-    };
-
-    if let Some(heading) = next.strip_prefix("notes#") {
-        return Some(XenomorphicLink::ChannelNotes {
-            channel_id,
-            heading: Some(heading.to_string()),
-        });
-    }
-
-    if next == "notes" {
-        return Some(XenomorphicLink::ChannelNotes {
-            channel_id,
-            heading: None,
-        });
-    }
-
+/// Returns [`None`] for all links since channel links were removed.
+pub fn parse_zed_link(_link: &str, _cx: &App) -> Option<XenomorphicLink> {
     None
 }
 

@@ -1540,7 +1540,6 @@ impl Project {
                     worktree_store.clone(),
                     task_store.clone(),
                     Some(remote_proto.clone()),
-                    false,
                     cx,
                 )
             });
@@ -1801,7 +1800,6 @@ impl Project {
                 worktree_store.clone(),
                 task_store.clone(),
                 None,
-                true,
                 cx,
             )
         });
@@ -2086,8 +2084,8 @@ impl Project {
         project
     }
 
-    /// Transitions a local test project into the `Collab` client state so that
-    /// `is_via_collab()` returns `true`. Use only in tests.
+    /// Transitions a local test project into the `Collab` client state.
+    /// Use only in tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn mark_as_collab_for_testing(&mut self) {
         self.client_state = ProjectClientState::Collab {
@@ -2808,11 +2806,6 @@ impl Project {
     }
 
     fn unshare_internal(&mut self, cx: &mut App) -> Result<()> {
-        anyhow::ensure!(
-            !self.is_via_collab(),
-            "attempted to unshare a remote project"
-        );
-
         if let ProjectClientState::Shared { remote_id, .. } = self.client_state {
             self.client_state = ProjectClientState::Local;
             self.collaborators.clear();
@@ -2948,7 +2941,7 @@ impl Project {
         }
     }
 
-    /// Whether this project is a remote server (not counting collab).
+    /// Whether this project is a remote server.
     #[inline]
     pub fn is_via_remote_server(&self) -> bool {
         match &self.client_state {
@@ -2959,22 +2952,9 @@ impl Project {
         }
     }
 
-    /// Whether this project is from collab (not counting remote servers).
-    #[inline]
-    pub fn is_via_collab(&self) -> bool {
-        match &self.client_state {
-            ProjectClientState::Local | ProjectClientState::Shared { .. } => false,
-            ProjectClientState::Collab { .. } => true,
-        }
-    }
-
     /// `!self.is_local()`
     #[inline]
     pub fn is_remote(&self) -> bool {
-        debug_assert_eq!(
-            !self.is_local(),
-            self.is_via_collab() || self.is_via_remote_server()
-        );
         !self.is_local()
     }
 
@@ -3792,10 +3772,8 @@ impl Project {
         let buffer_id = buffer.read(cx).remote_id();
         match event {
             BufferEvent::ReloadNeeded => {
-                if !self.is_via_collab() {
-                    self.reload_buffers([buffer.clone()].into_iter().collect(), true, cx)
-                        .detach_and_log_err(cx);
-                }
+                self.reload_buffers([buffer.clone()].into_iter().collect(), true, cx)
+                    .detach_and_log_err(cx);
             }
             BufferEvent::Operation {
                 operation,
@@ -3836,7 +3814,6 @@ impl Project {
     ) -> Option<()> {
         // TODO: handle image events from remote
         if let ImageItemEvent::ReloadNeeded = event
-            && !self.is_via_collab()
         {
             self.reload_images([image].into_iter().collect(), cx)
                 .detach_and_log_err(cx);
@@ -5304,10 +5281,6 @@ impl Project {
         envelope: TypedEnvelope<proto::TrustWorktrees>,
         mut cx: AsyncApp,
     ) -> Result<proto::Ack> {
-        if this.read_with(&cx, |project, _| project.is_via_collab()) {
-            return Ok(proto::Ack {});
-        }
-
         let trusted_worktrees = cx
             .update(|cx| TrustedWorktrees::try_get_global(cx))
             .context("missing trusted worktrees")?;
@@ -5331,10 +5304,6 @@ impl Project {
         envelope: TypedEnvelope<proto::RestrictWorktrees>,
         mut cx: AsyncApp,
     ) -> Result<proto::Ack> {
-        if this.read_with(&cx, |project, _| project.is_via_collab()) {
-            return Ok(proto::Ack {});
-        }
-
         let trusted_worktrees = cx
             .update(|cx| TrustedWorktrees::try_get_global(cx))
             .context("missing trusted worktrees")?;

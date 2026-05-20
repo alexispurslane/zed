@@ -82,7 +82,6 @@ pub trait ProtoClient: Send + Sync {
 
     fn message_handler_set(&self) -> &parking_lot::Mutex<ProtoMessageHandlerSet>;
 
-    fn is_via_collab(&self) -> bool;
     fn has_wsl_interop(&self) -> bool;
 }
 
@@ -222,8 +221,8 @@ impl AnyProtoClient {
         }))
     }
 
-    pub fn is_via_collab(&self) -> bool {
-        self.0.client.is_via_collab()
+    pub fn has_wsl_interop(&self) -> bool {
+        self.0.client.has_wsl_interop()
     }
 
     pub fn request<T: RequestMessage>(
@@ -624,9 +623,6 @@ impl AnyProtoClient {
         );
     }
 
-    pub fn has_wsl_interop(&self) -> bool {
-        self.0.client.has_wsl_interop()
-    }
 }
 
 fn to_any_envelope<T: EnvelopedMessage>(
@@ -673,9 +669,6 @@ impl ProtoClient for NoopProtoClient {
     }
     fn message_handler_set(&self) -> &parking_lot::Mutex<ProtoMessageHandlerSet> {
         &self.handler_set
-    }
-    fn is_via_collab(&self) -> bool {
-        false
     }
     fn has_wsl_interop(&self) -> bool {
         false

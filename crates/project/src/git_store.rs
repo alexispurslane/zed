@@ -2017,11 +2017,6 @@ impl GitStore {
                 upstream_project_id,
                 ..
             } => {
-                if upstream_client.is_via_collab() {
-                    return Task::ready(Err(anyhow!(
-                        "Git Clone isn't supported for project guests"
-                    )));
-                }
                 let request = upstream_client.request(proto::GitClone {
                     project_id: *upstream_project_id,
                     abs_path: path.to_string_lossy().into_owned(),
@@ -2050,13 +2045,6 @@ impl GitStore {
             GitStoreState::Remote {
                 upstream_client, ..
             } => {
-                // Prevent running git config commands for collab.
-                if upstream_client.is_via_collab() {
-                    return Task::ready(Err(anyhow!(
-                        "Git Config isn't support for project guests"
-                    )));
-                }
-
                 // TODO: Implement this for remote repositories.
                 Task::ready(Err(anyhow!(
                     "Git Config isn't yet supported for remote projects"

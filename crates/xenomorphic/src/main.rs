@@ -594,18 +594,7 @@ fn main() {
         );
         cx.subscribe(&user_store, {
             let telemetry = telemetry.clone();
-            move |_, evt: &client::user::Event, cx| match evt {
-                client::user::Event::PrivateUserInfoUpdated => {
-                    if let Some(crash_client) = cx.try_global::<CrashHandler>() {
-                        crashes::set_user_info(
-                            &crash_client.0,
-                            crashes::UserInfo {
-                                metrics_id: telemetry.metrics_id().map(|s| s.to_string()),
-                                is_staff: telemetry.is_staff(),
-                            },
-                        );
-                    }
-                }
+            move |_, _evt: &client::user::Event, _cx| match _evt {
                 _ => {}
             }
         })

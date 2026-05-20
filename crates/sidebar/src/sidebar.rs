@@ -730,10 +730,6 @@ impl Sidebar {
         cx: &mut Context<Self>,
     ) {
         let project = workspace.read(cx).project().clone();
-        if project.read(cx).is_via_collab() {
-            return;
-        }
-
         cx.subscribe_in(
             &project,
             window,
@@ -799,10 +795,6 @@ impl Sidebar {
         old_paths: &WorktreePaths,
         cx: &mut Context<Self>,
     ) {
-        if project.read(cx).is_via_collab() {
-            return;
-        }
-
         let new_paths = project.read(cx).worktree_paths(cx);
         let old_folder_paths = old_paths.folder_path_list().clone();
 

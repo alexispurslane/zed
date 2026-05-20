@@ -1,24 +1,14 @@
-use super::{Client, Status, cloud_types, proto};
+use super::{Client, cloud_types, proto};
 use anyhow::{Context as _, Result};
-use chrono::{DateTime, Utc};
-use cloud_types::{
-    GetAuthenticatedUserResponse, KnownOrUnknown, Organization, OrganizationConfiguration,
-    OrganizationId, Plan, PlanInfo, UsageLimit, EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME,
-    EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
-};
-use feature_flags::FeatureFlagAppExt;
+use cloud_types::{Organization, OrganizationId, Plan, PlanInfo, UsageLimit,
+    EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME};
 use collections::HashMap;
-use db::kvp::KeyValueStore;
 use derive_more::Deref;
-use futures::StreamExt;
-use gpui::{Context, EventEmitter, SharedString, SharedUri, Task, WeakEntity};
+use gpui::{Context, EventEmitter, SharedString, SharedUri, Task};
 use http_client::http::{HeaderMap, HeaderValue};
-use postage::{sink::Sink, watch};
-use std::sync::{Arc, Weak};
+use postage::watch;
+use std::sync::Arc;
 use text::ReplicaId;
-use util::ResultExt;
-
-const CURRENT_ORGANIZATION_ID_KEY: &str = "current_organization_id";
 
 pub type LegacyUserId = u64;
 
@@ -82,24 +72,13 @@ pub struct UserStore {
     current_organization: Option<Arc<Organization>>,
     organizations: Vec<Arc<Organization>>,
     plans_by_organization: HashMap<OrganizationId, Plan>,
-    configuration_by_organization: HashMap<OrganizationId, OrganizationConfiguration>,
-    client: Weak<Client>,
-    _maintain_current_user: Task<Result<()>>,
-    _handle_sign_out: Task<()>,
-    weak_self: WeakEntity<Self>,
-}
-
-#[derive(Clone)]
-pub struct InviteInfo {
-    pub count: u32,
-    pub url: Arc<str>,
+    client: Arc<Client>,
 }
 
 pub enum Event {
     ParticipantIndicesChanged,
     PrivateUserInfoUpdated,
     PlanUpdated,
-    OrganizationChanged,
 }
 
 impl EventEmitter<Event> for UserStore {}
@@ -115,10 +94,7 @@ pub struct RequestUsage {
 
 impl UserStore {
     pub fn new(client: Arc<Client>, cx: &Context<Self>) -> Self {
-        let (mut current_user_tx, current_user_rx) = watch::channel();
-        let (sign_out_tx, mut sign_out_rx) = futures::channel::mpsc::unbounded();
-
-        client.sign_out_tx.lock().replace(sign_out_tx);
+        let (_current_user_tx, current_user_rx) = watch::channel();
 
         Self {
             users: Default::default(),
@@ -127,58 +103,10 @@ impl UserStore {
             current_organization: None,
             organizations: Vec::new(),
             plans_by_organization: HashMap::default(),
-            configuration_by_organization: HashMap::default(),
             plan_info: None,
             edit_prediction_usage: None,
             participant_indices: Default::default(),
-            client: Arc::downgrade(&client),
-            _maintain_current_user: cx.spawn(async move |this, cx| {
-                let mut status = client.status();
-                let weak = Arc::downgrade(&client);
-                drop(client);
-                while let Some(status) = status.next().await {
-                    // If the client is dropped, the app is shutting down.
-                    let Some(client) = weak.upgrade() else {
-                        return Ok(());
-                    };
-                    match status {
-                        Status::Authenticated
-                        | Status::Reauthenticated
-                        | Status::Connected { .. } => {
-                            if let Some(user_id) = client.user_id() {
-                                // Cloud user fetch removed; user data is only available
-                                // if set locally via update_authenticated_user
-                                let _ = user_id;
-                            }
-                        }
-                        Status::SignedOut => {
-                            current_user_tx.send(None).await.ok();
-                            this.update(cx, |this, cx| {
-                                this.clear_organizations();
-                                this.clear_plan_and_usage();
-                                cx.emit(Event::PrivateUserInfoUpdated);
-                                cx.notify();
-                            })?;
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(())
-            }),
-            _handle_sign_out: cx.spawn(async move |this, cx| {
-                while let Some(()) = sign_out_rx.next().await {
-                    let Some(client) = this
-                        .read_with(cx, |this, _cx| this.client.upgrade())
-                        .ok()
-                        .flatten()
-                    else {
-                        break;
-                    };
-
-                    client.sign_out(cx).await;
-                }
-            }),
-            weak_self: cx.weak_entity(),
+            client,
         }
     }
 
@@ -197,7 +125,6 @@ impl UserStore {
         user_ids: Vec<u64>,
         _cx: &Context<Self>,
     ) -> Task<Result<Vec<Arc<User>>>> {
-        // Cloud user fetch removed; return cached users only
         let users: Result<Vec<Arc<User>>> = user_ids
             .iter()
             .map(|id| {
@@ -243,16 +170,8 @@ impl UserStore {
             .is_some_and(|current| current.id == organization.id);
 
         if !is_same_organization {
-            let organization_id = organization.id.0.to_string();
             self.current_organization.replace(organization);
-            cx.emit(Event::OrganizationChanged);
             cx.notify();
-
-            let kvp = KeyValueStore::global(cx);
-            db::write_and_log(cx, move || async move {
-                kvp.write_kvp(CURRENT_ORGANIZATION_ID_KEY.into(), organization_id)
-                    .await
-            });
         }
     }
 
@@ -264,32 +183,19 @@ impl UserStore {
         self.plans_by_organization.get(organization_id).copied()
     }
 
-    pub fn current_organization_configuration(&self) -> Option<&OrganizationConfiguration> {
-        let current_organization = self.current_organization.as_ref()?;
-
-        self.configuration_by_organization
-            .get(&current_organization.id)
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_current_organization_configuration_for_test(
         &mut self,
-        organization: Arc<Organization>,
-        configuration: OrganizationConfiguration,
-        cx: &mut Context<Self>,
+        _organization: Arc<Organization>,
+        _configuration: cloud_types::OrganizationConfiguration,
+        _cx: &mut Context<Self>,
     ) {
-        self.current_organization = Some(organization.clone());
-        self.organizations = vec![organization.clone()];
-        self.configuration_by_organization
-            .insert(organization.id.clone(), configuration);
-        cx.emit(Event::OrganizationChanged);
-        cx.notify();
     }
 
     pub fn plan(&self) -> Option<Plan> {
         #[cfg(debug_assertions)]
         if let Ok(plan) = std::env::var("XENOMORPHIC_SIMULATE_PLAN").as_ref() {
-            use super::cloud_types::Plan;
+            use cloud_types::Plan;
 
             return match plan.as_str() {
                 "free" => Some(Plan::XenomorphicFree),
@@ -308,19 +214,7 @@ impl UserStore {
         self.plan_info.as_ref().map(|info| info.plan())
     }
 
-    pub fn subscription_period(&self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
-        self.plan_info
-            .as_ref()
-            .and_then(|plan| plan.subscription_period.clone())
-            .map(|subscription_period| {
-                (
-                    subscription_period.started_at.0,
-                    subscription_period.ended_at.0,
-                )
-            })
-    }
-
-    pub fn trial_started_at(&self) -> Option<DateTime<Utc>> {
+    pub fn trial_started_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
         self.plan_info
             .as_ref()
             .and_then(|plan| plan.trial_started_at)
@@ -328,16 +222,7 @@ impl UserStore {
     }
 
     /// Returns whether the user's account is too new to use the service.
-    ///
-    /// This only applies when operating under the user's personal organization,
-    /// not a business organization.
     pub fn account_too_young(&self) -> bool {
-        if let Some(org) = &self.current_organization {
-            if !org.is_personal {
-                return false;
-            }
-        }
-
         self.plan_info
             .as_ref()
             .map(|plan| plan.is_account_too_young)
@@ -365,88 +250,9 @@ impl UserStore {
         cx.notify();
     }
 
-    /// Stub: contact request handling removed with cloud infrastructure
-    pub fn respond_to_contact_request(
-        &mut self,
-        _requester_id: u64,
-        _accept: bool,
-        _cx: &mut Context<Self>,
-    ) -> Task<Result<()>> {
-        Task::ready(Err(anyhow::anyhow!("contact requests not available without cloud")))
-    }
-
-    pub fn clear_organizations(&mut self) {
-        self.organizations.clear();
-        self.current_organization = None;
-    }
-
     pub fn clear_plan_and_usage(&mut self) {
         self.plan_info = None;
         self.edit_prediction_usage = None;
-    }
-
-    pub fn update_authenticated_user(
-        &mut self,
-        response: GetAuthenticatedUserResponse,
-        cx: &mut Context<Self>,
-    ) {
-        let staff = response.user.is_staff && !*feature_flags::XENOMORPHIC_DISABLE_STAFF;
-        cx.update_flags(staff, response.feature_flags);
-        if let Some(client) = self.client.upgrade() {
-            client
-                .telemetry
-                .set_authenticated_user_info(Some(response.user.metrics_id.clone()), staff);
-        }
-
-        self.organizations = response.organizations.into_iter().map(Arc::new).collect();
-        let persisted_org_id = KeyValueStore::global(cx)
-            .read_kvp(CURRENT_ORGANIZATION_ID_KEY)
-            .log_err()
-            .flatten()
-            .map(|id| OrganizationId(Arc::from(id)));
-
-        self.current_organization = persisted_org_id
-            .and_then(|persisted_id| {
-                self.organizations
-                    .iter()
-                    .find(|org| org.id == persisted_id)
-                    .cloned()
-            })
-            .or_else(|| {
-                response
-                    .default_organization_id
-                    .and_then(|default_organization_id| {
-                        self.organizations
-                            .iter()
-                            .find(|organization| organization.id == default_organization_id)
-                            .cloned()
-                    })
-            })
-            .or_else(|| self.organizations.first().cloned());
-        self.plans_by_organization = response
-            .plans_by_organization
-            .into_iter()
-            .map(|(organization_id, plan)| {
-                let plan = match plan {
-                    KnownOrUnknown::Known(plan) => plan,
-                    KnownOrUnknown::Unknown(_) => {
-                        // If we get a plan that we don't recognize, fall back to the Free plan.
-                        Plan::XenomorphicFree
-                    }
-                };
-
-                (organization_id, plan)
-            })
-            .collect();
-        self.configuration_by_organization =
-            response.configuration_by_organization.into_iter().collect();
-
-        self.edit_prediction_usage = Some(EditPredictionUsage(RequestUsage {
-            limit: response.plan.usage.edit_predictions.limit,
-            amount: response.plan.usage.edit_predictions.used as i32,
-        }));
-        self.plan_info = Some(response.plan);
-        cx.emit(Event::PrivateUserInfoUpdated);
     }
 
     pub fn watch_current_user(&self) -> watch::Receiver<Option<Arc<User>>> {
@@ -489,7 +295,6 @@ impl UserStore {
         user_ids: impl Iterator<Item = u64>,
         _cx: &gpui::App,
     ) -> HashMap<u64, SharedString> {
-        // Cloud participant name lookup removed; return cached data only
         let mut ret = HashMap::default();
         for id in user_ids {
             if let Some(github_login) = self.get_cached_user(id).map(|u| u.github_login.clone()) {

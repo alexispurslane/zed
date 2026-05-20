@@ -1,16 +1,15 @@
-//! Stubs for types previously provided by `cloud_api_types` and `cloud_api_client`.
+//! Local type definitions previously provided by cloud infrastructure crates.
 //!
-//! These types are preserved locally so that the `client` crate can compile
-//! without the cloud infrastructure crates. In a future pass, `UserStore`
-//! and related cloud-gated code will be removed entirely.
+//! These types are preserved so that the `client` crate and its dependents can
+//! compile without the deleted cloud crates. Cloud-specific types that are no
+//! longer referenced have been removed.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
-// ---- From cloud_api_types ----
+// ---- Plan / Organization (used by UserStore) ----
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,45 +42,13 @@ pub struct Organization {
     pub is_personal: bool,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct OrganizationConfiguration {
-    pub is_zed_model_provider_enabled: bool,
-    pub is_agent_thread_feedback_enabled: bool,
-    pub is_collaboration_enabled: bool,
-    pub edit_prediction: OrganizationEditPredictionConfiguration,
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub enum KnownOrUnknown<K, V> {
+    Known(K),
+    Unknown(V),
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct OrganizationEditPredictionConfiguration {
-    pub is_enabled: bool,
-    pub is_feedback_enabled: bool,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct GetAuthenticatedUserResponse {
-    pub user: AuthenticatedUser,
-    pub feature_flags: Vec<String>,
-    #[serde(default)]
-    pub organizations: Vec<Organization>,
-    #[serde(default)]
-    pub default_organization_id: Option<OrganizationId>,
-    #[serde(default)]
-    pub plans_by_organization: BTreeMap<OrganizationId, KnownOrUnknown<Plan, String>>,
-    #[serde(default)]
-    pub configuration_by_organization: BTreeMap<OrganizationId, OrganizationConfiguration>,
-    pub plan: PlanInfo,
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-pub struct AuthenticatedUser {
-    pub id: i32,
-    pub metrics_id: String,
-    pub avatar_url: String,
-    pub github_login: String,
-    pub name: Option<String>,
-    pub is_staff: bool,
-    pub accepted_tos_at: Option<Timestamp>,
-}
+// ---- Plan info (used by UserStore) ----
 
 /// A timestamp with a serialized representation in RFC 3339 format.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -115,12 +82,17 @@ impl<'de> Deserialize<'de> for Timestamp {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct SubscriptionPeriod {
-    pub started_at: Timestamp,
-    pub ended_at: Timestamp,
+pub struct UsageData {
+    pub used: i32,
+    pub limit: UsageLimit,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CurrentUsage {
+    pub edit_predictions: UsageData,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct PlanInfo {
     #[serde(rename = "plan_v3")]
     pub plan: KnownOrUnknown<Plan, String>,
@@ -141,12 +113,12 @@ impl PlanInfo {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum KnownOrUnknown<K, V> {
-    Known(K),
-    Unknown(V),
+pub struct SubscriptionPeriod {
+    pub started_at: Timestamp,
+    pub ended_at: Timestamp,
 }
 
-// ---- LlmApiToken stub ----
+// ---- Usage limits (used by edit prediction) ----
 
 pub const EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME: &str = "x-zed-edit-predictions-usage-amount";
 pub const EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME: &str = "x-zed-edit-predictions-usage-limit";
@@ -190,17 +162,6 @@ impl std::str::FromStr for UsageLimit {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct UsageData {
-    pub used: i32,
-    pub limit: UsageLimit,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CurrentUsage {
-    pub edit_predictions: UsageData,
-}
-
 // ---- LlmApiToken stub ----
 
 /// Stub for the LlmApiToken type previously from cloud_api_client.
@@ -220,24 +181,6 @@ impl std::fmt::Display for LlmApiToken {
     }
 }
 
-// ---- Edit prediction types from cloud_llm_client ----
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum EditPredictionRejectReason {
-    #[default]
-    Other,
-    Empty,
-    InterpolatedEmpty,
-    Replaced,
-    CurrentPreferred,
-    Canceled,
-    Discarded,
-    Rejected,
-    QuotaLimitReached,
-    TrialExpired,
-}
-
 /// Stub for NeedsLlmTokenRefresh trait
 pub trait NeedsLlmTokenRefresh {
     fn needs_llm_token_refresh(&self) -> bool;
@@ -255,7 +198,60 @@ pub fn global_llm_token(_cx: &gpui::App) -> LlmApiToken {
     LlmApiToken::default()
 }
 
-// ---- predict_edits_v3 types from cloud_llm_client ----
+// ---- Edit prediction types (used by edit_prediction crates) ----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EditPredictionRejectReason {
+    #[default]
+    Other,
+    Empty,
+    InterpolatedEmpty,
+    Replaced,
+    CurrentPreferred,
+    Canceled,
+    Discarded,
+    Rejected,
+    QuotaLimitReached,
+    TrialExpired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PredictEditsMode {
+    V3,
+    RawCompletion,
+    #[default]
+    Default,
+    Eager,
+    Subtle,
+}
+
+impl PredictEditsMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::V3 => "v3",
+            Self::RawCompletion => "raw_completion",
+            Self::Default => "default",
+            Self::Eager => "eager",
+            Self::Subtle => "subtle",
+        }
+    }
+}
+
+impl AsRef<str> for PredictEditsMode {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+pub const PREDICT_EDITS_MODE_HEADER_NAME: &str = "x-predict-edits-mode";
+pub const MINIMUM_REQUIRED_VERSION_HEADER_NAME: &str = "x-minimum-required-version";
+pub const PREFERRED_EXPERIMENT_HEADER_NAME: &str = "x-preferred-experiment";
+pub const XENOMORPHIC_VERSION_HEADER_NAME: &str = "x-xenomorphic-version";
+pub const MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST: usize = 10;
+
+// ---- predict_edits_v3 types ----
 
 pub mod predict_edits_v3 {
     use serde::{Deserialize, Serialize};
@@ -323,60 +319,6 @@ pub mod predict_edits_v3 {
         Diagnostics,
         Other,
     }
-
-    // Re-export types that are defined at the parent module level
-    // for backward compatibility with code that imports from predict_edits_v3
-    pub use crate::{PredictEditsV3Request, PredictEditsV3Response, PredictEditsMode};
-}
-
-// ---- AcceptEditPredictionBody from cloud_llm_client ----
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AcceptEditPredictionBody {
-    pub request_id: String,
-    pub model_version: Option<String>,
-    pub e2e_latency_ms: Option<u128>,
-}
-
-// ---- predict_edits_v3 related constants and types ----
-
-pub const PREDICT_EDITS_MODE_HEADER_NAME: &str = "x-predict-edits-mode";
-pub const MINIMUM_REQUIRED_VERSION_HEADER_NAME: &str = "x-minimum-required-version";
-pub const PREFERRED_EXPERIMENT_HEADER_NAME: &str = "x-preferred-experiment";
-pub const XENOMORPHIC_VERSION_HEADER_NAME: &str = "x-xenomorphic-version";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PredictEditsMode {
-    V3,
-    RawCompletion,
-    Default,
-    Eager,
-    Subtle,
-}
-
-impl PredictEditsMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::V3 => "v3",
-            Self::RawCompletion => "raw_completion",
-            Self::Default => "default",
-            Self::Eager => "eager",
-            Self::Subtle => "subtle",
-        }
-    }
-}
-
-impl Default for PredictEditsMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-impl AsRef<str> for PredictEditsMode {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -402,6 +344,15 @@ pub struct PredictEditsV3Response {
     pub model_version: Option<String>,
 }
 
+// ---- Accept/Reject edit prediction bodies (used by edit prediction crates) ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptEditPredictionBody {
+    pub request_id: String,
+    pub model_version: Option<String>,
+    pub e2e_latency_ms: Option<u128>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EditPredictionRejection {
     #[serde(default)]
@@ -417,16 +368,6 @@ pub struct EditPredictionRejection {
     pub e2e_latency_ms: Option<u64>,
 }
 
-pub const MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST: usize = 10;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RejectEditPredictionsBodyRef<'a> {
-    pub rejections: Vec<EditPredictionRejection>,
-    #[serde(borrow)]
-    pub installation_id: Option<&'a str>,
-}
-
-// Also support the owned version
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RejectEditPredictionsBody {
     pub rejections: Vec<EditPredictionRejection>,
@@ -445,4 +386,46 @@ pub struct SubmitEditPredictionFeedbackBody {
     pub output: String,
     #[serde(default)]
     pub feedback: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct OrganizationConfiguration {
+    pub is_zed_model_provider_enabled: bool,
+    pub is_agent_thread_feedback_enabled: bool,
+    pub is_collaboration_enabled: bool,
+    pub edit_prediction: OrganizationEditPredictionConfiguration,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct OrganizationEditPredictionConfiguration {
+    pub is_enabled: bool,
+    pub is_feedback_enabled: bool,
+}
+
+// ---- Types for test support (used by FakeServer) ----
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct GetAuthenticatedUserResponse {
+    pub user: AuthenticatedUser,
+    pub feature_flags: Vec<String>,
+    #[serde(default)]
+    pub organizations: Vec<Organization>,
+    #[serde(default)]
+    pub default_organization_id: Option<OrganizationId>,
+    #[serde(default)]
+    pub plans_by_organization: std::collections::BTreeMap<OrganizationId, KnownOrUnknown<Plan, String>>,
+    #[serde(default)]
+    pub configuration_by_organization: std::collections::BTreeMap<OrganizationId, OrganizationConfiguration>,
+    pub plan: PlanInfo,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct AuthenticatedUser {
+    pub id: i32,
+    pub metrics_id: String,
+    pub avatar_url: String,
+    pub github_login: String,
+    pub name: Option<String>,
+    pub is_staff: bool,
+    pub accepted_tos_at: Option<Timestamp>,
 }

@@ -774,15 +774,6 @@ impl ConversationView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> ServerState {
-        if project.read(cx).is_via_collab()
-            && agent.clone().downcast::<NativeAgentServer>().is_none()
-        {
-            return ServerState::LoadError {
-                error: LoadError::Other(
-                    "External agents are not yet supported in shared projects.".into(),
-                ),
-            };
-        }
         let session_work_dirs = work_dirs.unwrap_or_else(|| project.read(cx).default_path_list(cx));
 
         let connection_entry = connection_store.update(cx, |store, cx| {

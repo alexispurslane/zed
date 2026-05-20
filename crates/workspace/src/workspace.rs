@@ -3005,8 +3005,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> oneshot::Receiver<Option<Vec<PathBuf>>> {
-        if self.project.read(cx).is_via_collab()
-            || self.project.read(cx).is_via_remote_server()
+        if self.project.read(cx).is_via_remote_server()
             || !WorkspaceSettings::get_global(cx).use_system_path_prompts
         {
             let prompt = self.on_prompt_for_new_path.take().unwrap();
@@ -3511,7 +3510,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Task<Result<Entity<Workspace>>> {
         let requesting_window = window.window_handle().downcast::<MultiWorkspace>();
-        let is_remote = self.project.read(cx).is_via_collab();
+        let is_remote = self.project.read(cx).is_via_remote_server();
         let has_worktree = self.project.read(cx).worktrees(cx).next().is_some();
         let has_dirty_items = self.items(cx).any(|item| item.is_dirty(cx));
 
@@ -3754,13 +3753,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let project = self.project.read(cx);
-        if project.is_via_collab() {
-            self.show_error(
-                &anyhow!("You cannot add folders to someone else's project"),
-                cx,
-            );
-            return;
-        }
         let paths = self.prompt_for_open_path(
             PathPromptOptions {
                 files: false,
@@ -5930,9 +5922,7 @@ impl Workspace {
             }
         }
 
-        if project.is_via_collab() {
-            title.push_str(" ↙");
-        } else if project.is_shared() {
+        if project.is_shared() {
             title.push_str(" ↗");
         }
 

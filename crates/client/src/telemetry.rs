@@ -7,7 +7,7 @@ use fs::Fs;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt};
 use gpui::{App, AppContext as _, BackgroundExecutor, Task};
-use http_client::{self, AsyncBody, HttpClient, HttpClientWithUrl, Method, Request};
+use http_client::HttpClientWithUrl;
 use parking_lot::Mutex;
 use regex::Regex;
 use release_channel::ReleaseChannel;
@@ -587,22 +587,13 @@ impl Telemetry {
         // We take in the JSON bytes buffer so we can reuse the existing allocation.
         mut json_bytes: Vec<u8>,
         event_request: &EventRequestBody,
-    ) -> Result<Request<AsyncBody>> {
+    ) -> Result<()> {
         json_bytes.clear();
         serde_json::to_writer(&mut json_bytes, event_request)?;
 
-        let checksum = calculate_json_checksum(&json_bytes).unwrap_or_default();
-
-        Ok(Request::builder()
-            .method(Method::POST)
-            .uri(
-                self.http_client
-                    .build_zed_api_url("/telemetry/events", &[])?
-                    .as_ref(),
-            )
-            .header("Content-Type", "application/json")
-            .header("x-xenomorphic-checksum", checksum)
-            .body(json_bytes.into())?)
+        // Cloud telemetry endpoint removed; events are logged locally only.
+        let _ = calculate_json_checksum(&json_bytes);
+        Ok(())
     }
 
     pub async fn flush_events_inner(self: &Arc<Self>) -> Result<()> {
@@ -647,11 +638,8 @@ impl Telemetry {
             )
         };
 
-        let request = self.build_request(json_bytes, &request_body)?;
-        let response = self.http_client.send(request).await?;
-        if response.status() != 200 {
-            log::error!("Failed to send events: HTTP {:?}", response.status());
-        }
+        // Cloud telemetry endpoint removed; events are logged locally only.
+        self.build_request(json_bytes, &request_body)?;
 
         anyhow::Ok(())
     }

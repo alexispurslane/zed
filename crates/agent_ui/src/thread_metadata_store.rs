@@ -1176,7 +1176,7 @@ impl ThreadMetadataStore {
         };
 
         let thread_ref = thread.read(cx);
-        if thread_ref.is_draft_thread() || thread_ref.project().read(cx).is_via_collab() {
+        if thread_ref.is_draft_thread() {
             return;
         }
 

@@ -928,14 +928,8 @@ impl AgentPanel {
                 let panel = cx.new(|cx| Self::new(workspace, window, cx));
 
                 panel.update(cx, |panel, cx| {
-                    let is_via_collab = panel.project.read(cx).is_via_collab();
-
                     // Only apply a non-native global fallback to local projects.
-                    // Collab workspaces only support NativeAgent, so inheriting a
-                    // custom agent would cause set_active → new_agent_thread_inner
-                    // to bypass the collab guard in external_thread.
-                    let global_fallback =
-                        global_last_used_agent.filter(|agent| !is_via_collab || agent.is_native());
+                    let global_fallback = global_last_used_agent;
 
                     if let Some(serialized_panel) = &serialized_panel {
                         panel.last_created_entry_kind = serialized_panel.last_created_entry_kind;
@@ -976,11 +970,7 @@ impl AgentPanel {
 
                 if draft_prompt.is_some() || was_draft_active {
                     panel.update(cx, |panel, cx| {
-                        let agent = if panel.project.read(cx).is_via_collab() {
-                            Agent::NativeAgent
-                        } else {
-                            panel.selected_agent.clone()
-                        };
+                        let agent = panel.selected_agent.clone();
                         let initial_content = draft_prompt.map(|blocks| {
                             AgentInitialContent::ContentBlock {
                                 blocks,
@@ -1171,11 +1161,7 @@ impl AgentPanel {
     }
 
     pub fn selected_agent(&self, cx: &App) -> Agent {
-        if self.project.read(cx).is_via_collab() {
-            Agent::NativeAgent
-        } else {
-            self.selected_agent.clone()
-        }
+        self.selected_agent.clone()
     }
 
     pub fn open_thread(
@@ -2330,10 +2316,6 @@ impl AgentPanel {
             });
         }
 
-        if self.project.read(cx).is_via_collab() {
-            return;
-        }
-
         // Update metadata store so threads' path lists stay in sync with
         // the project's current worktrees. Without this, threads saved
         // before a worktree was added would have stale paths and not
@@ -3014,11 +2996,7 @@ impl AgentPanel {
         let source_panel = source_workspace.read(cx).panel::<AgentPanel>(cx)?;
         let source_panel = source_panel.read(cx);
         let initial_content = source_panel.active_initial_content(cx)?;
-        let agent = if source_panel.project.read(cx).is_via_collab() {
-            Agent::NativeAgent
-        } else {
-            source_panel.selected_agent.clone()
-        };
+        let agent = source_panel.selected_agent.clone();
         Some((agent, initial_content))
     }
 
@@ -3314,11 +3292,6 @@ impl AgentPanel {
             let is_agent_selected = move |agent: Agent| selected_agent == agent;
 
             let workspace = self.workspace.clone();
-            let _is_via_collab = workspace
-                .update(cx, |workspace, cx| {
-                    workspace.project().read(cx).is_via_collab()
-                })
-                .unwrap_or_default();
 
             let focus_handle = focus_handle.clone();
 

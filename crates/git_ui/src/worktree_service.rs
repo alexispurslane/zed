@@ -303,11 +303,6 @@ pub fn handle_create_worktree(
         log::error!("create_worktree: no git repository in the project");
         return;
     }
-    if project.read(cx).is_via_collab() {
-        log::error!("create_worktree: not supported in collab projects");
-        return;
-    }
-
     // Guard against concurrent creation
     if workspace.active_worktree_creation().label.is_some() {
         return;
@@ -399,11 +394,6 @@ pub fn handle_switch_worktree(
         log::error!("switch_to_worktree: no git repository in the project");
         return;
     }
-    if project.read(cx).is_via_collab() {
-        log::error!("switch_to_worktree: not supported in collab projects");
-        return;
-    }
-
     // Guard against concurrent creation
     if workspace.active_worktree_creation().label.is_some() {
         return;

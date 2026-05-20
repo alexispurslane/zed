@@ -3242,7 +3242,7 @@ impl GitPanel {
     }
 
     fn can_push_and_pull(&self, cx: &App) -> bool {
-        !self.project.read(cx).is_via_collab()
+        true
     }
 
     fn get_remote(

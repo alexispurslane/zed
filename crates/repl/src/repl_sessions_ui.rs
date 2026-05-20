@@ -87,7 +87,7 @@ pub fn init(cx: &mut App) {
                     .as_ref()
                     .map(|project| {
                         let p = project.read(cx);
-                        !p.is_via_collab()
+                        true
                     })
                     .unwrap_or(false);
 
