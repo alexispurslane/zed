@@ -93,7 +93,7 @@ pub struct RequestUsage {
 }
 
 impl UserStore {
-    pub fn new(client: Arc<Client>, cx: &Context<Self>) -> Self {
+    pub fn new(client: Arc<Client>, _cx: &Context<Self>) -> Self {
         let (_current_user_tx, current_user_rx) = watch::channel();
 
         Self {

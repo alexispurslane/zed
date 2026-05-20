@@ -43,7 +43,7 @@ pub use toast_layer::{ToastAction, ToastLayer, ToastView};
 
 use anyhow::{Context as _, Result, anyhow};
 use client::{
-    Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User, UserStore,
+    Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User,
     proto::{self, ErrorCode, PanelId, PeerId},
 };
 use collections::{HashMap, HashSet, hash_map};
@@ -1097,7 +1097,6 @@ pub fn register_serializable_item<I: SerializableItem>(cx: &mut App) {
 pub struct AppState {
     pub languages: Arc<LanguageRegistry>,
     pub client: Arc<Client>,
-    pub user_store: Entity<UserStore>,
     pub workspace_store: Entity<WorkspaceStore>,
     pub fs: Arc<dyn fs::Fs>,
     pub build_window_options: fn(Option<Uuid>, &mut App) -> WindowOptions,
@@ -1188,7 +1187,6 @@ impl AppState {
         let http_client = http_client::FakeHttpClient::with_404_response();
         let client = Client::new(clock, http_client, cx);
         let session = cx.new(|cx| AppSession::new(Session::test(), cx));
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
 
         theme_settings::init(theme::LoadThemes::JustBase, cx);
@@ -1198,7 +1196,6 @@ impl AppState {
             client,
             fs,
             languages,
-            user_store,
             workspace_store,
             node_runtime: NodeRuntime::unavailable(),
             build_window_options: |_, _| Default::default(),
@@ -1661,19 +1658,19 @@ impl Workspace {
                 .insert((any_window_handle, weak_handle.clone()));
         });
 
-        let mut current_user = app_state.user_store.read(cx).watch_current_user();
         let mut connection_status = app_state.client.status();
-        let _observe_current_user = cx.spawn_in(window, async move |this, cx| {
-            current_user.next().await;
+        let _observe_connection_status = cx.spawn_in(window, async move |this, cx| {
             connection_status.next().await;
-            let mut stream =
-                Stream::map(current_user, drop).merge(Stream::map(connection_status, drop));
+            let mut stream = Stream::map(connection_status, drop);
 
             while stream.recv().await.is_some() {
                 this.update(cx, |_, cx| cx.notify())?;
             }
             anyhow::Ok(())
         });
+
+        let _observe_current_user: Task<Result<()>> =
+            cx.spawn_in(window, async move |_, _| Ok(()));
 
         // All leader updates are enqueued and then processed in a single task, so
         // that each asynchronous operation can be run in order.
@@ -2578,10 +2575,6 @@ impl Workspace {
 
     pub fn take_panels_task(&mut self) -> Option<Task<Result<()>>> {
         self._panels_task.take()
-    }
-
-    pub fn user_store(&self) -> &Entity<UserStore> {
-        &self.app_state.user_store
     }
 
     pub fn project(&self) -> &Entity<Project> {
@@ -7522,7 +7515,6 @@ impl Workspace {
         use session::Session;
 
         let client = project.read(cx).client();
-        let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
         let session = cx.new(|cx| AppSession::new(Session::test(), cx));
         window.activate_window();
@@ -7530,7 +7522,6 @@ impl Workspace {
             languages: project.read(cx).languages().clone(),
             workspace_store,
             client,
-            user_store,
             fs: project.read(cx).fs().clone(),
             build_window_options: |_, _| Default::default(),
             node_runtime: NodeRuntime::unavailable(),

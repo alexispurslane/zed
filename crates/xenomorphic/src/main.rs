@@ -20,7 +20,7 @@ use agent_ui::AgentPanel;
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use cli::FORCE_CLI_MODE_ENV_VAR_NAME;
-use client::{Client, ProxySettings, UserStore, parse_zed_link};
+use client::{Client, ProxySettings, parse_zed_link};
 use collections::HashMap;
 use crashes::InitCrashHandler;
 use db::kvp::{GlobalKeyValueStore, KeyValueStore};
@@ -548,9 +548,7 @@ fn main() {
 
         debug_adapter_extension::init(extension_host_proxy.clone(), cx);
         languages::init(languages.clone(), fs.clone(), node_runtime.clone(), cx);
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
-
         language_extension::init(
             language_extension::LspAccess::ViaWorkspaces({
                 let workspace_store = workspace_store.clone();
@@ -592,13 +590,6 @@ fn main() {
             session.id().to_owned(),
             cx,
         );
-        cx.subscribe(&user_store, {
-            let telemetry = telemetry.clone();
-            move |_, _evt: &client::user::Event, _cx| match _evt {
-                _ => {}
-            }
-        })
-        .detach();
 
         let is_new_install = matches!(&installation_id, Some(IdType::New(_)));
 
@@ -622,7 +613,6 @@ fn main() {
         let app_state = Arc::new(AppState {
             languages,
             client: client.clone(),
-            user_store,
             fs: fs.clone(),
             build_window_options,
             workspace_store,

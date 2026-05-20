@@ -18,13 +18,12 @@ use crate::application_menu::{
     ActivateDirection, ActivateMenuLeft, ActivateMenuRight, OpenApplicationMenu,
 };
 
-use client::{Client, UserStore};
+use client::Client;
 
 use gpui::{
-    Action, Anchor, Animation, AnimationExt, AnyElement, App, Context, Element, Entity, Focusable,
+    Action, Anchor, AnyElement, App, Context, Element, Entity, Focusable,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Render,
     StatefulInteractiveElement, Styled, Subscription, WeakEntity, Window, actions, div,
-    pulsating_between,
 };
 use onboarding_banner::OnboardingBanner;
 use project::{
@@ -35,7 +34,6 @@ use remote::RemoteConnectionOptions;
 use settings::Settings as _;
 
 use std::sync::Arc;
-use std::time::Duration;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
@@ -133,7 +131,6 @@ pub fn init(cx: &mut App) {
 pub struct TitleBar {
     platform_titlebar: Entity<PlatformTitleBar>,
     project: Entity<Project>,
-    user_store: Entity<UserStore>,
     client: Arc<Client>,
     workspace: WeakEntity<Workspace>,
     multi_workspace: Option<WeakEntity<MultiWorkspace>>,
@@ -266,55 +263,19 @@ impl Render for TitleBar {
 
         let status = self.client.status();
         let status = &*status.borrow();
-        let user = self.user_store.read(cx).current_user();
 
-        let signed_in = user.is_some();
-        let is_signing_in = user.is_none()
-            && matches!(
-                status,
-                client::Status::Authenticating
-                    | client::Status::Authenticated
-                    | client::Status::Connecting
-            );
-        let is_signed_out_or_auth_error = user.is_none()
-            && matches!(
-                status,
-                client::Status::SignedOut | client::Status::AuthenticationError
-            );
+        let _is_signed_out_or_auth_error = matches!(
+            status,
+            client::Status::SignedOut | client::Status::AuthenticationError
+        );
 
         children.push(
             h_flex()
-                .map(|this| {
-                    if signed_in {
-                        this.pr_1p5()
-                    } else {
-                        this.pr_1()
-                    }
-                })
+                .pr_1()
                 .gap_1()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .children(self.render_connection_status(status, cx))
                 .child(self.update_version.clone())
-                .when(
-                    user.is_none()
-                        && is_signed_out_or_auth_error
-                        && TitleBarSettings::get_global(cx).show_sign_in,
-                    |this| this.child(self.render_sign_in_button(cx)),
-                )
-                .when(is_signing_in, |this| {
-                    this.child(
-                        Label::new("Signing in…")
-                            .size(LabelSize::Small)
-                            .color(Color::Muted)
-                            .with_animation(
-                                "signing-in",
-                                Animation::new(Duration::from_secs(2))
-                                    .repeat()
-                                    .with_easing(pulsating_between(0.4, 0.8)),
-                                |label, delta| label.alpha(delta),
-                            ),
-                    )
-                })
                 .when(TitleBarSettings::get_global(cx).show_user_menu, |this| {
                     this.child(self.render_user_menu_button(cx))
                 })
@@ -369,7 +330,6 @@ impl TitleBar {
     ) -> Self {
         let project = workspace.project().clone();
         let git_store = project.read(cx).git_store().clone();
-        let user_store = workspace.app_state().user_store.clone();
         let client = workspace.app_state().client.clone();
 
         let platform_style = PlatformStyle::platform();
@@ -403,7 +363,6 @@ impl TitleBar {
                 _ => {}
             }),
         );
-        subscriptions.push(cx.observe(&user_store, |_a, _, cx| cx.notify()));
         if let Some(workspace_entity) = workspace.weak_handle().upgrade() {
             subscriptions.push(cx.subscribe(
                 &workspace_entity,
@@ -436,7 +395,6 @@ impl TitleBar {
             workspace: workspace.weak_handle(),
             multi_workspace,
             project,
-            user_store,
             client,
             _subscriptions: subscriptions,
             banner: None,
@@ -1029,65 +987,12 @@ impl TitleBar {
     pub fn render_user_menu_button(&mut self, cx: &mut Context<Self>) -> impl Element {
         let show_update_button = self.update_version.read(cx).show_update_in_menu_bar();
 
-        let user_store = self.user_store.clone();
-        let user_store_read = user_store.read(cx);
-        let user = user_store_read.current_user();
-
-        let user_avatar = user.as_ref().map(|u| u.avatar_uri.clone());
-        let user_login = user.as_ref().map(|u| u.github_login.clone());
-
-        let is_signed_in = user.is_some();
-
-        let has_organization = user_store_read.current_organization().is_some();
-
-        let current_organization = user_store_read.current_organization();
-        let business_organization = current_organization
-            .as_ref()
-            .filter(|organization| !organization.is_personal);
-        let organizations: Vec<_> = user_store_read
-            .organizations()
-            .iter()
-            .cloned()
-            .collect();
-
-        let show_user_picture = TitleBarSettings::get_global(cx).show_user_picture;
-
-        let trigger = if is_signed_in && show_user_picture {
-            let avatar = user_avatar.map(|avatar| Avatar::new(avatar)).map(|avatar| {
-                if show_update_button {
-                    avatar.indicator(
-                        div()
-                            .absolute()
-                            .bottom_0()
-                            .right_0()
-                            .child(Indicator::dot().color(Color::Accent)),
-                    )
-                } else {
-                    avatar
-                }
-            });
-
-            ButtonLike::new("user-menu").child(
-                h_flex()
-                    .when_some(business_organization, |this, organization| {
-                        this.gap_2()
-                            .child(Label::new(&organization.name).size(LabelSize::Small))
-                    })
-                    .children(avatar),
-            )
-        } else {
-            ButtonLike::new("user-menu")
-                .child(Icon::new(IconName::ChevronDown).size(IconSize::Small))
-        };
+        let trigger = ButtonLike::new("user-menu")
+            .child(Icon::new(IconName::ChevronDown).size(IconSize::Small));
 
         PopoverMenu::new("user-menu")
             .trigger(trigger)
             .menu(move |window, cx| {
-                let user_login = user_login.clone();
-                let current_organization = current_organization.clone();
-                let organizations = organizations.clone();
-                let user_store = user_store.clone();
-
                 let ai_enabled = !project::DisableAiSettings::get_global(cx).disable_ai;
                 let current_layout = AgentSettings::get_layout(cx);
                 let is_editor = matches!(current_layout, WindowLayout::Editor(_));
@@ -1096,15 +1001,7 @@ impl TitleBar {
                 let fs = <dyn fs::Fs>::global(cx);
 
                 ContextMenu::build(window, cx, |menu, _, _cx| {
-                    menu.when(is_signed_in, |this| {
-                        let user_login = user_login.clone();
-                        this.item(
-                            ContextMenuEntry::new(user_login.unwrap_or_default())
-                                .disabled(true)
-                        )
-                        .separator()
-                    })
-                    .when(show_update_button, |this| {
+                    menu.when(show_update_button, |this| {
                         this.custom_entry(
                             move |_window, _cx| {
                                 h_flex()
@@ -1124,57 +1021,6 @@ impl TitleBar {
                             },
                         )
                         .separator()
-                    })
-                    .when(has_organization, |this| {
-                        let mut this = this.header("Organization");
-
-                        for organization in &organizations {
-                            let organization = organization.clone();
-
-                            let is_current =
-                                current_organization
-                                    .as_ref()
-                                    .is_some_and(|current_organization| {
-                                        current_organization.id == organization.id
-                                    });
-
-                            this = this.custom_entry(
-                                {
-                                    let organization = organization.clone();
-                                    move |_window, _cx| {
-                                        h_flex()
-                                            .w_full()
-                                            .gap_4()
-                                            .justify_between()
-                                            .child(
-                                                h_flex()
-                                                    .gap_1()
-                                                    .child(Label::new(&organization.name))
-                                                    .when(is_current, |this| {
-                                                        this.child(
-                                                            Icon::new(IconName::Check)
-                                                                .color(Color::Accent),
-                                                        )
-                                                    }),
-                                            )
-                                            // Plan chip removed (cloud subscription UI)
-                                            .into_any_element()
-                                    }
-                                },
-                                {
-                                    let user_store = user_store.clone();
-                                    let organization = organization.clone();
-                                    move |_window, cx| {
-                                        user_store.update(cx, |user_store, cx| {
-                                            user_store
-                                                .set_current_organization(organization.clone(), cx);
-                                        });
-                                    }
-                                },
-                            );
-                        }
-
-                        this.separator()
                     })
                     .action("Settings", xenomorphic_actions::OpenSettings.boxed_clone())
                     .action("Keymap", Box::new(xenomorphic_actions::OpenKeymap))
@@ -1229,10 +1075,6 @@ impl TitleBar {
                                     )
                                 })
                             })
-                    })
-                    .when(is_signed_in, |this| {
-                        this.separator()
-                            .action("Sign Out", client::SignOut.boxed_clone())
                     })
                 })
                 .into()

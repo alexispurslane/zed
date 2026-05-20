@@ -2,7 +2,6 @@
 pub mod test;
 
 pub mod cloud_types;
-mod proxy;
 pub mod telemetry;
 pub mod user;
 
@@ -10,7 +9,7 @@ use anyhow::{Context as _, Result, anyhow};
 use clock::SystemClock;
 use credentials_provider::CredentialsProvider;
 use futures::{
-    FutureExt, Stream, StreamExt, TryFutureExt as _, TryStreamExt,
+    FutureExt, Stream, StreamExt, TryFutureExt as _,
     channel::mpsc,
     future::BoxFuture,
     stream::BoxStream,
@@ -67,7 +66,6 @@ pub use user::*;
 
 static XENOMORPHIC_SERVER_URL: LazyLock<Option<String>> =
     LazyLock::new(|| std::env::var("XENOMORPHIC_SERVER_URL").ok());
-static XENOMORPHIC_RPC_URL: LazyLock<Option<String>> = LazyLock::new(|| std::env::var("XENOMORPHIC_RPC_URL").ok());
 
 pub static IMPERSONATE_LOGIN: LazyLock<Option<String>> = LazyLock::new(|| {
     std::env::var("XENOMORPHIC_IMPERSONATE")
