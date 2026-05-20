@@ -4,7 +4,7 @@ use agent_ui::ExternalSourcePrompt;
 use anyhow::{Context as _, Result, anyhow};
 use cli::{CliRequest, CliResponse, CliResponseSink};
 use cli::{IpcHandshake, ipc};
-use client::{XenomorphicLink, parse_zed_link};
+use client::parse_zed_link;
 use db::kvp::KeyValueStore;
 use editor::Editor;
 use fs::Fs;
@@ -39,8 +39,6 @@ pub struct OpenRequest {
     pub diff_paths: Vec<[String; 2]>,
     pub diff_all: bool,
     pub dev_container: bool,
-    pub open_channel_notes: Vec<(u64, Option<String>)>,
-    pub join_channel: Option<u64>,
     pub remote_connection: Option<RemoteConnectionOptions>,
 }
 
@@ -183,18 +181,9 @@ impl OpenRequest {
                 this.parse_git_commit_url(commit_path)?
             } else if url.starts_with("ssh://") {
                 this.parse_ssh_file_path(&url, cx)?
-            } else if let Some(zed_link) = parse_zed_link(&url, cx) {
-                match zed_link {
-                    XenomorphicLink::Channel { channel_id } => {
-                        this.join_channel = Some(channel_id);
-                    }
-                    XenomorphicLink::ChannelNotes {
-                        channel_id,
-                        heading,
-                    } => {
-                        this.open_channel_notes.push((channel_id, heading));
-                    }
-                }
+            } else if let Some(_zed_link) = parse_zed_link(&url, cx) {
+                // Channel links are no longer supported without cloud infrastructure
+                log::warn!("Ignoring channel link - cloud features removed");
             } else {
                 log::error!("unhandled url: {}", url);
             }

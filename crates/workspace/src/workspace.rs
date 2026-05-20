@@ -7532,7 +7532,7 @@ impl Workspace {
         use session::Session;
 
         let client = project.read(cx).client();
-        let user_store = project.read(cx).user_store();
+        let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
         let session = cx.new(|cx| AppSession::new(Session::test(), cx));
         window.activate_window();

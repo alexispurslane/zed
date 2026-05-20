@@ -72,8 +72,7 @@ pub(crate) fn settings_data(cx: &App) -> Vec<SettingsPage> {
         network_page(),
     ];
 
-    use feature_flags::FeatureFlagAppExt as _;
-    if cx.is_staff() || cfg!(debug_assertions) {
+    if cfg!(debug_assertions) {
         pages.push(developer_page());
     }
 
