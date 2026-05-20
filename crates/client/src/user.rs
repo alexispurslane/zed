@@ -733,7 +733,7 @@ impl UserStore {
     pub fn subscription_period(&self) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
         self.plan_info
             .as_ref()
-            .and_then(|plan| plan.subscription_period)
+            .and_then(|plan| plan.subscription_period.clone())
             .map(|subscription_period| {
                 (
                     subscription_period.started_at.0,

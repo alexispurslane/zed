@@ -82,10 +82,38 @@ pub struct AuthenticatedUser {
     pub accepted_tos_at: Option<Timestamp>,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Timestamp(pub i64);
+/// A timestamp with a serialized representation in RFC 3339 format.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Timestamp(pub chrono::DateTime<chrono::Utc>);
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+impl Timestamp {
+    pub fn new(datetime: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(datetime)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Timestamp {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self(value)
+    }
+}
+
+impl Serialize for Timestamp {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        chrono::DateTime::parse_from_rfc3339(&s)
+            .map(|dt| Timestamp(dt.with_timezone(&chrono::Utc)))
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct SubscriptionPeriod {
     pub started_at: Timestamp,
     pub ended_at: Timestamp,
