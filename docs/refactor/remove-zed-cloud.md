@@ -554,3 +554,51 @@ That's ~7.1% of the 1,259,791-line codebase. The collab server alone is 43,606 l
 - `cloud_types.rs` in `client` — local type stubs (Plan, Organization, etc.) used by `UserStore`. Could be removed when `UserStore` is fully stripped.
 - `ProjectClientState::Collab` enum variant — still exists in the enum but is only reached via `mark_as_collab_for_testing()`. Could be removed with more invasive refactoring of `from_join_project_response`.
 - `client` crate WebSocket/reconnection code — still present but unused without cloud auth. Could be removed in a future pass.
+
+---
+
+## Final Status (Completed)
+
+**Build: ✅ Passing (0 errors, 52 warnings)**
+
+### All 20 Crates Deleted
+| # | Crate | Lines |
+|---|-------|------:|
+| 1 | journal | ~300 |
+| 2 | feedback | ~145 |
+| 3 | nc | ~50 |
+| 4 | ai_onboarding | ~905 |
+| 5 | language_onboarding | ~100 |
+| 6 | denoise | ~507 |
+| 7 | audio | ~1,183 |
+| 8 | livekit_api | ~302 |
+| 9 | livekit_client | ~3,991 |
+| 10 | call | ~3,001 |
+| 11 | channel | ~1,929 |
+| 12 | collab_ui | ~6,410 |
+| 13 | collab | ~43,606 |
+| 14 | auto_update | ~1,544 |
+| 15 | auto_update_helper | ~856 |
+| 16 | auto_update_ui | ~437 |
+| 17 | cloud_api_client | ~475 |
+| 18 | cloud_api_types | ~485 |
+| 19 | cloud_llm_client | ~425 |
+| 20 | language_models_cloud | ~982 |
+
+### Key In-Place Changes
+- **client crate**: 5,644 → 4,139 lines (removed cloud_types stub, UserStore, xenomorphic_urls, cloud auth, WebSocket connection)
+- **workspace.rs**: Removed user_store from AppState, removed user_store() accessor
+- **title_bar.rs**: Removed UserStore, plan_chip, user avatar, organization switcher, sign-in/out UI
+- **agent_panel.rs**: Removed is_via_collab() guards (always false)
+- **All ~15 files**: Removed UserStore creation and passing
+- **Proto**: Stripped cloud messages, kept remote SSH messages
+- **Feature flags**: Removed cloud-fetching, kept local flags
+- **Settings UI**: Removed audio, collab, feature flags pages
+
+### Remaining Low-Priority Items
+- `cloud_types.rs` stub in client crate (468 lines of local type definitions) — can be trimmed further
+- `proxy.rs` unused proxy code in client crate
+- `telemetry.rs` unused http_client field
+- Extension CLI still imports `cloud_api_types` (separate tool)
+- Various unused variable warnings
+- Eval fixture files reference `is_via_collab` (auto-generated, not compiled)
