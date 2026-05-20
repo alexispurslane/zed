@@ -1,13 +1,10 @@
 use super::{Client, Status, TypedEnvelope, proto};
 use anyhow::{Context as _, Result};
 use chrono::{DateTime, Utc};
-use cloud_api_client::websocket_protocol::MessageToClient;
-use cloud_api_client::{
-    GetAuthenticatedUserResponse, KnownOrUnknown, Organization, OrganizationId, Plan, PlanInfo,
-};
-use cloud_api_types::OrganizationConfiguration;
-use cloud_llm_client::{
-    EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME, UsageLimit,
+use crate::cloud_types::{
+    CurrentUsage, GetAuthenticatedUserResponse, KnownOrUnknown, MessageToClient, Organization,
+    OrganizationConfiguration, OrganizationId, Plan, PlanInfo, UsageData, UsageLimit,
+    EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
 };
 use collections::{HashMap, HashSet, hash_map::Entry};
 use db::kvp::KeyValueStore;
@@ -184,10 +181,6 @@ impl UserStore {
         ];
 
         client.sign_out_tx.lock().replace(sign_out_tx);
-        client.add_message_to_client_handler({
-            let this = cx.weak_entity();
-            move |message, cx| Self::handle_message_to_client(this.clone(), message, cx)
-        });
 
         Self {
             users: Default::default(),
@@ -229,51 +222,8 @@ impl UserStore {
                         Status::Authenticated
                         | Status::Reauthenticated
                         | Status::Connected { .. } => {
-                            if let Some(user_id) = client.user_id() {
-                                let system_id =
-                                    client.telemetry().system_id().map(|id| id.to_string());
-                                let response = client
-                                    .cloud_client()
-                                    .get_authenticated_user(system_id)
-                                    .await
-                                    .log_err();
-
-                                let current_user_and_response = if let Some(response) = response {
-                                    let user = Arc::new(User {
-                                        legacy_id: user_id,
-                                        github_login: response.user.github_login.clone().into(),
-                                        avatar_uri: response.user.avatar_url.clone().into(),
-                                        name: response.user.name.clone(),
-                                    });
-
-                                    Some((user, response))
-                                } else {
-                                    None
-                                };
-                                current_user_tx
-                                    .send(
-                                        current_user_and_response
-                                            .as_ref()
-                                            .map(|(user, _)| user.clone()),
-                                    )
-                                    .await
-                                    .ok();
-
-                                cx.update(|cx| {
-                                    if let Some((user, response)) = current_user_and_response {
-                                        this.update(cx, |this, cx| {
-                                            this.by_github_login
-                                                .insert(user.github_login.clone(), user_id);
-                                            this.users.insert(user_id, user);
-                                            this.update_authenticated_user(response, cx)
-                                        })
-                                    } else {
-                                        anyhow::Ok(())
-                                    }
-                                })?;
-
-                                this.update(cx, |_, cx| cx.notify())?;
-                            }
+                            // Cloud user info fetching removed (no cloud_api_client).
+                            // Will be replaced with local user management in a future pass.
                         }
                         Status::SignedOut => {
                             current_user_tx.send(None).await.ok();
@@ -911,34 +861,9 @@ impl UserStore {
         cx.emit(Event::PrivateUserInfoUpdated);
     }
 
-    fn handle_message_to_client(this: WeakEntity<Self>, message: &MessageToClient, cx: &App) {
-        cx.spawn(async move |cx| {
-            match message {
-                MessageToClient::UserUpdated => {
-                    let (cloud_client, system_id) = cx
-                        .update(|cx| {
-                            this.read_with(cx, |this, _cx| {
-                                this.client.upgrade().map(|client| {
-                                    let system_id =
-                                        client.telemetry().system_id().map(|id| id.to_string());
-                                    (client.cloud_client(), system_id)
-                                })
-                            })
-                        })?
-                        .ok_or(anyhow::anyhow!("Failed to get Cloud client"))?;
-
-                    let response = cloud_client.get_authenticated_user(system_id).await?;
-                    cx.update(|cx| {
-                        this.update(cx, |this, cx| {
-                            this.update_authenticated_user(response, cx);
-                        })
-                    })?;
-                }
-            }
-
-            anyhow::Ok(())
-        })
-        .detach_and_log_err(cx);
+    fn handle_message_to_client(_this: WeakEntity<Self>, _message: &MessageToClient, _cx: &App) {
+        // Cloud message handler disabled - no cloud_api_client available.
+        // Will be replaced with local user management in a future pass.
     }
 
     pub fn watch_current_user(&self) -> watch::Receiver<Option<Arc<User>>> {

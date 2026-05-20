@@ -1,7 +1,7 @@
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
 
-mod cloud_types;
+mod llm_token;
 mod proxy;
 pub mod telemetry;
 pub mod user;
@@ -14,6 +14,10 @@ use async_tungstenite::tungstenite::{
     http::{HeaderValue, Request, StatusCode},
 };
 use clock::SystemClock;
+use cloud_api_client::LlmApiToken;
+use cloud_api_client::websocket_protocol::MessageToClient;
+use cloud_api_client::{ClientApiError, CloudApiClient};
+use cloud_api_types::OrganizationId;
 use credentials_provider::CredentialsProvider;
 use feature_flags::FeatureFlagAppExt as _;
 use futures::{
@@ -51,7 +55,7 @@ use tokio::net::TcpStream;
 use url::Url;
 use util::{ConnectionResult, ResultExt};
 
-pub use cloud_types::*;
+pub use llm_token::*;
 pub use rpc::*;
 pub use telemetry_events::Event;
 pub use user::*;
@@ -194,6 +198,7 @@ pub fn init(client: &Arc<Client>, cx: &mut App) {
     });
 }
 
+pub type MessageToClientHandler = Box<dyn Fn(&MessageToClient, &mut App) + Send + Sync + 'static>;
 
 struct GlobalClient(Arc<Client>);
 
@@ -203,10 +208,12 @@ pub struct Client {
     id: AtomicU64,
     peer: Arc<Peer>,
     http: Arc<HttpClientWithUrl>,
+    cloud_client: Arc<CloudApiClient>,
     telemetry: Arc<Telemetry>,
     credentials_provider: ClientCredentialsProvider,
     state: RwLock<ClientState>,
     handler_set: Mutex<ProtoMessageHandlerSet>,
+    message_to_client_handlers: Mutex<Vec<MessageToClientHandler>>,
     sign_out_tx: Mutex<Option<mpsc::UnboundedSender<()>>>,
 
     #[allow(clippy::type_complexity)]
@@ -548,10 +555,12 @@ impl Client {
             id: AtomicU64::new(0),
             peer: Peer::new(0),
             telemetry: Telemetry::new(clock, http.clone(), cx),
+            cloud_client: Arc::new(CloudApiClient::new(http.clone())),
             http,
             credentials_provider: ClientCredentialsProvider::new(cx),
             state: Default::default(),
             handler_set: Default::default(),
+            message_to_client_handlers: Mutex::new(Vec::new()),
             sign_out_tx: Mutex::new(None),
 
             #[cfg(any(test, feature = "test-support"))]
@@ -585,6 +594,9 @@ impl Client {
         self.credentials_provider.provider.clone()
     }
 
+    pub fn cloud_client(&self) -> Arc<CloudApiClient> {
+        self.cloud_client.clone()
+    }
 
     pub fn set_id(&self, id: u64) -> &Self {
         self.id.store(id, Ordering::SeqCst);
@@ -862,7 +874,9 @@ impl Client {
         let mut credentials = None;
 
         let old_credentials = self.state.read().credentials.clone();
-        if let Some(old_credentials) = old_credentials {
+        if let Some(old_credentials) = old_credentials
+            && self.validate_credentials(&old_credentials, cx).await?
+        {
             credentials = Some(old_credentials);
         }
 
@@ -870,7 +884,14 @@ impl Client {
             && try_provider
             && let Some(stored_credentials) = self.credentials_provider.read_credentials(cx).await
         {
-            credentials = Some(stored_credentials);
+            if self.validate_credentials(&stored_credentials, cx).await? {
+                credentials = Some(stored_credentials);
+            } else {
+                self.credentials_provider
+                    .delete_credentials(cx)
+                    .await
+                    .log_err();
+            }
         }
 
         if credentials.is_none() {
@@ -903,6 +924,8 @@ impl Client {
 
         let credentials = credentials.unwrap();
         self.set_id(credentials.user_id);
+        self.cloud_client
+            .set_credentials(credentials.user_id as u32, credentials.access_token.clone());
         self.state.write().credentials = Some(credentials.clone());
         self.set_status(
             if is_reauthenticating {
@@ -986,6 +1009,7 @@ impl Client {
 
         let credentials = self.sign_in(try_provider, cx).await?;
 
+        self.connect_to_cloud(cx).await.log_err();
 
         cx.update(move |cx| {
             cx.spawn({
@@ -1577,6 +1601,7 @@ impl Client {
 
     pub async fn sign_out(self: &Arc<Self>, cx: &AsyncApp) {
         self.state.write().credentials = None;
+        self.cloud_client.clear_credentials();
         self.disconnect(cx);
 
         if self.has_credentials(cx).await {
@@ -1822,13 +1847,13 @@ impl ProtoClient for Client {
     }
 }
 
-/// prefix for the xenomorphic:// url scheme
+/// prefix for the zed:// url scheme
 pub const XENOMORPHIC_URL_SCHEME: &str = "xenomorphic";
 
 /// A parsed Xenomorphic link that can be handled internally by the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XenomorphicLink {
-    /// Join a channel: `zed.dev/channel/channel-name-123` or `xenomorphic://channel/channel-name-123`
+    /// Join a channel: `zed.dev/channel/channel-name-123` or `zed://channel/channel-name-123`
     Channel { channel_id: u64 },
     /// Open channel notes: `zed.dev/channel/channel-name-123/notes` or with heading `notes#heading`
     ChannelNotes {

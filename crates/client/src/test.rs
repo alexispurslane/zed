@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow};
-use crate::{
-    AuthenticatedUser, Client, CurrentUsage, GetAuthenticatedUserResponse, KnownOrUnknown,
-    Plan, PlanInfo, Timestamp, UsageData, UsageLimit,
+use crate::cloud_types::{
+    AuthenticatedUser, CurrentUsage, GetAuthenticatedUserResponse, KnownOrUnknown, Plan,
+    PlanInfo, Timestamp, UsageData, UsageLimit,
 };
 use futures::{StreamExt, stream::BoxStream};
 use gpui::{AppContext as _, TestAppContext};
