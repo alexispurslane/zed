@@ -582,9 +582,7 @@ impl Telemetry {
         self.state.lock().is_staff
     }
 
-    // Note: build_request and cloud event sending removed.
-    // Telemetry events are now only written to the local log file.
-    fn _build_request(
+    fn build_request(
         self: &Arc<Self>,
         // We take in the JSON bytes buffer so we can reuse the existing allocation.
         mut json_bytes: Vec<u8>,
@@ -649,12 +647,13 @@ impl Telemetry {
             )
         };
 
-        // After cloud removal, telemetry events are only written to the local log file.
-        // The HTTP send to the cloud server is disabled.
-        // The request body and json_bytes are still constructed for the file-writing logic above.
-        drop(json_bytes);
-        drop(request_body);
-        Ok(())
+        let request = self.build_request(json_bytes, &request_body)?;
+        let response = self.http_client.send(request).await?;
+        if response.status() != 200 {
+            log::error!("Failed to send events: HTTP {:?}", response.status());
+        }
+
+        anyhow::Ok(())
     }
 
     pub fn flush_events(self: &Arc<Self>) -> Task<()> {

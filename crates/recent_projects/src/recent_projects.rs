@@ -1,3 +1,4 @@
+mod dev_container_suggest;
 pub mod disconnected_overlay;
 mod remote_connections;
 mod remote_servers;
@@ -505,6 +506,22 @@ pub fn init(cx: &mut App) {
             cx.subscribe_in(
                 workspace.project(),
                 window,
+                move |workspace, project, event, window, cx| {
+                    if let project::Event::WorktreeUpdatedEntries(worktree_id, updated_entries) =
+                        event
+                    {
+                        dev_container_suggest::suggest_on_worktree_updated(
+                            workspace,
+                            *worktree_id,
+                            updated_entries,
+                            project,
+                            window,
+                            cx,
+                        );
+                    }
+                },
+            )
+            .detach();
         },
     )
     .detach();

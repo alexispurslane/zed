@@ -999,12 +999,9 @@ impl Client {
         let (is_staff_tx, is_staff_rx) = oneshot::channel::<bool>();
         let mut is_staff_tx = Some(is_staff_tx);
         cx.update(|cx| {
-            cx.on_flags_ready(move |state, _cx| {
-                if let Some(is_staff_tx) = is_staff_tx.take() {
-                    is_staff_tx.send(state.is_staff).log_err();
-                }
-            })
-            .detach();
+            // on_flags_ready removed - feature flags cloud fetch was stripped
+            // Staff check is no longer needed without cloud
+            drop(is_staff_tx);
         });
 
         let credentials = self.sign_in(try_provider, cx).await?;

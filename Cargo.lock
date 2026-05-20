@@ -89,6 +89,7 @@ dependencies = [
  "chrono",
  "client",
  "clock",
+ "cloud_api_types",
  "collections",
  "context_server",
  "ctor",
@@ -254,6 +255,7 @@ dependencies = [
  "chrono",
  "client",
  "clock",
+ "cloud_api_types",
  "collections",
  "command_palette_hooks",
  "component",
@@ -1048,7 +1050,7 @@ dependencies = [
  "anyhow",
  "arrayvec",
  "log",
- "nom",
+ "nom 7.1.3",
  "num-rational",
  "v_frame",
 ]
@@ -2122,7 +2124,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
 dependencies = [
- "nom",
+ "nom 7.1.3",
 ]
 
 [[package]]
@@ -2325,6 +2327,9 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clock",
+ "cloud_api_client",
+ "cloud_api_types",
+ "cloud_llm_client",
  "collections",
  "credentials_provider",
  "db",
@@ -2347,6 +2352,7 @@ dependencies = [
  "release_channel",
  "rpc",
  "rustls-pki-types",
+ "semver",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -2376,6 +2382,49 @@ dependencies = [
  "parking_lot",
  "serde",
  "smallvec",
+]
+
+[[package]]
+name = "cloud_api_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-lock",
+ "cloud_api_types",
+ "futures 0.3.32",
+ "gpui",
+ "gpui_tokio",
+ "http_client",
+ "parking_lot",
+ "serde_json",
+ "thiserror 2.0.17",
+ "yawc",
+]
+
+[[package]]
+name = "cloud_api_types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "ciborium",
+ "cloud_llm_client",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "strum",
+]
+
+[[package]]
+name = "cloud_llm_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "strum",
+ "uuid",
+ "xeta_prompt",
 ]
 
 [[package]]
@@ -4113,6 +4162,9 @@ dependencies = [
  "buffer_diff",
  "client",
  "clock",
+ "cloud_api_client",
+ "cloud_api_types",
+ "cloud_llm_client",
  "collections",
  "copilot",
  "copilot_ui",
@@ -4290,6 +4342,7 @@ dependencies = [
  "anyhow",
  "buffer_diff",
  "client",
+ "cloud_llm_client",
  "codestral",
  "collections",
  "command_palette_hooks",
@@ -4784,6 +4837,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "cloud_api_types",
  "collections",
  "dap",
  "fs",
@@ -4801,7 +4855,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "strum",
  "task",
  "tempfile",
  "toml 0.8.23",
@@ -4848,9 +4901,11 @@ dependencies = [
  "async-tar",
  "async-trait",
  "client",
+ "cloud_api_types",
  "collections",
  "criterion",
  "ctor",
+ "dap",
  "extension",
  "fs",
  "futures 0.3.32",
@@ -4897,6 +4952,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "client",
+ "cloud_api_types",
  "collections",
  "db",
  "editor",
@@ -6498,7 +6554,7 @@ dependencies = [
  "byteorder",
  "crossbeam-channel",
  "flate2",
- "nom",
+ "nom 7.1.3",
  "num-traits",
 ]
 
@@ -7888,6 +7944,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "language_models_cloud"
+version = "0.1.0"
+dependencies = [
+ "anthropic",
+ "anyhow",
+ "cloud_llm_client",
+ "futures 0.3.32",
+ "google_ai",
+ "gpui",
+ "http_client",
+ "language_model",
+ "open_ai",
+ "schemars",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "language_selector"
 version = "0.1.0"
 dependencies = [
@@ -9093,6 +9169,15 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "nom"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -10885,7 +10970,7 @@ version = "0.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a63d338dec139f56dacc692ca63ad35a6be6a797442479b55acd611d79e906"
 dependencies = [
- "nom",
+ "nom 7.1.3",
 ]
 
 [[package]]
@@ -13766,7 +13851,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7bba3a93db0cc4f7bdece8bb09e77e2e785c20bfebf79eb8340ed80708048790"
 dependencies = [
- "nom",
+ "nom 7.1.3",
  "unicode_categories",
 ]
 
@@ -16606,7 +16691,7 @@ checksum = "1f8cbf8125142b9b30321ac8721f54c52fbcd6659f76cf863d5e2e38c07a3d7b"
 dependencies = [
  "const_format",
  "itertools 0.14.0",
- "nom",
+ "nom 7.1.3",
  "pori",
  "regex",
  "thiserror 2.0.17",
@@ -16767,6 +16852,15 @@ name = "webpki-root-certs"
 version = "0.26.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09aed61f5e8d2c18344b3faa33a4c837855fe56642757754775548fee21386c4"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -18583,6 +18677,35 @@ name = "yansi"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
+
+[[package]]
+name = "yawc"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f6a46c0f189bbef59a24169b1a6e4d8bc1e476f6ea05bc657cf8e67aa3fbb0c"
+dependencies = [
+ "base64 0.22.1",
+ "bytes 1.11.1",
+ "flate2",
+ "futures 0.3.32",
+ "http-body-util",
+ "hyper 1.7.0",
+ "hyper-util",
+ "js-sys",
+ "nom 8.0.0",
+ "pin-project",
+ "rand 0.8.6",
+ "sha1",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-rustls 0.26.4",
+ "tokio-util",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "webpki-roots",
+]
 
 [[package]]
 name = "yazi"
