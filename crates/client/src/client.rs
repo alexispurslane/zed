@@ -5,7 +5,6 @@ pub mod cloud_types;
 mod proxy;
 pub mod telemetry;
 pub mod user;
-pub mod xenomorphic_urls;
 
 use anyhow::{Context as _, Result, anyhow};
 use async_tungstenite::tungstenite::{
@@ -67,6 +66,7 @@ pub use cloud_types::{
     RejectEditPredictionsBody,
     EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
     EXPIRED_LLM_TOKEN_HEADER_NAME, OUTDATED_LLM_TOKEN_HEADER_NAME,
+    RefreshLlmTokenListener,
     SubmitEditPredictionFeedbackBody, SubscriptionPeriod,
     UsageData, UsageLimit,
     global_llm_token, predict_edits_v3,

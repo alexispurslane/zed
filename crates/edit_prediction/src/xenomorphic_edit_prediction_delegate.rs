@@ -1,6 +1,6 @@
 use std::{cmp, sync::Arc};
 
-use client::{Client, EditPredictionRejectReason, UserStore};
+use client::{Client, EditPredictionRejectReason};
 use edit_prediction_types::{
     DataCollectionState, EditPredictionDelegate, EditPredictionDiscardReason,
     EditPredictionIconSet, SuggestionDisplayType,
@@ -25,10 +25,9 @@ impl XenomorphicEditPredictionDelegate {
         project: Entity<Project>,
         singleton_buffer: Option<Entity<Buffer>>,
         client: &Arc<Client>,
-        user_store: &Entity<UserStore>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let store = EditPredictionStore::global(client, user_store, cx);
+        let store = EditPredictionStore::global(client, cx);
         store.update(cx, |store, cx| {
             store.register_project(&project, cx);
         });
@@ -144,13 +143,7 @@ impl EditPredictionDelegate for XenomorphicEditPredictionDelegate {
         _debounce: bool,
         cx: &mut Context<Self>,
     ) {
-        let store = self.store.read(cx);
-
-        if store.user_store.read_with(cx, |user_store, _cx| {
-            user_store.account_too_young() || user_store.has_overdue_invoices()
-        }) {
-            return;
-        }
+        let _store = self.store.read(cx);
 
         self.store.update(cx, |store, cx| {
             if let Some(current) =

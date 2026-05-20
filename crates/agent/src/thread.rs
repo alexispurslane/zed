@@ -17,8 +17,6 @@ use agent_settings::{
 };
 use anyhow::{Context as _, Result, anyhow};
 use chrono::{DateTime, Utc};
-use client::UserStore;
-use client::Plan;
 use collections::{HashMap, HashSet, IndexMap};
 use fs::Fs;
 use futures::{
@@ -38,7 +36,7 @@ use language_model::{
     LanguageModelRequest, LanguageModelRequestMessage, LanguageModelRequestTool,
     LanguageModelToolResult, LanguageModelToolResultContent, LanguageModelToolSchemaFormat,
     LanguageModelToolUse, LanguageModelToolUseId, Role, SelectedModel, Speed, StopReason,
-    TokenUsage, XENOMORPHIC_CLOUD_PROVIDER_ID,
+    TokenUsage,
 };
 use project::Project;
 use prompt_store::ProjectContext;
@@ -926,7 +924,6 @@ pub struct Thread {
     pending_summary_generation: Option<Shared<Task<Option<SharedString>>>>,
     summary: Option<SharedString>,
     messages: Vec<Message>,
-    user_store: Entity<UserStore>,
     /// Holds the task that handles agent interaction until the end of the turn.
     /// Survives across multiple requests as the model performs tool calls and
     /// we run tools, report their results.
@@ -1058,7 +1055,6 @@ impl Thread {
             pending_summary_generation: None,
             summary: None,
             messages: Vec::new(),
-            user_store: project.read(cx).user_store(),
             running_turn: None,
             has_queued_message: false,
             pending_message: None,
@@ -1316,7 +1312,6 @@ impl Thread {
             pending_summary_generation: None,
             summary: db_thread.detailed_summary,
             messages: db_thread.messages,
-            user_store: project.read(cx).user_store(),
             running_turn: None,
             has_queued_message: false,
             pending_message: None,
@@ -2113,8 +2108,7 @@ impl Thread {
             if let Some(error) = error {
                 attempt += 1;
                 let retry = this.update(cx, |this, cx| {
-                    let user_store = this.user_store.read(cx);
-                    this.handle_completion_error(error, attempt, user_store.plan())
+                    this.handle_completion_error(error, attempt)
                 })??;
                 let timer = cx.background_executor().timer(retry.duration);
                 event_stream.send_retry(retry);
@@ -2180,21 +2174,13 @@ impl Thread {
         &mut self,
         error: LanguageModelCompletionError,
         attempt: u8,
-        plan: Option<Plan>,
     ) -> Result<agent_thread::RetryStatus> {
         let Some(model) = self.model.as_ref() else {
             return Err(anyhow!(error));
         };
 
-        let auto_retry = if model.provider_id() == XENOMORPHIC_CLOUD_PROVIDER_ID {
-            plan.is_some()
-        } else {
-            true
-        };
-
-        if !auto_retry {
-            return Err(anyhow!(error));
-        }
+        // Cloud provider plan-gating removed; all providers auto-retry
+        let _ = model;
 
         let Some(strategy) = Self::retry_strategy_for(&error) else {
             return Err(anyhow!(error));

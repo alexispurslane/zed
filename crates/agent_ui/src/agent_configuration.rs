@@ -7,7 +7,6 @@ mod tool_picker;
 use std::sync::Arc;
 
 use agent::ContextServerRegistry;
-use client::Plan;
 use collections::HashMap;
 use context_server::ContextServerId;
 use extension::ExtensionManifest;
@@ -20,7 +19,6 @@ use gpui::{
 use language::LanguageRegistry;
 use language_model::{
     IconOrSvg, LanguageModelProvider, LanguageModelProviderId, LanguageModelRegistry,
-    XENOMORPHIC_CLOUD_PROVIDER_ID,
 };
 use language_models::AllLanguageModelSettings;
 use notifications::status_toast::StatusToast;
@@ -200,15 +198,6 @@ impl AgentConfiguration {
             .copied()
             .unwrap_or(false);
 
-        let is_xenomorphic_provider = provider.id() == XENOMORPHIC_CLOUD_PROVIDER_ID;
-        let current_plan = if is_xenomorphic_provider {
-            self.workspace
-                .upgrade()
-                .and_then(|workspace| workspace.read(cx).user_store().read(cx).plan())
-        } else {
-            None
-        };
-
         let is_signed_in = self
             .workspace
             .read_with(cx, |workspace, _| {
@@ -263,11 +252,6 @@ impl AgentConfiguration {
                                             .gap_1()
                                             .child(Label::new(provider_name.clone()))
                                             .map(|this| {
-                                                if is_xenomorphic_provider && is_signed_in {
-                                                    this.child(
-                                                        self.render_zed_plan_info(current_plan, cx),
-                                                    )
-                                                } else {
                                                     this.when(
                                                         provider.is_authenticated(cx)
                                                             && !is_expanded,
@@ -278,7 +262,6 @@ impl AgentConfiguration {
                                                             )
                                                         },
                                                     )
-                                                }
                                             }),
                                     ),
                             )
@@ -471,39 +454,6 @@ impl AgentConfiguration {
                         }),
                     ),
             )
-    }
-
-    fn render_zed_plan_info(&self, plan: Option<Plan>, cx: &mut Context<Self>) -> impl IntoElement {
-        if let Some(plan) = plan {
-            let free_chip_bg = cx
-                .theme()
-                .colors()
-                .editor_background
-                .opacity(0.5)
-                .blend(cx.theme().colors().text_accent.opacity(0.05));
-
-            let pro_chip_bg = cx
-                .theme()
-                .colors()
-                .editor_background
-                .opacity(0.5)
-                .blend(cx.theme().colors().text_accent.opacity(0.2));
-
-            let (plan_name, label_color, bg_color) = match plan {
-                Plan::XenomorphicFree => ("Free", Color::Default, free_chip_bg),
-                Plan::XenomorphicProTrial => ("Pro Trial", Color::Accent, pro_chip_bg),
-                Plan::XenomorphicPro => ("Pro", Color::Accent, pro_chip_bg),
-                Plan::XenomorphicBusiness => ("Business", Color::Accent, pro_chip_bg),
-                Plan::XenomorphicStudent => ("Student", Color::Accent, pro_chip_bg),
-            };
-
-            Chip::new(plan_name.to_string())
-                .bg_color(bg_color)
-                .label_color(label_color)
-                .into_any_element()
-        } else {
-            div().into_any_element()
-        }
     }
 
     fn render_context_servers_section(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

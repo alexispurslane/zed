@@ -16,7 +16,6 @@ use agent_servers::AgentServer;
 use agent_settings::{AgentProfileId, AgentSettings};
 use anyhow::{Result, anyhow};
 use buffer_diff::BufferDiff;
-use client::xenomorphic_urls;
 use collections::{HashMap, HashSet, IndexMap};
 use editor::scroll::Autoscroll;
 use editor::{

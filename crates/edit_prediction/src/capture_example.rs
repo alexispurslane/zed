@@ -259,7 +259,7 @@ mod tests {
     use super::*;
     use crate::EditPredictionStore;
     use client::RefreshLlmTokenListener;
-    use client::{Client, UserStore};
+    use client::Client;
     use clock::FakeSystemClock;
     use gpui::{AppContext as _, TestAppContext, http_client::FakeHttpClient};
     use indoc::indoc;
@@ -548,10 +548,9 @@ mod tests {
             xlog::init_test();
             let http_client = FakeHttpClient::with_404_response();
             let client = Client::new(Arc::new(FakeSystemClock::new()), http_client, cx);
-            let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
             language_model::init(cx);
-            RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
-            EditPredictionStore::global(&client, &user_store, cx);
+            RefreshLlmTokenListener::register_global(client.clone(), cx);
+            EditPredictionStore::global(&client, cx);
         })
     }
 }

@@ -67,7 +67,7 @@ impl EditPredictionContextView {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let store = EditPredictionStore::global(client, user_store, cx);
+        let store = EditPredictionStore::global(client, cx);
 
         let mut debug_rx = store.update(cx, |store, cx| store.debug_info(&project, cx));
         let _update_task = cx.spawn_in(window, async move |this, cx| {

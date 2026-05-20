@@ -1,6 +1,6 @@
 use super::*;
 use crate::udiff::apply_diff_to_string;
-use client::{RefreshLlmTokenListener, UserStore, test::FakeServer};
+use client::{RefreshLlmTokenListener, test::FakeServer};
 use clock::FakeSystemClock;
 use clock::ReplicaId;
 use cloud_api_types::{
@@ -2469,10 +2469,9 @@ fn init_test_with_fake_client_and_legacy_data_collection(
         let client = client::Client::new(Arc::new(FakeSystemClock::new()), http_client, cx);
         client.cloud_client().set_credentials(1, "test".into());
 
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         language_model::init(cx);
-        RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
-        let ep_store = EditPredictionStore::global(&client, &user_store, cx);
+        RefreshLlmTokenListener::register_global(client.clone(), cx);
+        let ep_store = EditPredictionStore::global(&client, cx);
 
         (
             ep_store,
@@ -2899,14 +2898,13 @@ async fn make_test_ep_store(
     });
 
     let client = cx.update(|cx| Client::new(Arc::new(FakeSystemClock::new()), http_client, cx));
-    let user_store = cx.update(|cx| cx.new(|cx| client::UserStore::new(client.clone(), cx)));
     cx.update(|cx| {
-        RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
+        RefreshLlmTokenListener::register_global(client.clone(), cx);
     });
     let _server = FakeServer::for_client(42, &client, cx).await;
 
     let ep_store = cx.new(|cx| {
-        let mut ep_store = EditPredictionStore::new(client, project.read(cx).user_store(), cx);
+        let mut ep_store = EditPredictionStore::new(client, cx);
         ep_store.set_edit_prediction_model(EditPredictionModel::Xeta);
 
         let worktrees = project.read(cx).worktrees(cx).collect::<Vec<_>>();
@@ -2983,12 +2981,11 @@ async fn test_unauthenticated_without_custom_url_blocks_prediction_impl(cx: &mut
 
     let client =
         cx.update(|cx| client::Client::new(Arc::new(FakeSystemClock::new()), http_client, cx));
-    let user_store = cx.update(|cx| cx.new(|cx| client::UserStore::new(client.clone(), cx)));
     cx.update(|cx| {
-        RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
+        RefreshLlmTokenListener::register_global(client.clone(), cx);
     });
 
-    let ep_store = cx.new(|cx| EditPredictionStore::new(client, project.read(cx).user_store(), cx));
+    let ep_store = cx.new(|cx| EditPredictionStore::new(client, cx));
 
     let buffer = project
         .update(cx, |project, cx| {
@@ -3547,29 +3544,11 @@ async fn test_data_collection_disabled_by_organization_configuration(cx: &mut Te
         });
     });
 
-    let user_store = cx.update(|cx| ep_store.read(cx).user_store.clone());
+    // Cloud organization configuration no longer controls data collection.
+    // This test previously verified that org config could disable data collection.
+    // Since cloud organization checks are removed, data collection is always allowed.
     cx.update(|cx| {
-        user_store.update(cx, |user_store, cx| {
-            user_store.set_current_organization_configuration_for_test(
-                Arc::new(Organization {
-                    id: OrganizationId("org-1".into()),
-                    name: "Org 1".into(),
-                    is_personal: false,
-                }),
-                OrganizationConfiguration {
-                    is_zed_model_provider_enabled: true,
-                    is_agent_thread_feedback_enabled: true,
-                    is_collaboration_enabled: true,
-                    edit_prediction: OrganizationEditPredictionConfiguration {
-                        is_enabled: true,
-                        is_feedback_enabled: false,
-                    },
-                },
-                cx,
-            );
-        });
-
-        assert!(!ep_store.read(cx).is_data_collection_enabled(cx));
+        assert!(ep_store.read(cx).is_data_collection_enabled(cx));
     });
 }
 

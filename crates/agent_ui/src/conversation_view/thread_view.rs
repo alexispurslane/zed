@@ -1870,7 +1870,7 @@ impl ThreadView {
                 })
                 .await?;
 
-            let share_url = client::xenomorphic_urls::shared_agent_thread_url(&session_id);
+            let share_url = format!("xenomorphic://agent/shared/{}", session_id);
 
             cx.update(|cx| {
                 if let Some(workspace) = workspace.upgrade() {
@@ -8212,7 +8212,7 @@ impl ThreadView {
             .on_click(cx.listener({
                 move |this, _, _, cx| {
                     this.clear_thread_error(cx);
-                    cx.open_url(&xenomorphic_urls::upgrade_to_xenomorphic_pro_url(cx));
+                    cx.open_url("https://xenomorphic.dev/account/upgrade");
                 }
             }))
     }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::XenomorphicPredictUpsell;
-use client::{Client, UserStore};
+use client::Client;
 use db::kvp::Dismissable;
 use fs::Fs;
 use gpui::{
@@ -44,7 +44,6 @@ pub(crate) fn set_edit_prediction_provider(provider: EditPredictionProvider, cx:
 impl XenomorphicPredictModal {
     pub fn toggle(
         workspace: &mut Workspace,
-        _user_store: Entity<UserStore>,
         _client: Arc<Client>,
         window: &mut Window,
         cx: &mut Context<Workspace>,

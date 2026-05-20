@@ -465,4 +465,8 @@ impl RefreshLlmTokenListener {
     pub fn register(_client: std::sync::Arc<crate::Client>, _user_store: gpui::Entity<crate::UserStore>, _cx: &mut gpui::App) {
         // No-op: cloud token refresh removed
     }
+
+    pub fn register_global(_client: std::sync::Arc<crate::Client>, _cx: &mut gpui::App) {
+        // No-op: cloud token refresh removed
+    }
 }

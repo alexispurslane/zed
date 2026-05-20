@@ -6,7 +6,7 @@ use crate::{
     prediction::EditPredictionResult,
 };
 use anyhow::Result;
-use client::{EditPredictionRejectReason, AcceptEditPredictionBody, predict_edits_v3::RawCompletionRequest};
+use client::{EditPredictionRejectReason, AcceptEditPredictionBody, OrganizationId, predict_edits_v3::RawCompletionRequest};
 use edit_prediction_types::PredictedCursorPosition;
 use gpui::{App, AppContext as _, Entity, Task, TaskExt, WeakEntity, prelude::*};
 use language::{
@@ -80,11 +80,7 @@ pub fn request_prediction_with_zeta(
     };
     let client = store.client.clone();
     let llm_token = store.llm_token.clone();
-    let organization_id = store
-        .user_store
-        .read(cx)
-        .current_organization()
-        .map(|organization| organization.id.clone());
+    let organization_id: Option<OrganizationId> = None; // Cloud organization removed
     let app_version = AppVersion::global(cx);
 
     struct Prediction {
@@ -458,14 +454,8 @@ fn handle_api_response<T>(
 ) -> Result<T> {
     match response {
         Ok((data, usage)) => {
-            if let Some(usage) = usage {
-                this.update(cx, |this, cx| {
-                    this.user_store.update(cx, |user_store, cx| {
-                        user_store.update_edit_prediction_usage(usage, cx);
-                    });
-                })
-                .ok();
-            }
+            // Cloud usage tracking removed; ignoring usage update
+            let _ = usage;
             Ok(data)
         }
         Err(err) => {
@@ -594,11 +584,7 @@ pub(crate) fn edit_prediction_accepted(
     let require_auth = custom_accept_url.is_none();
     let client = store.client.clone();
     let llm_token = store.llm_token.clone();
-    let organization_id = store
-        .user_store
-        .read(cx)
-        .current_organization()
-        .map(|organization| organization.id.clone());
+    let organization_id: Option<OrganizationId> = None; // Cloud organization removed
     let app_version = AppVersion::global(cx);
 
     cx.background_spawn(async move {

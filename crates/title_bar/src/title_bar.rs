@@ -1,11 +1,9 @@
 mod application_menu;
 mod onboarding_banner;
-mod plan_chip;
 mod title_bar_settings;
 mod update_version;
 
 use crate::application_menu::{ApplicationMenu, show_menus};
-use crate::plan_chip::PlanChip;
 use agent_settings::{AgentSettings, WindowLayout};
 use arrayvec::ArrayVec;
 use git_ui::worktree_picker::WorktreePicker;
@@ -20,8 +18,7 @@ use crate::application_menu::{
     ActivateDirection, ActivateMenuLeft, ActivateMenuRight, OpenApplicationMenu,
 };
 
-use client::{Client, UserStore, xenomorphic_urls};
-use client::Plan;
+use client::{Client, UserStore};
 
 use gpui::{
     Action, Anchor, Animation, AnimationExt, AnyElement, App, Context, Element, Entity, Focusable,
@@ -1041,12 +1038,6 @@ impl TitleBar {
 
         let is_signed_in = user.is_some();
 
-        let has_subscription_period = user_store_read.subscription_period().is_some();
-        let plan = user_store_read.plan().filter(|_| {
-            // Since the user might be on the legacy free plan we filter based on whether we have a subscription period.
-            has_subscription_period
-        });
-
         let has_organization = user_store_read.current_organization().is_some();
 
         let current_organization = user_store_read.current_organization();
@@ -1056,10 +1047,7 @@ impl TitleBar {
         let organizations: Vec<_> = user_store_read
             .organizations()
             .iter()
-            .map(|org| {
-                let plan = user_store_read.plan_for_organization(&org.id);
-                (org.clone(), plan)
-            })
+            .cloned()
             .collect();
 
         let show_user_picture = TitleBarSettings::get_global(cx).show_user_picture;
@@ -1110,22 +1098,9 @@ impl TitleBar {
                 ContextMenu::build(window, cx, |menu, _, _cx| {
                     menu.when(is_signed_in, |this| {
                         let user_login = user_login.clone();
-                        this.custom_entry(
-                            move |_window, _cx| {
-                                let user_login = user_login.clone().unwrap_or_default();
-
-                                h_flex()
-                                    .w_full()
-                                    .justify_between()
-                                    .child(Label::new(user_login))
-                                    .when(!has_organization, |parent| {
-                                        parent.child(PlanChip::new(plan.unwrap_or(Plan::XenomorphicFree)))
-                                    })
-                                    .into_any_element()
-                            },
-                            move |_, cx| {
-                                cx.open_url(&xenomorphic_urls::account_url(cx));
-                            },
+                        this.item(
+                            ContextMenuEntry::new(user_login.unwrap_or_default())
+                                .disabled(true)
                         )
                         .separator()
                     })
@@ -1153,9 +1128,8 @@ impl TitleBar {
                     .when(has_organization, |this| {
                         let mut this = this.header("Organization");
 
-                        for (organization, plan) in &organizations {
+                        for organization in &organizations {
                             let organization = organization.clone();
-                            let plan = *plan;
 
                             let is_current =
                                 current_organization
@@ -1183,7 +1157,7 @@ impl TitleBar {
                                                         )
                                                     }),
                                             )
-                                            .children(plan.map(|plan| PlanChip::new(plan)))
+                                            // Plan chip removed (cloud subscription UI)
                                             .into_any_element()
                                     }
                                 },

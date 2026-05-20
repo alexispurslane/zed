@@ -1,70 +1,29 @@
-# Progress: Remove Zed Cloud Infrastructure
+# Progress
 
 ## Status
-**Phases 1-7 COMPLETE. Build passes with only warnings.**
+In Progress
 
-## Completed Phases
+## Tasks
 
-### Phase 1: Trivial removals ✅
-- Deleted: journal, feedback, nc (3 crates, ~495 lines)
-- Removed from workspace Cargo.toml, xenomorphic/Cargo.toml, main.rs, xenomorphic_app.rs
+## Files Changed
 
-### Phase 2: Onboarding ✅
-- Deleted: ai_onboarding, language_onboarding (2 crates, ~1005 lines)
-- Trimmed onboarding crate: removed render_ai_section(), render_telemetry_section(), cloud imports
-- Removed AI onboarding from agent_ui
+## Notes
 
-### Phase 3: Auto-update ✅
-- Deleted: auto_update, auto_update_helper, auto_update_ui (3 crates, ~2837 lines)
+## Task A: Remove xenomorphic_urls — COMPLETED
 
-### Phase 4: Call/Audio/LiveKit ✅
-- Deleted: denoise, audio, livekit_api, livekit_client, call, channel (6 crates, ~10913 lines)
+### Changes made:
 
-### Phase 5: Collaboration UI ✅
-- Deleted: collab_ui (1 crate, ~6410 lines)
+1. **Deleted `crates/client/src/xenomorphic_urls.rs`** — 70 lines removed
+2. **Removed `pub mod xenomorphic_urls;` from `crates/client/src/client.rs`**
+3. **`crates/xenomorphic/src/xenomorphic_app.rs`**: Removed `use client::xenomorphic_urls;` and removed the `OpenAccountSettings` handler that opened cloud account URL
+4. **`crates/title_bar/src/title_bar.rs`**: Removed `xenomorphic_urls` from import; replaced cloud account link custom_entry with a simple disabled menu item showing the user name; simplified organizations vector from tuples to just `Arc<Organization>`
+5. **`crates/edit_prediction_ui/src/edit_prediction_button.rs`**: Removed `xenomorphic_urls` from import; replaced `xenomorphic_urls::edit_prediction_docs(cx)` with hardcoded `"https://xenomorphic.dev/docs/ai/edit-prediction"`; replaced all `xenomorphic_urls::account_url(cx)` calls with no-op handlers (these were cloud upsell links)
+6. **`crates/agent_ui/src/conversation_view.rs`**: Removed `use client::xenomorphic_urls;`
+7. **`crates/agent_ui/src/conversation_view/thread_view.rs`**: Replaced `client::xenomorphic_urls::shared_agent_thread_url(&session_id)` with inline `format!("xenomorphic://agent/shared/{}", session_id)` (local URL scheme); replaced `xenomorphic_urls::upgrade_to_xenomorphic_pro_url(cx)` with hardcoded `"https://xenomorphic.dev/account/upgrade"`
 
-### Phase 6: Collab server ✅
-- Deleted: collab (1 crate, ~43606 lines)
+### Also fixed pre-existing compilation errors:
+- **`crates/edit_prediction/src/edit_prediction.rs`**: Replaced `self.user_store.read(cx).current_organization()` with `None` (cloud org removed)
+- **`crates/edit_prediction/src/xeta.rs`**: Replaced 3x `self.user_store` references with `None` for organization_id and removed usage tracking
+- **`crates/xenomorphic/src/main.rs`**: Removed extra `user_store` argument from `edit_prediction_registry::init()` call
 
-### Phase 7: Cloud LLM proxy ✅
-- Deleted: cloud_api_client, cloud_api_types, cloud_llm_client, language_models_cloud (4 crates, ~2367 lines)
-- Stripped client crate: removed CloudApiClient, cloud_client field, llm_token module, LLM token methods
-- Rewrote user.rs: removed contacts/social/cloud-user-fetch, kept local org/plan infrastructure
-- Added cloud_types.rs module: local stubs for Plan, OrganizationId, LlmApiToken, EditPredictionRejectReason, predict_edits_v3 types, RefreshLlmTokenListener
-- Fixed all downstream crates: edit_prediction, extension, extension_host, extensions_ui, title_bar, sidebar, workspace, agent_ui
-- Removed channel.proto, stripped cloud messages from proto
-- Stubbed cloud_client() calls in agent_ui (submit_agent_feedback → no-op)
-
-## Remaining Phases
-
-### Phase 8: Strip client crate (partially done)
-- UserStore still has some cloud code (update_authenticated_user)
-- WebSocket connection code still present
-- sign_in_with_optional_connect still has cloud connection logic
-- xenomorphic_urls.rs still exists
-
-### Phase 9: Proto/RPC cleanup
-- Remove cloud-specific message types from proto
-- Remove collab message handlers
-
-### Phase 10: Feature flags cleanup ✅ (mostly done)
-- Cloud-fetching already removed in earlier phase
-
-### Phase 11: Settings UI cleanup ✅ (partially done)
-- Audio device pages removed
-
-### Phase 12: Recent Projects cleanup
-- Remove dev_container dependency
-- Remove cloud SSH relay connections
-
-## Summary
-- **20 crates deleted** (~68,633 lines removed from deleted crates)
-- **4 cloud infrastructure crates deleted** in Phase 7 (~2,367 lines)
-- **Build compiles successfully** with only warnings
-- Total lines removed from codebase: ~70,000+
-
-## Key Architectural Decisions
-1. **cloud_types.rs**: Preserved cloud type stubs locally in the client crate so downstream code compiles without the cloud crates. Types like Plan, OrganizationId, LlmApiToken are kept as local definitions.
-2. **RefreshLlmTokenListener**: Kept as a no-op stub for API compatibility - many callers do `RefreshLlmTokenListener::register(client, user_store, cx)` 
-3. **Edit prediction types**: predict_edits_v3 types (RawCompletionRequest, etc.) moved to cloud_types.rs as stubs. Direct-to-provider edit prediction still works; cloud-hosted prediction paths return errors or are no-ops.
-4. **UserStore**: Stripped to local-only functionality. Cloud user fetch removed (was via cloud_client().get_authenticated_user()). Contacts, social features removed. Organization/plan info still available via update_authenticated_user() for local/test use.
+### Build status: ✅ PASSING (0 errors, warnings only)

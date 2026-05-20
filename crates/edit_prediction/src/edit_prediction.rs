@@ -1,5 +1,5 @@
 use anyhow::Result;
-use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, UserStore, global_llm_token,
+use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, global_llm_token,
     predict_edits_v3::{RawCompletionRequest, RawCompletionResponse, PredictEditsRequestTrigger},
     PREDICT_EDITS_MODE_HEADER_NAME, PredictEditsMode,
     PredictEditsV3Request, PredictEditsV3Response,
@@ -141,7 +141,6 @@ pub struct Xeta2RawConfig {
 
 pub struct EditPredictionStore {
     client: Arc<Client>,
-    user_store: Entity<UserStore>,
     llm_token: LlmApiToken,
     _fetch_experiments_task: Task<()>,
     projects: HashMap<EntityId, ProjectState>,
@@ -744,19 +743,18 @@ impl EditPredictionStore {
 
     pub fn global(
         client: &Arc<Client>,
-        user_store: &Entity<UserStore>,
         cx: &mut App,
     ) -> Entity<Self> {
         cx.try_global::<EditPredictionStoreGlobal>()
             .map(|global| global.0.clone())
             .unwrap_or_else(|| {
-                let ep_store = cx.new(|cx| Self::new(client.clone(), user_store.clone(), cx));
+                let ep_store = cx.new(|cx| Self::new(client.clone(), cx));
                 cx.set_global(EditPredictionStoreGlobal(ep_store.clone()));
                 ep_store
             })
     }
 
-    pub fn new(client: Arc<Client>, user_store: Entity<UserStore>, cx: &mut Context<Self>) -> Self {
+    pub fn new(client: Arc<Client>, cx: &mut Context<Self>) -> Self {
         let llm_token = global_llm_token(cx);
         let legacy_data_collection_enabled = Self::load_legacy_data_collection_enabled(cx);
 
@@ -785,12 +783,8 @@ impl EditPredictionStore {
         })
         .detach();
 
-        let mut current_user = user_store.read(cx).watch_current_user();
         let fetch_experiments_task = cx.spawn(async move |this, cx| {
-            while current_user.borrow().is_none() {
-                current_user.next().await;
-            }
-
+            // Cloud user check removed; refresh experiments immediately if staff
             this.update(cx, |this, cx| {
                 if cx.is_staff() {
                     this.refresh_available_experiments(cx);
@@ -804,7 +798,6 @@ impl EditPredictionStore {
         let this = Self {
             projects: HashMap::default(),
             client,
-            user_store,
             llm_token,
             _fetch_experiments_task: fetch_experiments_task,
             update_required: false,
@@ -877,11 +870,7 @@ impl EditPredictionStore {
         let client = self.client.clone();
         let llm_token = self.llm_token.clone();
         let app_version = AppVersion::global(cx);
-        let organization_id = self
-            .user_store
-            .read(cx)
-            .current_organization()
-            .map(|organization| organization.id.clone());
+        let organization_id: Option<OrganizationId> = None; // Cloud organization removed
 
         cx.spawn(async move |this, cx| {
             let experiments = cx
@@ -1057,12 +1046,9 @@ impl EditPredictionStore {
             .unwrap_or_default()
     }
 
-    pub fn usage(&self, cx: &App) -> Option<EditPredictionUsage> {
-        if matches!(self.edit_prediction_model, EditPredictionModel::Xeta) {
-            self.user_store.read(cx).edit_prediction_usage()
-        } else {
-            None
-        }
+    pub fn usage(&self, _cx: &App) -> Option<EditPredictionUsage> {
+        // Cloud usage tracking removed; no usage limits
+        None
     }
 
     pub fn register_project(&mut self, project: &Entity<Project>, cx: &mut Context<Self>) {
@@ -1852,11 +1838,7 @@ impl EditPredictionStore {
                 );
 
                 if is_cloud {
-                    let organization_id = self
-                        .user_store
-                        .read(cx)
-                        .current_organization()
-                        .map(|organization| organization.id.clone());
+                    let organization_id: Option<OrganizationId> = None; // Cloud organization removed
 
                     self.reject_predictions_tx
                         .unbounded_send(EditPredictionRejectionPayload {
@@ -2798,15 +2780,9 @@ impl EditPredictionStore {
             == Some("true")
     }
 
-    pub(crate) fn is_data_collection_allowed_by_organization(&self, cx: &App) -> bool {
-        self.user_store
-            .read(cx)
-            .current_organization_configuration()
-            .is_none_or(|organization_configuration| {
-                organization_configuration
-                    .edit_prediction
-                    .is_feedback_enabled
-            })
+    pub(crate) fn is_data_collection_allowed_by_organization(&self, _cx: &App) -> bool {
+        // Cloud organization check removed; data collection is always allowed locally
+        true
     }
 
     pub fn shown_predictions(&self) -> impl DoubleEndedIterator<Item = &EditPrediction> {
@@ -2828,7 +2804,7 @@ impl EditPredictionStore {
         feedback: String,
         cx: &mut Context<Self>,
     ) {
-        let organization = self.user_store.read(cx).current_organization();
+        let organization: Option<client::Organization> = None; // Cloud organization check removed
 
         self.rated_predictions.insert(prediction.id.clone());
 
@@ -3013,7 +2989,6 @@ pub fn init(cx: &mut App) {
             move |workspace, _: &xenomorphic_actions::OpenZedPredictOnboarding, window, cx| {
                 XenomorphicPredictModal::toggle(
                     workspace,
-                    workspace.user_store().clone(),
                     workspace.client().clone(),
                     window,
                     cx,

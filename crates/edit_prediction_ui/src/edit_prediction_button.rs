@@ -1,5 +1,5 @@
 use anyhow::Result;
-use client::{Client, UserStore, xenomorphic_urls};
+use client::{Client, UserStore};
 use client::UsageLimit;
 use codestral::{self, CodestralEditPredictionDelegate};
 use copilot::Status;
@@ -1130,7 +1130,7 @@ impl EditPredictionButton {
                     .link_with_handler(
                         "Learn More",
                         OpenBrowser {
-                            url: xenomorphic_urls::edit_prediction_docs(cx),
+                            url: "https://xenomorphic.dev/docs/ai/edit-prediction".to_string(),
                         }
                         .boxed_clone(),
                         |_window, _cx| {
@@ -1197,16 +1197,15 @@ impl EditPredictionButton {
                                     )
                                     .into_any_element()
                             },
-                            move |_, cx| cx.open_url(&xenomorphic_urls::account_url(cx)),
+                            move |_, _cx| {}
                         )
                         .when(usage.over_limit(), |menu| -> ContextMenu {
-                            menu.entry("Subscribe to increase your limit", None, |_window, cx| {
+                            menu.entry("Usage limit reached", None, |_window, _cx| {
                                 telemetry::event!(
                                     "Edit Prediction Menu Action",
                                     action = "upsell_clicked",
                                     reason = "usage_limit",
                                 );
-                                cx.open_url(&xenomorphic_urls::account_url(cx))
                             })
                         })
                         .separator();
@@ -1219,15 +1218,14 @@ impl EditPredictionButton {
                                     .color(Color::Warning)
                                     .into_any_element()
                             },
-                            |_window, cx| cx.open_url(&xenomorphic_urls::account_url(cx)),
+                            |_window, _cx| {},
                         )
-                        .entry("Upgrade to Xenomorphic Pro or contact us.", None, |_window, cx| {
+                        .entry("Upgrade to Xenomorphic Pro or contact us.", None, |_window, _cx| {
                             telemetry::event!(
                                 "Edit Prediction Menu Action",
                                 action = "upsell_clicked",
                                 reason = "account_age",
                             );
-                            cx.open_url(&xenomorphic_urls::account_url(cx))
                         })
                         .separator();
                 } else if self.user_store.read(cx).has_overdue_invoices() {
@@ -1239,16 +1237,12 @@ impl EditPredictionButton {
                                     .color(Color::Warning)
                                     .into_any_element()
                             },
-                            |_window, cx| {
-                                cx.open_url(&xenomorphic_urls::account_url(cx))
-                            },
+                            |_window, _cx| {},
                         )
                         .entry(
                             "Check your payment status or contact us at billing-support@zed.dev to continue using this feature.",
                             None,
-                            |_window, cx| {
-                                cx.open_url(&xenomorphic_urls::account_url(cx))
-                            },
+                            |_window, _cx| {},
                         )
                         .separator();
                 }
