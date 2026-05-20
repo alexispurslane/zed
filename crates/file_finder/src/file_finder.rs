@@ -9,7 +9,7 @@ pub use open_path_prompt::OpenPathDelegate;
 use collections::HashMap;
 use editor::Editor;
 use file_icons::FileIcons;
-use fuzzy;
+// fuzzy module kept for potential future use
 use fuzzy_nucleo::{PathMatch, PathMatchCandidate};
 use gpui::{
     Action, AnyElement, App, Context, DismissEvent, Entity, EventEmitter, FocusHandle, Focusable,

@@ -4,7 +4,7 @@ use ::settings::{Settings, SettingsStore};
 use client::Client;
 use collections::HashSet;
 use credentials_provider::CredentialsProvider;
-use gpui::{App, Context, Entity};
+use gpui::{App, Context};
 use language_model::{
     ConfiguredModel, LanguageModelProviderId, LanguageModelRegistry,
 };

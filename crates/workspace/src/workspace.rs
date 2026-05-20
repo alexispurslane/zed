@@ -3215,7 +3215,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<Result<bool>> {
-        let active_call = self.active_global_call();
+        let _active_call = self.active_global_call();
 
         cx.spawn_in(window, async move |this, cx| {
             this.update(cx, |this, _| {
@@ -3224,7 +3224,7 @@ impl Workspace {
                 }
             })?;
 
-            let workspace_count = cx.update(|_window, cx| {
+            let _workspace_count = cx.update(|_window, cx| {
                 cx.windows()
                     .iter()
                     .filter(|window| window.downcast::<MultiWorkspace>().is_some())
