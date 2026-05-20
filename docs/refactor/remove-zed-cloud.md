@@ -493,3 +493,34 @@ That's ~7.1% of the 1,259,791-line codebase. The collab server alone is 43,606 l
 6. **`opencode` provider routes through a third-party cloud** — not Zed Cloud, but still a proxy. Mitigation: keep for now (users bring their own API keys), document as a known cloud dependency.
 
 7. **Test suites will need updates** — many tests set up `UserStore`, `Client`, etc. Mitigation: update test fixtures as we go, running `cargo test` after each step.
+
+---
+
+## Progress Tracker (Updated During Execution)
+
+### ✅ Completed Phases
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| Phase 1: Trivial removals | ✅ Done | Deleted `journal`, `feedback`, `nc` |
+| Phase 2: Onboarding | ✅ Done | Deleted `ai_onboarding`, `language_onboarding`; trimmed `onboarding` crate; cleaned `agent_ui` |
+| Phase 3: Auto-update | ✅ Done | Deleted `auto_update`, `auto_update_helper`, `auto_update_ui` |
+| Phase 4: Call/Audio/LiveKit | ✅ Done | Deleted `denoise`, `audio`, `livekit_api`, `livekit_client`, `call`, `channel` |
+| Phase 5: Collab UI | ✅ Done | Deleted `collab_ui` |
+| Phase 6: Collab server | ✅ Done | Deleted `collab` |
+| Phase 7: Cloud LLM proxy | ✅ Done | Deleted `cloud_api_client`, `cloud_api_types`, `cloud_llm_client`, `language_models_cloud`; deleted `provider/cloud.rs` |
+| Phase 9: Proto/RPC cleanup | ✅ Partially | Deleted `channel.proto`, stripped `call.proto`, removed ~50 cloud oneof entries |
+| Phase 10: Feature flags | ✅ Done | Removed cloud-fetching mechanism, kept local flags |
+| Phase 11: Settings UI | ✅ Done | Removed audio pages, collab panel, feature flags page |
+| Phase 12: Recent Projects | ✅ Partially | Deleted `dev_container_suggest.rs`, kept `remote_servers.rs` |
+
+**Total: 19 crates deleted, build passes with only warnings**
+
+### 🔄 Remaining Work
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Phase 8: Strip `client` crate | 🔄 In Progress | `cloud_types.rs` stub exists (468 lines) with local type definitions. UserStore, xenomorphic_urls, Subscription, cloud auth still present but much simplified. |
+| UserStore/Plan references | 🔄 ~15 files | Still importing `client::UserStore` — needs incremental removal |
+| xenomorphic_urls references | 🔄 ~6 files | Still referenced in agent_ui, title_bar, client, edit_prediction_ui |
+| Proto/RPC deeper cleanup | 🔄 Deferred | Depends on Phase 8 completion; cloud oneof entries commented out but some temporarily kept |
