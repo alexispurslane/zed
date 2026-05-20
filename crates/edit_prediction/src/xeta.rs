@@ -6,9 +6,7 @@ use crate::{
     prediction::EditPredictionResult,
 };
 use anyhow::Result;
-use cloud_llm_client::{
-    AcceptEditPredictionBody, EditPredictionRejectReason, predict_edits_v3::RawCompletionRequest,
-};
+use client::{EditPredictionRejectReason, AcceptEditPredictionBody, predict_edits_v3::RawCompletionRequest};
 use edit_prediction_types::PredictedCursorPosition;
 use gpui::{App, AppContext as _, Entity, Task, TaskExt, WeakEntity, prelude::*};
 use language::{
@@ -251,6 +249,7 @@ pub fn request_prediction_with_zeta(
                             .collect(),
                         max_tokens: Some(2048),
                         environment,
+                        ..Default::default()
                     };
 
                     let (mut response, usage) = EditPredictionStore::send_raw_llm_request(
@@ -291,12 +290,12 @@ pub fn request_prediction_with_zeta(
                     )
                     .await?;
 
-                    let request_id = EditPredictionId(response.request_id.into());
+                    let request_id = EditPredictionId(response.raw_completion.request_id.into());
                     let model_version = response.model_version;
                     let parsed_output = ParsedOutput {
-                        new_editable_region: response.output,
-                        range_in_excerpt: response.editable_range,
-                        cursor_offset_in_new_editable_region: response.cursor_offset,
+                        new_editable_region: response.raw_completion.output,
+                        range_in_excerpt: response.raw_completion.editable_range.unwrap_or_default(),
+                        cursor_offset_in_new_editable_region: response.raw_completion.cursor_offset,
                     };
 
                     Some((request_id, Some(parsed_output), model_version, usage))

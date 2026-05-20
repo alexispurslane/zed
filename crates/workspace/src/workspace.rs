@@ -43,7 +43,7 @@ pub use toast_layer::{ToastAction, ToastLayer, ToastView};
 
 use anyhow::{Context as _, Result, anyhow};
 use client::{
-    ChannelId, Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User, UserStore,
+    Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User, UserStore,
     proto::{self, ErrorCode, PanelId, PeerId},
 };
 use collections::{HashMap, HashSet, hash_map};
@@ -7942,6 +7942,11 @@ impl Workspace {
         }
     }
 }
+
+/// Channel ID type, previously from the `channel` crate.
+/// TODO: Remove when AnyActiveCall is removed (Phase 8 follow-up).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ChannelId(pub u64);
 
 pub trait AnyActiveCall {
     fn entity(&self) -> AnyEntity;

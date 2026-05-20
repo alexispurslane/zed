@@ -4,7 +4,7 @@ use crate::{
     prediction::EditPredictionResult, xeta::compute_edits,
 };
 use anyhow::{Context as _, Result};
-use cloud_llm_client::EditPredictionRejectReason;
+use client::EditPredictionRejectReason;
 use credentials_provider::CredentialsProvider;
 use futures::AsyncReadExt as _;
 use gpui::{

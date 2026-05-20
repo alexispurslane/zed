@@ -7,7 +7,7 @@ mod tool_picker;
 use std::sync::Arc;
 
 use agent::ContextServerRegistry;
-use cloud_api_types::Plan;
+use client::Plan;
 use collections::HashMap;
 use context_server::ContextServerId;
 use extension::ExtensionManifest;

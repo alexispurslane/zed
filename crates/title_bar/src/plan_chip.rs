@@ -1,4 +1,4 @@
-use cloud_api_types::Plan;
+use client::Plan;
 use ui::{Chip, prelude::*};
 
 /// A [`Chip`] that displays a [`Plan`].

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use client::{Client, UserStore, xenomorphic_urls};
-use cloud_llm_client::UsageLimit;
+use client::UsageLimit;
 use codestral::{self, CodestralEditPredictionDelegate};
 use copilot::Status;
 use edit_prediction::EditPredictionStore;

@@ -1,16 +1,13 @@
 use anyhow::Result;
-use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, UserStore, global_llm_token};
-use cloud_api_client::LlmApiToken;
-use cloud_api_types::{OrganizationId, SubmitEditPredictionFeedbackBody};
-use cloud_llm_client::predict_edits_v3::{
-    PREDICT_EDITS_MODE_HEADER_NAME, PredictEditsMode, PredictEditsV3Request,
-    PredictEditsV3Response, RawCompletionRequest, RawCompletionResponse,
-};
-use cloud_llm_client::{
+use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, UserStore, global_llm_token,
+    predict_edits_v3::{RawCompletionRequest, RawCompletionResponse, PredictEditsRequestTrigger},
+    PREDICT_EDITS_MODE_HEADER_NAME, PredictEditsMode,
+    PredictEditsV3Request, PredictEditsV3Response,
     EditPredictionRejectReason, EditPredictionRejection,
     MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
-    PREFERRED_EXPERIMENT_HEADER_NAME, PredictEditsRequestTrigger, RejectEditPredictionsBodyRef,
-    XENOMORPHIC_VERSION_HEADER_NAME,
+    PREFERRED_EXPERIMENT_HEADER_NAME, RejectEditPredictionsBody,
+    XENOMORPHIC_VERSION_HEADER_NAME, LlmApiToken, OrganizationId, SubmitEditPredictionFeedbackBody,
+    AcceptEditPredictionBody,
 };
 use collections::{HashMap, HashSet};
 use copilot::{Copilot, Reinstall, SignIn, SignOut};
@@ -25,10 +22,11 @@ use futures::{
 };
 use gpui::BackgroundExecutor;
 use gpui::TaskExt;
-use gpui::http_client::Url;
+use http_client::Url;
+use http_client::{AsyncBody, Method};
 use gpui::{
     App, AsyncApp, Entity, EntityId, Global, SharedString, Task, WeakEntity, actions,
-    http_client::{self, AsyncBody, Method},
+
     prelude::*,
 };
 use heapless::Vec as ArrayVec;
@@ -1564,8 +1562,9 @@ impl EditPredictionStore {
                 .min(MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST);
             let start = batched.len() - flush_count;
 
-            let body = RejectEditPredictionsBodyRef {
-                rejections: &batched[start..],
+            let body = RejectEditPredictionsBody {
+                rejections: batched[start..].to_vec(),
+                installation_id: None,
             };
 
             let result = Self::send_api_request::<()>(
@@ -1862,11 +1861,12 @@ impl EditPredictionStore {
                     self.reject_predictions_tx
                         .unbounded_send(EditPredictionRejectionPayload {
                             rejection: EditPredictionRejection {
-                                request_id: prediction_id.to_string(),
-                                reason,
+                                id: String::new(),
+                                request_id: Some(prediction_id.to_string()),
+                                reason: Some(reason),
                                 was_shown,
                                 model_version,
-                                e2e_latency_ms: e2e_latency.map(|latency| latency.as_millis()),
+                                e2e_latency_ms: e2e_latency.map(|latency| latency.as_millis() as u64),
                             },
                             organization_id,
                         })
@@ -2600,7 +2600,7 @@ impl EditPredictionStore {
             .http_client()
             .build_zed_llm_url("/predict_edits/v3", &[])?;
 
-        let request = PredictEditsV3Request { input, trigger };
+        let request = PredictEditsV3Request { input: serde_json::to_value(&input).unwrap_or_default(), trigger, ..Default::default() };
 
         let json_bytes = serde_json::to_vec(&request)?;
         let compressed = zstd::encode_all(&json_bytes[..], 3)?;
@@ -2832,33 +2832,8 @@ impl EditPredictionStore {
 
         self.rated_predictions.insert(prediction.id.clone());
 
-        cx.background_spawn({
-            let client = self.client.clone();
-            let prediction_id = prediction.id.to_string();
-            let inputs = serde_json::to_value(&prediction.inputs);
-            let output = prediction
-                .edit_preview
-                .as_unified_diff(prediction.snapshot.file(), &prediction.edits);
-            async move {
-                client
-                    .cloud_client()
-                    .submit_edit_prediction_feedback(SubmitEditPredictionFeedbackBody {
-                        organization_id: organization.map(|organization| organization.id.clone()),
-                        request_id: prediction_id,
-                        rating: match rating {
-                            EditPredictionRating::Positive => "positive".to_string(),
-                            EditPredictionRating::Negative => "negative".to_string(),
-                        },
-                        inputs: inputs?,
-                        output,
-                        feedback,
-                    })
-                    .await?;
-
-                anyhow::Ok(())
-            }
-        })
-        .detach_and_log_err(cx);
+        // Cloud edit prediction feedback submission removed
+        // Rating is no longer sent to a cloud server
 
         cx.notify();
     }

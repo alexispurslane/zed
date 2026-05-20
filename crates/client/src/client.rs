@@ -1,7 +1,7 @@
 #[cfg(any(test, feature = "test-support"))]
 pub mod test;
 
-mod llm_token;
+pub mod cloud_types;
 mod proxy;
 pub mod telemetry;
 pub mod user;
@@ -14,10 +14,7 @@ use async_tungstenite::tungstenite::{
     http::{HeaderValue, Request, StatusCode},
 };
 use clock::SystemClock;
-use cloud_api_client::LlmApiToken;
-use cloud_api_client::websocket_protocol::MessageToClient;
-use cloud_api_client::{ClientApiError, CloudApiClient};
-use cloud_api_types::OrganizationId;
+// LlmApiToken, MessageToClient, OrganizationId are re-exported via pub use below
 use credentials_provider::CredentialsProvider;
 use feature_flags::FeatureFlagAppExt as _;
 use futures::{
@@ -55,7 +52,26 @@ use tokio::net::TcpStream;
 use url::Url;
 use util::{ConnectionResult, ResultExt};
 
-pub use llm_token::*;
+// Explicitly re-export cloud_types items needed by other crates.
+// Note: glob re-export `pub use cloud_types::*` alone doesn't reliably make items
+// visible to external crates, so we list the key types explicitly.
+pub use cloud_types::{
+    AcceptEditPredictionBody, CurrentUsage, EditPredictionRejection,
+    EditPredictionRejectReason, KnownOrUnknown,
+    LlmApiToken, MessageToClient,
+    NeedsLlmTokenRefresh, Organization, OrganizationConfiguration,
+    OrganizationEditPredictionConfiguration, OrganizationId, Plan, PlanInfo,
+    PREDICT_EDITS_MODE_HEADER_NAME, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
+    PREFERRED_EXPERIMENT_HEADER_NAME, XENOMORPHIC_VERSION_HEADER_NAME,
+    PredictEditsMode, PredictEditsV3Request, PredictEditsV3Response,
+    RejectEditPredictionsBody,
+    EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
+    EXPIRED_LLM_TOKEN_HEADER_NAME, OUTDATED_LLM_TOKEN_HEADER_NAME,
+    SubmitEditPredictionFeedbackBody, SubscriptionPeriod,
+    UsageData, UsageLimit,
+    global_llm_token, predict_edits_v3,
+    MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST,
+};
 pub use rpc::*;
 pub use telemetry_events::Event;
 pub use user::*;
@@ -198,7 +214,6 @@ pub fn init(client: &Arc<Client>, cx: &mut App) {
     });
 }
 
-pub type MessageToClientHandler = Box<dyn Fn(&MessageToClient, &mut App) + Send + Sync + 'static>;
 
 struct GlobalClient(Arc<Client>);
 
@@ -208,12 +223,10 @@ pub struct Client {
     id: AtomicU64,
     peer: Arc<Peer>,
     http: Arc<HttpClientWithUrl>,
-    cloud_client: Arc<CloudApiClient>,
     telemetry: Arc<Telemetry>,
     credentials_provider: ClientCredentialsProvider,
     state: RwLock<ClientState>,
     handler_set: Mutex<ProtoMessageHandlerSet>,
-    message_to_client_handlers: Mutex<Vec<MessageToClientHandler>>,
     sign_out_tx: Mutex<Option<mpsc::UnboundedSender<()>>>,
 
     #[allow(clippy::type_complexity)]
@@ -555,12 +568,10 @@ impl Client {
             id: AtomicU64::new(0),
             peer: Peer::new(0),
             telemetry: Telemetry::new(clock, http.clone(), cx),
-            cloud_client: Arc::new(CloudApiClient::new(http.clone())),
             http,
             credentials_provider: ClientCredentialsProvider::new(cx),
             state: Default::default(),
             handler_set: Default::default(),
-            message_to_client_handlers: Mutex::new(Vec::new()),
             sign_out_tx: Mutex::new(None),
 
             #[cfg(any(test, feature = "test-support"))]
@@ -592,10 +603,6 @@ impl Client {
 
     pub fn credentials_provider(&self) -> Arc<dyn CredentialsProvider> {
         self.credentials_provider.provider.clone()
-    }
-
-    pub fn cloud_client(&self) -> Arc<CloudApiClient> {
-        self.cloud_client.clone()
     }
 
     pub fn set_id(&self, id: u64) -> &Self {
@@ -924,8 +931,6 @@ impl Client {
 
         let credentials = credentials.unwrap();
         self.set_id(credentials.user_id);
-        self.cloud_client
-            .set_credentials(credentials.user_id as u32, credentials.access_token.clone());
         self.state.write().credentials = Some(credentials.clone());
         self.set_status(
             if is_reauthenticating {
@@ -941,51 +946,17 @@ impl Client {
 
     async fn validate_credentials(
         self: &Arc<Self>,
-        credentials: &Credentials,
-        cx: &AsyncApp,
+        _credentials: &Credentials,
+        _cx: &AsyncApp,
     ) -> Result<bool> {
-        match self
-            .cloud_client
-            .validate_credentials(credentials.user_id as u32, &credentials.access_token)
-            .await
-        {
-            Ok(valid) => Ok(valid),
-            Err(err) => {
-                self.set_status(Status::AuthenticationError, cx);
-                Err(anyhow!("failed to validate credentials: {}", err))
-            }
-        }
-    }
-
-    /// Establishes a WebSocket connection with Cloud for receiving updates from the server.
-    async fn connect_to_cloud(self: &Arc<Self>, cx: &AsyncApp) -> Result<()> {
-        let connect_task = cx.update({
-            let cloud_client = self.cloud_client.clone();
-            move |cx| cloud_client.connect(cx)
-        })?;
-        let connection = connect_task.await?;
-
-        let (mut messages, task) = cx.update(|cx| connection.spawn(cx));
-        task.detach();
-
-        cx.spawn({
-            let this = self.clone();
-            async move |cx| {
-                while let Some(message) = messages.next().await {
-                    if let Some(message) = message.log_err() {
-                        this.handle_message_to_client(message, cx);
-                    }
-                }
-            }
-        })
-        .detach();
-
-        Ok(())
+        // Cloud credential validation removed; assume valid locally
+        Ok(true)
     }
 
     /// Performs a sign-in and also (optionally) connects to Collab.
     ///
     /// Only Xenomorphic staff automatically connect to Collab.
+    /// Note: Cloud connection removed - this now just signs in.
     pub async fn sign_in_with_optional_connect(
         self: &Arc<Self>,
         try_provider: bool,
@@ -1005,8 +976,6 @@ impl Client {
         });
 
         let credentials = self.sign_in(try_provider, cx).await?;
-
-        self.connect_to_cloud(cx).await.log_err();
 
         cx.update(move |cx| {
             cx.spawn({
@@ -1536,69 +1505,8 @@ impl Client {
         })
     }
 
-    pub async fn acquire_llm_token(
-        &self,
-        llm_token: &LlmApiToken,
-        organization_id: Option<OrganizationId>,
-    ) -> Result<String> {
-        let system_id = self.telemetry().system_id().map(|x| x.to_string());
-        let cloud_client = self.cloud_client();
-        match llm_token
-            .acquire(&cloud_client, system_id, organization_id)
-            .await
-        {
-            Ok(token) => Ok(token),
-            Err(ClientApiError::Unauthorized) => {
-                self.request_sign_out();
-                Err(ClientApiError::Unauthorized).context("Failed to create LLM token")
-            }
-            Err(err) => Err(anyhow::Error::from(err)),
-        }
-    }
-
-    pub async fn refresh_llm_token(
-        &self,
-        llm_token: &LlmApiToken,
-        organization_id: Option<OrganizationId>,
-    ) -> Result<String> {
-        let system_id = self.telemetry().system_id().map(|x| x.to_string());
-        let cloud_client = self.cloud_client();
-        match llm_token
-            .refresh(&cloud_client, system_id, organization_id)
-            .await
-        {
-            Ok(token) => Ok(token),
-            Err(ClientApiError::Unauthorized) => {
-                self.request_sign_out();
-                return Err(ClientApiError::Unauthorized).context("Failed to create LLM token");
-            }
-            Err(err) => return Err(anyhow::Error::from(err)),
-        }
-    }
-
-    pub async fn clear_and_refresh_llm_token(
-        &self,
-        llm_token: &LlmApiToken,
-        organization_id: Option<OrganizationId>,
-    ) -> Result<String> {
-        let system_id = self.telemetry().system_id().map(|x| x.to_string());
-        let cloud_client = self.cloud_client();
-        match llm_token
-            .clear_and_refresh(&cloud_client, system_id, organization_id)
-            .await
-        {
-            Ok(token) => Ok(token),
-            Err(ClientApiError::Unauthorized) => {
-                self.request_sign_out();
-                return Err(ClientApiError::Unauthorized).context("Failed to create LLM token");
-            }
-            Err(err) => return Err(anyhow::Error::from(err)),
-        }
-    }
-
     pub async fn sign_out(self: &Arc<Self>, cx: &AsyncApp) {
         self.state.write().credentials = None;
-        self.cloud_client.clear_credentials();
         self.disconnect(cx);
 
         if self.has_credentials(cx).await {
@@ -1756,25 +1664,28 @@ impl Client {
         }
     }
 
-    pub fn add_message_to_client_handler(
-        self: &Arc<Client>,
-        handler: impl Fn(&MessageToClient, &mut App) + Send + Sync + 'static,
-    ) {
-        self.message_to_client_handlers
-            .lock()
-            .push(Box::new(handler));
-    }
-
-    fn handle_message_to_client(self: &Arc<Client>, message: MessageToClient, cx: &AsyncApp) {
-        cx.update(|cx| {
-            for handler in self.message_to_client_handlers.lock().iter() {
-                handler(&message, cx);
-            }
-        });
-    }
-
     pub fn telemetry(&self) -> &Arc<Telemetry> {
         &self.telemetry
+    }
+
+    /// Stub: cloud LLM token acquisition no longer available.
+    /// Always returns a default token for compatibility.
+    pub async fn acquire_llm_token(
+        &self,
+        _token: &LlmApiToken,
+        _organization_id: Option<OrganizationId>,
+    ) -> Result<String> {
+        Ok(String::new())
+    }
+
+    /// Stub: cloud LLM token refresh no longer available.
+    /// Always returns a default token for compatibility.
+    pub async fn refresh_llm_token(
+        &self,
+        _token: &LlmApiToken,
+        _organization_id: Option<OrganizationId>,
+    ) -> Result<String> {
+        Ok(String::new())
     }
 }
 

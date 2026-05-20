@@ -10,7 +10,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use async_compression::futures::bufread::GzipDecoder;
 use async_tar::Archive;
 use client::{Client, proto, telemetry::Telemetry};
-use cloud_api_types::{ExtensionMetadata, ExtensionProvides, GetExtensionsResponse};
+use extension::{ExtensionMetadata, ExtensionProvides, GetExtensionsResponse};
 use collections::{BTreeMap, BTreeSet, HashSet, btree_map};
 pub use extension::ExtensionManifest;
 use extension::extension_builder::{CompileExtensionOptions, ExtensionBuilder};
@@ -89,7 +89,7 @@ pub fn is_version_compatible(
     release_channel: ReleaseChannel,
     extension_version: &ExtensionMetadata,
 ) -> bool {
-    let schema_version = extension_version.manifest.schema_version.unwrap_or(0);
+    let schema_version = extension_version.manifest.schema_version.0;
     if CURRENT_SCHEMA_VERSION.0 < schema_version {
         return false;
     }

@@ -20,7 +20,7 @@ use agent_ui::AgentPanel;
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use cli::FORCE_CLI_MODE_ENV_VAR_NAME;
-use client::{Client, ProxySettings, RefreshLlmTokenListener, UserStore, parse_zed_link};
+use client::{Client, ProxySettings, UserStore, parse_zed_link};
 use collections::HashMap;
 use crashes::InitCrashHandler;
 use db::kvp::{GlobalKeyValueStore, KeyValueStore};
@@ -676,11 +676,7 @@ fn main() {
 
         copilot_ui::init(&app_state, cx);
         language_model::init(cx);
-        RefreshLlmTokenListener::register(
-            app_state.client.clone(),
-            app_state.user_store.clone(),
-            cx,
-        );
+        // RefreshLlmTokenListener removed: cloud LLM token refresh no longer available
         language_models::init(app_state.client.clone(), cx);
         xenomorphic_app::telemetry_log::init(cx);
         xenomorphic_app::remote_debug::init(cx);

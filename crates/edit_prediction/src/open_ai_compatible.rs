@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use cloud_llm_client::predict_edits_v3::{RawCompletionRequest, RawCompletionResponse};
+use client::predict_edits_v3::{RawCompletionRequest, RawCompletionResponse};
 use futures::AsyncReadExt as _;
 use gpui::{App, AppContext as _, Entity, Global, SharedString, Task, http_client};
 use language::language_settings::{OpenAiCompatibleEditPredictionSettings, all_language_settings};
@@ -92,6 +92,7 @@ pub(crate) async fn send_custom_server_request(
                     .map(std::borrow::Cow::Owned)
                     .collect(),
                 environment: None,
+                ..Default::default()
             };
 
             let request_body = serde_json::to_string(&request)?;

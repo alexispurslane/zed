@@ -2,7 +2,7 @@ mod capabilities;
 pub mod extension_builder;
 mod extension_events;
 mod extension_host_proxy;
-mod extension_manifest;
+pub mod extension_manifest;
 mod types;
 
 use std::path::{Path, PathBuf};

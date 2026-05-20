@@ -6,7 +6,7 @@ use agent_thread::schema;
 use std::cell::RefCell;
 
 use agent_thread::{ContentBlock, PlanEntry};
-use cloud_api_types::{SubmitAgentThreadFeedbackBody, SubmitAgentThreadFeedbackCommentsBody};
+// Cloud feedback types removed - submit_agent_feedback and submit_agent_feedback_comments are no-ops
 use editor::actions::OpenExcerpts;
 
 use crate::message_editor::SharedSessionCapabilities;
@@ -66,20 +66,8 @@ impl ThreadFeedbackState {
             ThreadFeedback::Negative => "negative",
         };
         cx.background_spawn(async move {
-            let thread = task.await?;
-
-            client
-                .cloud_client()
-                .submit_agent_feedback(SubmitAgentThreadFeedbackBody {
-                    organization_id: organization.map(|organization| organization.id.clone()),
-                    agent: agent_telemetry_id.to_string(),
-                    session_id: session_id.to_string(),
-                    parent_session_id: parent_session_id.map(|id| id.to_string()),
-                    rating: rating.to_string(),
-                    thread,
-                })
-                .await?;
-
+            let _thread = task.await?;
+            // Cloud agent feedback submission removed
             anyhow::Ok(())
         })
         .detach_and_log_err(cx);
@@ -101,31 +89,8 @@ impl ThreadFeedbackState {
 
         self.comments_editor.take();
 
-        let project = thread.read(cx).project().read(cx);
-        let client = project.client();
-        let user_store = project.user_store();
-        let organization = user_store.read(cx).current_organization();
-
-        let session_id = thread.read(cx).session_id().clone();
-        let agent_telemetry_id = thread.read(cx).connection().telemetry_id();
-        let task = telemetry.thread_data(&session_id, cx);
-        cx.background_spawn(async move {
-            let thread = task.await?;
-
-            client
-                .cloud_client()
-                .submit_agent_feedback_comments(SubmitAgentThreadFeedbackCommentsBody {
-                    organization_id: organization.map(|organization| organization.id.clone()),
-                    agent: agent_telemetry_id.to_string(),
-                    session_id: session_id.to_string(),
-                    comments,
-                    thread,
-                })
-                .await?;
-
-            anyhow::Ok(())
-        })
-        .detach_and_log_err(cx);
+        // Cloud agent feedback comments submission removed
+        let _ = (telemetry, comments);
     }
 
     pub fn clear(&mut self) {

@@ -18,7 +18,7 @@ use agent_settings::{
 use anyhow::{Context as _, Result, anyhow};
 use chrono::{DateTime, Utc};
 use client::UserStore;
-use cloud_api_types::Plan;
+use client::Plan;
 use collections::{HashMap, HashSet, IndexMap};
 use fs::Fs;
 use futures::{

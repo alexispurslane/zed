@@ -26,7 +26,6 @@ agent_settings.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 client.workspace = true
-cloud_api_types.workspace = true
 collections.workspace = true
 context_server.workspace = true
 db.workspace = true

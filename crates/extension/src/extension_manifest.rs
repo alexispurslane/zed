@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use cloud_api_types::ExtensionProvides;
 use collections::{BTreeMap, BTreeSet, HashMap};
 use fs::Fs;
 use language::LanguageName;
@@ -120,6 +119,8 @@ pub struct ExtensionManifest {
     pub debug_locators: BTreeMap<Arc<str>, DebugLocatorManifestEntry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub language_model_providers: BTreeMap<Arc<str>, LanguageModelProviderManifestEntry>,
+    #[serde(default)]
+    pub wasm_api_version: Option<String>,
 }
 
 impl ExtensionManifest {
@@ -440,6 +441,7 @@ fn manifest_from_old_manifest(
         debug_adapters: Default::default(),
         debug_locators: Default::default(),
         language_model_providers: Default::default(),
+        wasm_api_version: None,
     }
 }
 
@@ -476,6 +478,7 @@ mod tests {
             debug_adapters: Default::default(),
             debug_locators: Default::default(),
             language_model_providers: BTreeMap::default(),
+            wasm_api_version: None,
         }
     }
 
@@ -617,3 +620,92 @@ mod tests {
         assert_eq!(target.args, vec!["--serve"]);
     }
 }
+
+/// Features that an extension can provide.
+/// Previously came from `cloud_api_types`; defined locally now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ExtensionProvides {
+    Themes,
+    IconThemes,
+    Languages,
+    Grammars,
+    LanguageServers,
+    ContextServers,
+    AgentServers,
+    Snippets,
+    DebugAdapters,
+    SlashCommands,
+    IndexedDocsProviders,
+    LanguageModels,
+}
+
+impl ExtensionProvides {
+    pub fn iter() -> &'static [ExtensionProvides] {
+        &[
+            ExtensionProvides::Themes,
+            ExtensionProvides::IconThemes,
+            ExtensionProvides::Languages,
+            ExtensionProvides::Grammars,
+            ExtensionProvides::LanguageServers,
+            ExtensionProvides::ContextServers,
+            ExtensionProvides::AgentServers,
+            ExtensionProvides::Snippets,
+            ExtensionProvides::DebugAdapters,
+            ExtensionProvides::SlashCommands,
+            ExtensionProvides::IndexedDocsProviders,
+            ExtensionProvides::LanguageModels,
+        ]
+    }
+}
+
+impl fmt::Display for ExtensionProvides {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Themes => write!(f, "themes"),
+            Self::IconThemes => write!(f, "icon_themes"),
+            Self::Languages => write!(f, "languages"),
+            Self::Grammars => write!(f, "grammars"),
+            Self::LanguageServers => write!(f, "language_servers"),
+            Self::ContextServers => write!(f, "context_servers"),
+            Self::AgentServers => write!(f, "agent_servers"),
+            Self::Snippets => write!(f, "snippets"),
+            Self::DebugAdapters => write!(f, "debug_adapters"),
+            Self::SlashCommands => write!(f, "slash_commands"),
+            Self::IndexedDocsProviders => write!(f, "indexed_docs_providers"),
+            Self::LanguageModels => write!(f, "language_models"),
+        }
+    }
+}
+
+/// Metadata for an extension from the extension marketplace.
+/// Previously came from `cloud_api_types`; defined locally now.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionMetadata {
+    pub id: Arc<str>,
+    pub name: String,
+    pub version: Arc<str>,
+    pub authors: Vec<String>,
+    pub description: String,
+    pub repository: String,
+    pub download_count: i64,
+    #[serde(default)]
+    
+    pub published_at: Option<String>,
+    pub manifest: ExtensionManifest,
+    #[serde(default)]
+    pub context_servers: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub dev: bool,
+    #[serde(default)]
+    pub toml: Option<String>,
+    #[serde(default)]
+    pub wasm: Option<String>,
+}
+
+/// Response from the extensions API endpoint.
+/// Previously came from `cloud_api_types`; defined locally now.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetExtensionsResponse {
+    pub data: Vec<ExtensionMetadata>,
+}
+

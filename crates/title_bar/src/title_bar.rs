@@ -21,7 +21,7 @@ use crate::application_menu::{
 };
 
 use client::{Client, UserStore, xenomorphic_urls};
-use cloud_api_types::Plan;
+use client::Plan;
 
 use gpui::{
     Action, Anchor, Animation, AnimationExt, AnyElement, App, Context, Element, Entity, Focusable,

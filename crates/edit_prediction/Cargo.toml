@@ -20,9 +20,6 @@ heapless.workspace = true
 buffer_diff.workspace = true
 client.workspace = true
 clock.workspace = true
-cloud_api_client.workspace = true
-cloud_api_types.workspace = true
-cloud_llm_client = { workspace = true, features = ["predict-edits"] }
 collections.workspace = true
 copilot.workspace = true
 copilot_ui.workspace = true
@@ -34,6 +31,7 @@ edit_prediction_metrics.workspace = true
 feature_flags.workspace = true
 fs.workspace = true
 futures.workspace = true
+http_client.workspace = true
 gpui.workspace = true
 indoc.workspace = true
 itertools.workspace = true

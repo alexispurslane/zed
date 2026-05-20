@@ -7,7 +7,7 @@ use std::time::Duration;
 use std::{ops::Range, sync::Arc};
 
 use anyhow::Context as _;
-use cloud_api_types::{ExtensionMetadata, ExtensionProvides};
+use extension::{ExtensionMetadata, ExtensionProvides};
 use collections::{BTreeMap, BTreeSet};
 use editor::{Editor, EditorElement, EditorStyle};
 use extension_host::{ExtensionManifest, ExtensionOperation, ExtensionStore};
@@ -189,6 +189,7 @@ fn extension_provides_label(provides: ExtensionProvides) -> &'static str {
         ExtensionProvides::IndexedDocsProviders => "Indexed Docs Providers",
         ExtensionProvides::Snippets => "Snippets",
         ExtensionProvides::DebugAdapters => "Debug Adapters",
+        ExtensionProvides::LanguageModels => "Language Models",
     }
 }
 
@@ -473,7 +474,7 @@ impl ExtensionsPage {
                     }
                 })
                 .filter(|(_, extension)| match self.provides_filter {
-                    Some(provides) => extension.manifest.provides.contains(&provides),
+                    Some(provides) => extension.manifest.provides().contains(&provides),
                     None => true,
                 })
                 .map(|(ix, _)| ix),
@@ -526,7 +527,7 @@ impl ExtensionsPage {
                     let versions = versions.await?;
                     let latest = versions
                         .into_iter()
-                        .max_by_key(|v| v.published_at)
+                        .max_by_key(|v| v.published_at.clone())
                         .context("no extension found")?;
                     Ok(vec![latest])
                 })
@@ -655,8 +656,7 @@ impl ExtensionsPage {
                                 )
                                 .color(Color::Accent)
                                 .disabled(matches!(status, ExtensionStatus::Upgrading))
-                                .on_click({
-                                    let extension_id = extension.id.clone();
+                                .on_click({ let extension_id = extension.id.clone();
                                     move |_, _, cx| {
                                         ExtensionStore::global(cx).update(cx, |store, cx| {
                                             store.rebuild_dev_extension(extension_id.clone(), cx)
@@ -668,8 +668,7 @@ impl ExtensionsPage {
                                 Button::new(extension_button_id(&extension.id, ExtensionOperation::Remove), "Uninstall")
                                     .color(Color::Accent)
                                     .disabled(matches!(status, ExtensionStatus::Removing))
-                                    .on_click({
-                                        let extension_id = extension.id.clone();
+                                    .on_click({ let extension_id = extension.id.clone();
                                         move |_, _, cx| {
                                             ExtensionStore::global(cx).update(cx, |store, cx| {
                                                 store.uninstall_extension(extension_id.clone(), cx).detach_and_log_err(cx);
@@ -685,8 +684,7 @@ impl ExtensionsPage {
                                     )
                                     .color(Color::Accent)
                                     .disabled(matches!(status, ExtensionStatus::Installing))
-                                    .on_click({
-                                        let manifest = Arc::new(extension.clone());
+                                    .on_click({ let manifest = Arc::new(extension.clone());
                                         move |_, _, cx| {
                                             if let Some(events) =
                                                 extension::ExtensionEvents::try_global(cx)
@@ -796,7 +794,7 @@ impl ExtensionsPage {
                                     }),
                             )
                             .map(|parent| {
-                                if extension.manifest.provides.is_empty() {
+                                if extension.manifest.provides().is_empty() {
                                     return parent;
                                 }
 
@@ -804,7 +802,7 @@ impl ExtensionsPage {
                                     h_flex().gap_1().children(
                                         extension
                                             .manifest
-                                            .provides
+                                            .provides()
                                             .iter()
                                             .filter_map(|provides| {
                                                 match provides {
@@ -874,7 +872,7 @@ impl ExtensionsPage {
                             .gap_1()
                             .flex_shrink_0()
                             .child({
-                                let repo_url_for_tooltip = repository_url.clone();
+                                let repo_url_for_tooltip: SharedString = repository_url.clone().unwrap_or_default().into();
 
                                 IconButton::new(
                                     SharedString::from(format!("repository-{}", extension.id)),
@@ -889,11 +887,11 @@ impl ExtensionsPage {
                                         cx,
                                     )
                                 })
-                                .on_click(cx.listener(
-                                    move |_, _, _, cx| {
-                                        cx.open_url(&repository_url);
-                                    },
-                                ))
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                        if let Some(url) = repository_url.as_ref() {
+                                            cx.open_url(url);
+                                        }
+                                    }))
                             })
                             .child(
                                 PopoverMenu::new(SharedString::from(format!(
@@ -1026,7 +1024,7 @@ impl ExtensionsPage {
 
         let is_configurable = extension
             .manifest
-            .provides
+            .provides()
             .contains(&ExtensionProvides::ContextServers);
 
         match status.clone() {
@@ -1041,8 +1039,7 @@ impl ExtensionsPage {
                         .size(IconSize::Small)
                         .color(Color::Muted),
                 )
-                .on_click({
-                    let extension_id = extension.id.clone();
+                .on_click({ let extension_id = extension.id.clone();
                     move |_, _, cx| {
                         telemetry::event!("Extension Installed");
                         ExtensionStore::global(cx).update(cx, |store, cx| {
@@ -1096,8 +1093,7 @@ impl ExtensionsPage {
                     "Uninstall",
                 )
                 .style(ButtonStyle::OutlinedGhost)
-                .on_click({
-                    let extension_id = extension.id.clone();
+                .on_click({ let extension_id = extension.id.clone();
                     move |_, _, cx| {
                         telemetry::event!("Extension Uninstalled", extension_id);
                         ExtensionStore::global(cx).update(cx, |store, cx| {
@@ -1113,8 +1109,7 @@ impl ExtensionsPage {
                         "Configure",
                     )
                     .style(ButtonStyle::OutlinedGhost)
-                    .on_click({
-                        let extension_id = extension.id.clone();
+                    .on_click({ let extension_id = extension.id.clone();
                         move |_, _, cx| {
                             if let Some(manifest) = ExtensionStore::global(cx)
                                 .read(cx)
@@ -1152,8 +1147,7 @@ impl ExtensionsPage {
                                 })
                             })
                             .disabled(!is_compatible)
-                            .on_click({
-                                let extension_id = extension.id.clone();
+                            .on_click({ let extension_id = extension.id.clone();
                                 let version = extension.manifest.version.clone();
                                 move |_, _, cx| {
                                     telemetry::event!("Extension Installed", extension_id, version);
@@ -1733,7 +1727,7 @@ impl Render for ExtensionsPage {
                                 this.change_provides_filter(None, cx);
                             })),
                     )
-                    .children(ExtensionProvides::iter().filter_map(|provides| {
+                    .children(ExtensionProvides::iter().iter().filter_map(|&provides| {
                         match provides {
                             ExtensionProvides::SlashCommands
                             | ExtensionProvides::IndexedDocsProviders => return None,

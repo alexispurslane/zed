@@ -2,171 +2,16 @@ syntax = "proto3";
 package zed.messages;
 
 import "buffer.proto";
-import "channel.proto";
+// import "channel.proto"; // removed: cloud-specific channel messaging
 import "core.proto";
 import "git.proto";
 import "lsp.proto";
 import "worktree.proto";
 
-message CreateRoom {}
-
-message CreateRoomResponse {
-  Room room = 1;
-  optional LiveKitConnectionInfo live_kit_connection_info = 2;
-}
-
-message JoinRoom {
-  uint64 id = 1;
-}
-
-message JoinRoomResponse {
-  Room room = 1;
-  optional uint64 channel_id = 2;
-  optional LiveKitConnectionInfo live_kit_connection_info = 3;
-}
-
-message RejoinRoom {
-  uint64 id = 1;
-  repeated UpdateProject reshared_projects = 2;
-  repeated RejoinProject rejoined_projects = 3;
-}
-
-message RejoinRemoteProjects {
-  repeated RejoinProject rejoined_projects = 1;
-}
-
-message RejoinRemoteProjectsResponse {
-  repeated RejoinedProject rejoined_projects = 1;
-}
-
-message RejoinProject {
-  uint64 id = 1;
-  repeated RejoinWorktree worktrees = 2;
-  repeated RejoinRepository repositories = 3;
-}
-
-message RejoinWorktree {
-  uint64 id = 1;
-  uint64 scan_id = 2;
-}
-
-message RejoinRepository {
-  uint64 id = 1;
-  uint64 scan_id = 2;
-}
-
-message RejoinRoomResponse {
-  Room room = 1;
-  repeated ResharedProject reshared_projects = 2;
-  repeated RejoinedProject rejoined_projects = 3;
-}
-
-message ResharedProject {
-  uint64 id = 1;
-  repeated Collaborator collaborators = 2;
-}
-
-message RejoinedProject {
-  uint64 id = 1;
-  repeated WorktreeMetadata worktrees = 2;
-  repeated Collaborator collaborators = 3;
-  repeated LanguageServer language_servers = 4;
-  repeated string language_server_capabilities = 5;
-}
-
-message LeaveRoom {}
-
-message Room {
-  uint64 id = 1;
-  repeated Participant participants = 2;
-  repeated PendingParticipant pending_participants = 3;
-  repeated Follower followers = 4;
-  string livekit_room = 5;
-}
-
-message Participant {
-  uint64 user_id = 1;
-  PeerId peer_id = 2;
-  repeated ParticipantProject projects = 3;
-  ParticipantLocation location = 4;
-  uint32 participant_index = 5;
-  ChannelRole role = 6;
-  reserved 7;
-}
-
-message PendingParticipant {
-  uint64 user_id = 1;
-  uint64 calling_user_id = 2;
-  optional uint64 initial_project_id = 3;
-}
-
-message ParticipantProject {
-  uint64 id = 1;
-  repeated string worktree_root_names = 2;
-}
-
-message Follower {
-  PeerId leader_id = 1;
-  PeerId follower_id = 2;
-  uint64 project_id = 3;
-}
-
-message ParticipantLocation {
-  oneof variant {
-    SharedProject shared_project = 1;
-    UnsharedProject unshared_project = 2;
-    External external = 3;
-  }
-
-  message SharedProject {
-    uint64 id = 1;
-  }
-
-  message UnsharedProject {}
-
-  message External {}
-}
-
-message Call {
-  uint64 room_id = 1;
-  uint64 called_user_id = 2;
-  optional uint64 initial_project_id = 3;
-}
-
-message IncomingCall {
-  uint64 room_id = 1;
-  uint64 calling_user_id = 2;
-  repeated uint64 participant_user_ids = 3;
-  optional ParticipantProject initial_project = 4;
-}
-
-message CallCanceled {
-  uint64 room_id = 1;
-}
-
-message CancelCall {
-  uint64 room_id = 1;
-  uint64 called_user_id = 2;
-}
-
-message DeclineCall {
-  uint64 room_id = 1;
-}
-
-message UpdateParticipantLocation {
-  uint64 room_id = 1;
-  ParticipantLocation location = 2;
-}
-
-message RoomUpdated {
-  Room room = 1;
-}
-
-message LiveKitConnectionInfo {
-  string server_url = 1;
-  string token = 2;
-  bool can_publish = 3;
-}
+// ============================================================
+// Project collaboration messages (kept for remote server / SSH)
+// These are used by the project layer for collaborative editing.
+// ============================================================
 
 message ShareProject {
   uint64 room_id = 1;
@@ -210,10 +55,6 @@ message JoinProjectResponse {
   reserved 7;
 }
 
-message LeaveProject {
-  uint64 project_id = 1;
-}
-
 message UpdateWorktree {
   uint64 project_id = 1;
   uint64 worktree_id = 2;
@@ -238,6 +79,10 @@ message RepositoryEntry {
   optional Branch branch_summary = 6;
 }
 
+message LeaveProject {
+  uint64 project_id = 1;
+}
+
 message AddProjectCollaborator {
   uint64 project_id = 1;
   Collaborator collaborator = 2;
@@ -253,6 +98,68 @@ message RemoveProjectCollaborator {
   uint64 project_id = 1;
   PeerId peer_id = 2;
 }
+
+message AckBufferOperation {
+  uint64 buffer_id = 1;
+  uint64 epoch = 2;
+  repeated VectorClockEntry version = 3;
+}
+
+
+message RejoinRemoteProjects {
+  repeated RejoinProject rejoined_projects = 1;
+}
+
+message RejoinRemoteProjectsResponse {
+  repeated RejoinedProject rejoined_projects = 1;
+}
+
+message RejoinProject {
+  uint64 id = 1;
+  repeated RejoinWorktree worktrees = 2;
+  repeated RejoinRepository repositories = 3;
+}
+
+message RejoinWorktree {
+  uint64 id = 1;
+  uint64 scan_id = 2;
+}
+
+message RejoinRepository {
+  uint64 id = 1;
+  uint64 scan_id = 2;
+}
+
+message RejoinedProject {
+  uint64 id = 1;
+  repeated WorktreeMetadata worktrees = 2;
+  repeated Collaborator collaborators = 3;
+  repeated LanguageServer language_servers = 4;
+  repeated string language_server_capabilities = 5;
+}
+
+message ResharedProject {
+  uint64 id = 1;
+  repeated Collaborator collaborators = 2;
+}
+
+// ============================================================
+// ChannelRole - kept because it's used by project for capability tracking
+// (originally from channel.proto which was removed)
+// ============================================================
+
+enum ChannelRole {
+  Admin = 0;
+  Member = 1;
+  Guest = 2;
+  Banned = 3;
+  Talker = 4;
+}
+
+// ============================================================
+// User/Contact/Follow messages - still referenced by client/workspace crates
+// TODO: Remove when Phase 8 (client crate cleanup) is complete
+// ============================================================
 
 message GetUsers {
   repeated uint64 user_ids = 1;
@@ -299,6 +206,12 @@ message ShowContacts {}
 
 message IncomingContactRequest {
   uint64 requester_id = 1;
+}
+
+message Contact {
+  uint64 user_id = 1;
+  bool online = 2;
+  bool busy = 3;
 }
 
 message Follow {
@@ -375,9 +288,9 @@ message View {
 
   oneof variant {
     Editor editor = 3;
-    ChannelView channel_view = 4;
   }
 
+  reserved 4;
   reserved 5;
 
   message Editor {
@@ -392,11 +305,6 @@ message View {
     double scroll_x = 9;
     double scroll_y = 10;
     repeated PathExcerpts path_excerpts = 11;
-  }
-
-  message ChannelView {
-    uint64 channel_id = 1;
-    Editor editor = 2;
   }
 }
 
@@ -427,14 +335,23 @@ message PathExcerpts {
   repeated ExcerptRange ranges = 3;
 }
 
-message Contact {
-  uint64 user_id = 1;
-  bool online = 2;
-  bool busy = 3;
+message UpdateParticipantLocation {
+  uint64 room_id = 1;
+  ParticipantLocation location = 2;
 }
 
-message SetRoomParticipantRole {
-  uint64 room_id = 1;
-  uint64 user_id = 2;
-  ChannelRole role = 3;
+message ParticipantLocation {
+  oneof variant {
+    SharedProject shared_project = 1;
+    UnsharedProject unshared_project = 2;
+    External external = 3;
+  }
+
+  message SharedProject {
+    uint64 id = 1;
+  }
+
+  message UnsharedProject {}
+
+  message External {}
 }

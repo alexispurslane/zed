@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use cloud_api_types::ExtensionMetadata;
+use extension::ExtensionMetadata;
 use extension_host::ExtensionStore;
 use fs::Fs;
 use fuzzy::{StringMatch, StringMatchCandidate, match_strings};
@@ -240,7 +240,8 @@ impl PickerDelegate for ExtensionVersionSelectorDelegate {
                             Label::new(
                                 extension_version
                                     .published_at
-                                    .format("%Y-%m-%d")
+                                    .as_deref()
+                                    .unwrap_or("unknown")
                                     .to_string(),
                             )
                             .when(disabled, |label| label.color(Color::Muted)),
