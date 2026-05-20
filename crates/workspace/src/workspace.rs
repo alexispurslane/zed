@@ -1859,7 +1859,6 @@ impl Workspace {
         let project_handle = Project::local(
             app_state.client.clone(),
             app_state.node_runtime.clone(),
-            app_state.user_store.clone(),
             app_state.languages.clone(),
             app_state.fs.clone(),
             env,
@@ -9598,7 +9597,6 @@ pub fn open_workspace_by_id(
     let project_handle = Project::local(
         app_state.client.clone(),
         app_state.node_runtime.clone(),
-        app_state.user_store.clone(),
         app_state.languages.clone(),
         app_state.fs.clone(),
         None,
@@ -10014,7 +10012,6 @@ pub fn open_remote_project_with_new_connection(
                 session,
                 app_state.client.clone(),
                 app_state.node_runtime.clone(),
-                app_state.user_store.clone(),
                 app_state.languages.clone(),
                 app_state.fs.clone(),
                 true,

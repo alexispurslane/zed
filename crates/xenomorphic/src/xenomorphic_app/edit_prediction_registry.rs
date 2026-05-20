@@ -293,10 +293,6 @@ mod tests {
             let app_state = AppState::test(cx);
             client::init(&app_state.client, cx);
             language_model::init(cx);
-            client::RefreshLlmTokenListener::register_global(
-                app_state.client.clone(),
-                cx,
-            );
             editor::init(cx);
             app_state
         });

@@ -10,14 +10,13 @@ use anyhow::{Context as _, Result, anyhow};
 use async_tungstenite::tungstenite::{
     client::IntoClientRequest,
     error::Error as WebsocketError,
-    http::{HeaderValue, Request, StatusCode},
+    http::{HeaderValue, StatusCode},
 };
 use clock::SystemClock;
 // LlmApiToken, MessageToClient, OrganizationId are re-exported via pub use below
 use credentials_provider::CredentialsProvider;
-use feature_flags::FeatureFlagAppExt as _;
 use futures::{
-    AsyncReadExt, FutureExt, SinkExt, Stream, StreamExt, TryFutureExt as _, TryStreamExt,
+    FutureExt, SinkExt, Stream, StreamExt, TryFutureExt as _, TryStreamExt,
     channel::{mpsc, oneshot},
     future::BoxFuture,
     stream::BoxStream,
@@ -30,7 +29,7 @@ use proxy::connect_proxy_stream;
 use rand::prelude::*;
 use release_channel::{AppVersion, ReleaseChannel};
 use rpc::proto::{AnyTypedEnvelope, EnvelopedMessage, PeerId, RequestMessage};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use settings::{RegisterSetting, Settings, SettingsContent};
 use std::{
     any::TypeId,
@@ -57,7 +56,7 @@ use util::{ConnectionResult, ResultExt};
 pub use cloud_types::{
     AcceptEditPredictionBody, CurrentUsage, EditPredictionRejection,
     EditPredictionRejectReason, KnownOrUnknown,
-    LlmApiToken, MessageToClient,
+    LlmApiToken,
     NeedsLlmTokenRefresh, Organization, OrganizationConfiguration,
     OrganizationEditPredictionConfiguration, OrganizationId, Plan, PlanInfo,
     PREDICT_EDITS_MODE_HEADER_NAME, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
@@ -66,7 +65,6 @@ pub use cloud_types::{
     RejectEditPredictionsBody,
     EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
     EXPIRED_LLM_TOKEN_HEADER_NAME, OUTDATED_LLM_TOKEN_HEADER_NAME,
-    RefreshLlmTokenListener,
     SubmitEditPredictionFeedbackBody, SubscriptionPeriod,
     UsageData, UsageLimit,
     global_llm_token, predict_edits_v3,
@@ -82,14 +80,6 @@ static XENOMORPHIC_RPC_URL: LazyLock<Option<String>> = LazyLock::new(|| std::env
 
 pub static IMPERSONATE_LOGIN: LazyLock<Option<String>> = LazyLock::new(|| {
     std::env::var("XENOMORPHIC_IMPERSONATE")
-        .ok()
-        .and_then(|s| if s.is_empty() { None } else { Some(s) })
-});
-
-pub static USE_WEB_LOGIN: LazyLock<bool> = LazyLock::new(|| std::env::var("XENOMORPHIC_WEB_LOGIN").is_ok());
-
-pub static ADMIN_API_TOKEN: LazyLock<Option<String>> = LazyLock::new(|| {
-    std::env::var("XENOMORPHIC_ADMIN_API_TOKEN")
         .ok()
         .and_then(|s| if s.is_empty() { None } else { Some(s) })
 });
@@ -953,51 +943,17 @@ impl Client {
         Ok(true)
     }
 
-    /// Performs a sign-in and also (optionally) connects to Collab.
-    ///
-    /// Only Xenomorphic staff automatically connect to Collab.
-    /// Note: Cloud connection removed - this now just signs in.
+    /// Performs a sign-in. Cloud auto-connection removed.
     pub async fn sign_in_with_optional_connect(
         self: &Arc<Self>,
         try_provider: bool,
         cx: &AsyncApp,
     ) -> Result<()> {
-        // Don't try to sign in again if we're already connected to Collab, as it will temporarily disconnect us.
         if self.status().borrow().is_connected() {
             return Ok(());
         }
 
-        let (is_staff_tx, is_staff_rx) = oneshot::channel::<bool>();
-        let mut is_staff_tx = Some(is_staff_tx);
-        cx.update(|cx| {
-            // on_flags_ready removed - feature flags cloud fetch was stripped
-            // Staff check is no longer needed without cloud
-            drop(is_staff_tx);
-        });
-
-        let credentials = self.sign_in(try_provider, cx).await?;
-
-        cx.update(move |cx| {
-            cx.spawn({
-                let client = self.clone();
-                async move |cx| {
-                    let is_staff = is_staff_rx.await?;
-                    if is_staff {
-                        match client.connect_with_credentials(credentials, cx).await {
-                            ConnectionResult::Timeout => Err(anyhow!("connection timed out")),
-                            ConnectionResult::ConnectionReset => Err(anyhow!("connection reset")),
-                            ConnectionResult::Result(result) => {
-                                result.context("client auth and connect")
-                            }
-                        }
-                    } else {
-                        Ok(())
-                    }
-                }
-            })
-            .detach_and_log_err(cx);
-        });
-
+        self.sign_in(try_provider, cx).await?;
         Ok(())
     }
 
@@ -1340,7 +1296,7 @@ impl Client {
 
     pub fn authenticate_with_browser(self: &Arc<Self>, cx: &AsyncApp) -> Task<Result<Credentials>> {
         let http = self.http.clone();
-        let this = self.clone();
+        let _this = self.clone();
         cx.spawn(async move |cx| {
             let background = cx.background_executor().clone();
 
@@ -1358,24 +1314,14 @@ impl Client {
                 .clone()
                 .spawn(async move {
                     // Generate a pair of asymmetric encryption keys. The public key will be used by the
-                    // xenomorphic server to encrypt the user's access token, so that it can'be intercepted by
+                    // xenomorphic server to encrypt the user's access token, so that it can't be intercepted by
                     // any other app running on the user's device.
                     let (public_key, private_key) =
                         rpc::auth::keypair().context("failed to generate keypair for auth")?;
                     let public_key_string = String::try_from(public_key)
                         .context("failed to serialize public key for auth")?;
 
-                    if let Some((login, token)) =
-                        IMPERSONATE_LOGIN.as_ref().zip(ADMIN_API_TOKEN.as_ref())
-                    {
-                        if !*USE_WEB_LOGIN {
-                            eprintln!("authenticate as admin {login}, {token}");
-
-                            return this
-                                .authenticate_as_admin(http, login.clone(), token.clone())
-                                .await;
-                        }
-                    }
+                    // Admin impersonation removed - cloud-only feature
 
                     // Start an HTTP server to receive the redirect from Xenomorphic's sign-in page.
                     let server = tiny_http::Server::http("127.0.0.1:0")
@@ -1446,7 +1392,7 @@ impl Client {
                         .decrypt_string(&access_token)
                         .context("failed to decrypt access token")?;
 
-                    Ok(Credentials {
+                    Ok::<_, anyhow::Error>(Credentials {
                         user_id: user_id.parse()?,
                         access_token,
                     })
@@ -1455,53 +1401,6 @@ impl Client {
 
             cx.update(|cx| cx.activate(true));
             Ok(credentials)
-        })
-    }
-
-    async fn authenticate_as_admin(
-        self: &Arc<Self>,
-        http: Arc<HttpClientWithUrl>,
-        login: String,
-        api_token: String,
-    ) -> Result<Credentials> {
-        #[derive(Serialize)]
-        struct ImpersonateUserBody {
-            github_login: String,
-        }
-
-        #[derive(Deserialize)]
-        struct ImpersonateUserResponse {
-            user_id: u64,
-            access_token: String,
-        }
-
-        let url = self
-            .http
-            .build_zed_cloud_url("/internal/users/impersonate")?;
-        let request = Request::post(url.as_str())
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {api_token}"))
-            .body(
-                serde_json::to_string(&ImpersonateUserBody {
-                    github_login: login,
-                })?
-                .into(),
-            )?;
-
-        let mut response = http.send(request).await?;
-        let mut body = String::new();
-        response.body_mut().read_to_string(&mut body).await?;
-        anyhow::ensure!(
-            response.status().is_success(),
-            "admin user request failed {} - {}",
-            response.status().as_u16(),
-            body,
-        );
-        let response: ImpersonateUserResponse = serde_json::from_str(&body)?;
-
-        Ok(Credentials {
-            user_id: response.user_id,
-            access_token: response.access_token,
         })
     }
 
@@ -1747,7 +1646,7 @@ impl ProtoClient for Client {
     }
 
     fn is_via_collab(&self) -> bool {
-        true
+        false
     }
 
     fn has_wsl_interop(&self) -> bool {
@@ -1939,7 +1838,7 @@ mod tests {
         // Time out when client tries to connect.
         client.override_authenticate(move |cx| {
             cx.background_spawn(async move {
-                Ok(Credentials {
+                Ok::<_, anyhow::Error>(Credentials {
                     user_id,
                     access_token: "token".into(),
                 })
@@ -2010,7 +1909,7 @@ mod tests {
                 let auth_count = auth_count.clone();
                 cx.background_spawn(async move {
                     *auth_count.lock() += 1;
-                    Ok(Credentials {
+                    Ok::<_, anyhow::Error>(Credentials {
                         user_id: 1,
                         access_token: auth_count.lock().to_string(),
                     })

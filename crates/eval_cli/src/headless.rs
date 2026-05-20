@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use client::{Client, ProxySettings, RefreshLlmTokenListener, UserStore};
+use client::{Client, ProxySettings};
 use db::AppDatabase;
 use extension::ExtensionHostProxy;
 use fs::RealFs;
 use gpui::http_client::read_proxy_from_env;
-use gpui::{App, AppContext as _, Entity};
+use gpui::App;
 use gpui_tokio::Tokio;
 use language::LanguageRegistry;
 use language_extension::LspAccess;
@@ -21,7 +21,6 @@ use util::ResultExt as _;
 pub struct AgentCliAppState {
     pub languages: Arc<LanguageRegistry>,
     pub client: Arc<Client>,
-    pub user_store: Entity<UserStore>,
     pub fs: Arc<dyn fs::Fs>,
     pub node_runtime: NodeRuntime,
 }
@@ -76,8 +75,6 @@ pub fn init(cx: &mut App) -> Arc<AgentCliAppState> {
     languages.set_language_server_download_dir(paths::languages_dir().clone());
     let languages = Arc::new(languages);
 
-    let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
-
     extension::init(cx);
 
     let (mut node_options_tx, node_options_rx) = watch::channel(None);
@@ -110,8 +107,7 @@ pub fn init(cx: &mut App) -> Arc<AgentCliAppState> {
     debug_adapter_extension::init(extension_host_proxy.clone(), cx);
     language_extension::init(LspAccess::Noop, extension_host_proxy, languages.clone());
     language_model::init(cx);
-    RefreshLlmTokenListener::register(client.clone(), user_store.clone(), cx);
-    language_models::init(user_store.clone(), client.clone(), cx);
+    language_models::init(client.clone(), cx);
     languages::init(languages.clone(), fs.clone(), node_runtime.clone(), cx);
     terminal_view::init(cx);
 
@@ -129,7 +125,6 @@ pub fn init(cx: &mut App) -> Arc<AgentCliAppState> {
     Arc::new(AgentCliAppState {
         languages,
         client,
-        user_store,
         fs,
         node_runtime,
     })

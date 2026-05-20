@@ -64,7 +64,6 @@ pub fn init(cx: &mut App) {
                             EditPredictionContextView::new(
                                 project.clone(),
                                 workspace.client(),
-                                workspace.user_store(),
                                 window,
                                 cx,
                             )

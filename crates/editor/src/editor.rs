@@ -18407,13 +18407,15 @@ impl CollaborationHub for Entity<Project> {
     }
 
     fn user_participant_indices<'a>(&self, cx: &'a App) -> &'a HashMap<u64, ParticipantIndex> {
-        self.read(cx).user_store().read(cx).participant_indices()
+        // Cloud user store removed; return empty map
+        static EMPTY: std::sync::LazyLock<HashMap<u64, ParticipantIndex>> =
+            std::sync::LazyLock::new(HashMap::default);
+        &EMPTY
     }
 
     fn user_names(&self, cx: &App) -> HashMap<u64, SharedString> {
-        let this = self.read(cx);
-        let user_ids = this.collaborators().values().map(|c| c.user_id);
-        this.user_store().read(cx).participant_names(user_ids, cx)
+        // Cloud user store removed; return empty map
+        HashMap::default()
     }
 }
 

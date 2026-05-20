@@ -737,7 +737,7 @@ fn main() {
         theme_selector::init(cx);
         settings_profile_selector::init(cx);
         language_tools::init(cx);
-        notifications::init(app_state.client.clone(), app_state.user_store.clone(), cx);
+        notifications::init(app_state.client.clone(), cx);
         git_ui::init(cx);
         git_graph::init(cx);
         markdown_preview::init(cx);

@@ -2107,7 +2107,7 @@ impl Thread {
 
             if let Some(error) = error {
                 attempt += 1;
-                let retry = this.update(cx, |this, cx| {
+                let retry = this.update(cx, |this, _cx| {
                     this.handle_completion_error(error, attempt)
                 })??;
                 let timer = cx.background_executor().timer(retry.duration);

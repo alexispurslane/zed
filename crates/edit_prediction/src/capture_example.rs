@@ -258,7 +258,6 @@ fn generate_timestamp_name() -> String {
 mod tests {
     use super::*;
     use crate::EditPredictionStore;
-    use client::RefreshLlmTokenListener;
     use client::Client;
     use clock::FakeSystemClock;
     use gpui::{AppContext as _, TestAppContext, http_client::FakeHttpClient};
@@ -549,7 +548,6 @@ mod tests {
             let http_client = FakeHttpClient::with_404_response();
             let client = Client::new(Arc::new(FakeSystemClock::new()), http_client, cx);
             language_model::init(cx);
-            RefreshLlmTokenListener::register_global(client.clone(), cx);
             EditPredictionStore::global(&client, cx);
         })
     }

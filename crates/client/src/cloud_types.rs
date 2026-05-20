@@ -146,15 +146,7 @@ pub enum KnownOrUnknown<K, V> {
     Unknown(V),
 }
 
-// ---- From cloud_api_client::websocket_protocol ----
-
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum MessageToClient {
-    UserUpdated,
-}
-
-// ---- From cloud_llm_client ----
+// ---- LlmApiToken stub ----
 
 pub const EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME: &str = "x-zed-edit-predictions-usage-amount";
 pub const EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME: &str = "x-zed-edit-predictions-usage-limit";
@@ -453,20 +445,4 @@ pub struct SubmitEditPredictionFeedbackBody {
     pub output: String,
     #[serde(default)]
     pub feedback: Option<String>,
-}
-
-// ---- RefreshLlmTokenListener stub from llm_token.rs ----
-
-/// Stub: Cloud LLM token refresh is no longer available.
-/// This type is preserved for API compatibility but does nothing.
-pub struct RefreshLlmTokenListener;
-
-impl RefreshLlmTokenListener {
-    pub fn register(_client: std::sync::Arc<crate::Client>, _user_store: gpui::Entity<crate::UserStore>, _cx: &mut gpui::App) {
-        // No-op: cloud token refresh removed
-    }
-
-    pub fn register_global(_client: std::sync::Arc<crate::Client>, _cx: &mut gpui::App) {
-        // No-op: cloud token refresh removed
-    }
 }

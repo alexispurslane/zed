@@ -1,6 +1,6 @@
 use super::*;
 use crate::udiff::apply_diff_to_string;
-use client::{RefreshLlmTokenListener, test::FakeServer};
+use client::test::FakeServer;
 use clock::FakeSystemClock;
 use clock::ReplicaId;
 use cloud_api_types::{
@@ -2470,7 +2470,6 @@ fn init_test_with_fake_client_and_legacy_data_collection(
         client.cloud_client().set_credentials(1, "test".into());
 
         language_model::init(cx);
-        RefreshLlmTokenListener::register_global(client.clone(), cx);
         let ep_store = EditPredictionStore::global(&client, cx);
 
         (
@@ -2898,9 +2897,6 @@ async fn make_test_ep_store(
     });
 
     let client = cx.update(|cx| Client::new(Arc::new(FakeSystemClock::new()), http_client, cx));
-    cx.update(|cx| {
-        RefreshLlmTokenListener::register_global(client.clone(), cx);
-    });
     let _server = FakeServer::for_client(42, &client, cx).await;
 
     let ep_store = cx.new(|cx| {
@@ -2981,9 +2977,6 @@ async fn test_unauthenticated_without_custom_url_blocks_prediction_impl(cx: &mut
 
     let client =
         cx.update(|cx| client::Client::new(Arc::new(FakeSystemClock::new()), http_client, cx));
-    cx.update(|cx| {
-        RefreshLlmTokenListener::register_global(client.clone(), cx);
-    });
 
     let ep_store = cx.new(|cx| EditPredictionStore::new(client, cx));
 

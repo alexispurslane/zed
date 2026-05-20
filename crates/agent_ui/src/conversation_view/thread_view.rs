@@ -41,8 +41,8 @@ impl ThreadFeedbackState {
 
         let project = thread.read(cx).project().read(cx);
         let client = project.client();
-        let user_store = project.user_store();
-        let organization = user_store.read(cx).current_organization();
+        // Cloud organization check removed
+        let organization: Option<client::Organization> = None;
 
         if self.feedback == Some(feedback) {
             return;
@@ -4737,13 +4737,8 @@ impl ThreadView {
             );
 
         let enable_thread_feedback = util::maybe!({
-            let project = thread.read(cx).project().read(cx);
-            let user_store = project.user_store();
-            if let Some(configuration) = user_store.read(cx).current_organization_configuration() {
-                if !configuration.is_agent_thread_feedback_enabled {
-                    return false;
-                }
-            }
+            let _project = thread.read(cx).project().read(cx);
+            // Cloud organization configuration check removed
 
             AgentSettings::get_global(cx).enable_feedback
                 && self.thread.read(cx).connection().telemetry().is_some()

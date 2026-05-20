@@ -86,7 +86,6 @@ fn main() {
                     let project = Project::local(
                         app_state.client.clone(),
                         app_state.node_runtime.clone(),
-                        app_state.user_store.clone(),
                         app_state.languages.clone(),
                         app_state.fs.clone(),
                         None,
@@ -110,14 +109,12 @@ fn main() {
                     workspace.update(cx, |workspace, cx| {
                         let weak_workspace = cx.entity().downgrade();
                         let language_registry = app_state.languages.clone();
-                        let user_store = app_state.user_store.clone();
 
                         let component_preview = cx.new(|cx| {
                             ComponentPreview::new(
                                 weak_workspace,
                                 project,
                                 language_registry,
-                                user_store,
                                 None,
                                 None,
                                 window,

@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::Result;
-use client::{Client, UserStore};
+use client::Client;
 use editor::{
     Editor, PathKey,
     display_map::{BlockPlacement, BlockProperties, BlockStyle},
@@ -63,7 +63,6 @@ impl EditPredictionContextView {
     pub fn new(
         project: Entity<Project>,
         client: &Arc<Client>,
-        user_store: &Entity<UserStore>,
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) -> Self {

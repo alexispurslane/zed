@@ -98,7 +98,7 @@ pub use worktree_store::WorktreePaths;
 use anyhow::{Context as _, Result, anyhow};
 use buffer_store::{BufferStore, BufferStoreEvent};
 use client::{
-    Client, Collaborator, PendingEntitySubscription, ProjectId, TypedEnvelope, UserStore, proto,
+    Client, Collaborator, PendingEntitySubscription, ProjectId, TypedEnvelope, proto,
 };
 use clock::ReplicaId;
 
@@ -261,7 +261,6 @@ pub struct Project {
     collab_client: Arc<client::Client>,
     join_project_response_message_id: u32,
     task_store: Entity<TaskStore>,
-    user_store: Entity<UserStore>,
     fs: Arc<dyn Fs>,
     remote_client: Option<Entity<RemoteClient>>,
     // todo lw explain the client_state x remote_client matrix, its super confusing
@@ -1193,7 +1192,6 @@ impl Project {
     pub fn local(
         client: Arc<Client>,
         node: NodeRuntime,
-        user_store: Entity<UserStore>,
         languages: Arc<LanguageRegistry>,
         fs: Arc<dyn Fs>,
         env: Option<HashMap<String, String>>,
@@ -1352,9 +1350,8 @@ impl Project {
                 active_entry: None,
                 snippets,
                 languages,
-                collab_client: client,
+                collab_client: client.clone(),
                 task_store,
-                user_store,
                 settings_observer,
                 fs,
                 remote_client: None,
@@ -1388,7 +1385,6 @@ impl Project {
         remote: Entity<RemoteClient>,
         client: Arc<Client>,
         node: NodeRuntime,
-        user_store: Entity<UserStore>,
         languages: Arc<LanguageRegistry>,
         fs: Arc<dyn Fs>,
         init_worktree_trust: bool,
@@ -1591,9 +1587,8 @@ impl Project {
                 active_entry: None,
                 snippets,
                 languages,
-                collab_client: client,
+                collab_client: client.clone(),
                 task_store,
-                user_store,
                 settings_observer,
                 fs,
                 remote_client: Some(remote.clone()),
@@ -1657,7 +1652,6 @@ impl Project {
     pub async fn in_room(
         remote_id: u64,
         client: Arc<Client>,
-        user_store: Entity<UserStore>,
         languages: Arc<LanguageRegistry>,
         fs: Arc<dyn Fs>,
         cx: AsyncApp,
@@ -1697,7 +1691,6 @@ impl Project {
             subscriptions,
             client,
             false,
-            user_store,
             languages,
             fs,
             cx,
@@ -1710,7 +1703,6 @@ impl Project {
         subscriptions: [EntitySubscription; 8],
         client: Arc<Client>,
         run_tasks: bool,
-        user_store: Entity<UserStore>,
         languages: Arc<LanguageRegistry>,
         fs: Arc<dyn Fs>,
         mut cx: AsyncApp,
@@ -1863,7 +1855,6 @@ impl Project {
                 collaborators: Default::default(),
                 join_project_response_message_id: response.message_id,
                 languages,
-                user_store: user_store.clone(),
                 task_store,
                 snippets,
                 fs,
@@ -1943,15 +1934,7 @@ impl Project {
             })
             .collect::<Vec<_>>();
 
-        let user_ids = response
-            .payload
-            .collaborators
-            .iter()
-            .map(|peer| peer.user_id)
-            .collect();
-        user_store
-            .update(&mut cx, |user_store, cx| user_store.get_users(user_ids, cx))
-            .await?;
+        // Cloud user fetch removed; skip collaborative user resolution
 
         project.update(&mut cx, |this, cx| {
             this.set_collaborators_from_proto(response.payload.collaborators, cx)?;
@@ -2017,12 +2000,10 @@ impl Project {
         let clock = Arc::new(FakeSystemClock::new());
         let http_client = http_client::FakeHttpClient::with_404_response();
         let client = cx.update(|cx| client::Client::new(clock, http_client.clone(), cx));
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let project = cx.update(|cx| {
             Project::local(
                 client,
                 node_runtime::NodeRuntime::unavailable(),
-                user_store,
                 Arc::new(languages),
                 fs,
                 None,
@@ -2077,12 +2058,10 @@ impl Project {
         let clock = Arc::new(FakeSystemClock::new());
         let http_client = http_client::FakeHttpClient::with_404_response();
         let client = cx.update(|cx| client::Client::new(clock, http_client.clone(), cx));
-        let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let project = cx.update(|cx| {
             Project::local(
                 client,
                 node_runtime::NodeRuntime::unavailable(),
-                user_store,
                 Arc::new(languages),
                 fs,
                 None,
@@ -2216,11 +2195,6 @@ impl Project {
     #[inline]
     pub fn remote_client(&self) -> Option<Entity<RemoteClient>> {
         self.remote_client.clone()
-    }
-
-    #[inline]
-    pub fn user_store(&self) -> Entity<UserStore> {
-        self.user_store.clone()
     }
 
     #[inline]

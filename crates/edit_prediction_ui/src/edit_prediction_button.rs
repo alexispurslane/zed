@@ -1,5 +1,5 @@
 use anyhow::Result;
-use client::{Client, UserStore};
+use client::Client;
 use client::UsageLimit;
 use codestral::{self, CodestralEditPredictionDelegate};
 use copilot::Status;
@@ -69,7 +69,6 @@ pub struct EditPredictionButton {
     file: Option<Arc<dyn File>>,
     edit_prediction_provider: Option<Arc<dyn EditPredictionDelegateHandle>>,
     fs: Arc<dyn Fs>,
-    user_store: Entity<UserStore>,
     popover_menu_handle: PopoverMenuHandle<ContextMenu>,
     project: WeakEntity<Project>,
 }
@@ -368,7 +367,7 @@ impl Render for EditPredictionButton {
                 };
 
                 if edit_prediction::should_show_upsell_modal(cx) {
-                    let tooltip_meta = if self.user_store.read(cx).current_user().is_some() {
+                    let tooltip_meta = if true { // Cloud user check removed
                         "Choose a Plan"
                     } else {
                         "Configure a Provider"
@@ -406,7 +405,6 @@ impl Render for EditPredictionButton {
                 }
 
                 let show_editor_predictions = self.editor_show_predictions;
-                let user = self.user_store.read(cx).current_user();
 
                 let mercury_has_error = matches!(provider, EditPredictionProvider::Mercury)
                     && edit_prediction::EditPredictionStore::try_global(cx).is_some_and(
@@ -425,10 +423,9 @@ impl Render for EditPredictionButton {
                     None
                 };
 
-                let zed_cloud_needs_sign_in =
-                    matches!(provider, EditPredictionProvider::Xenomorphic) && user.is_none();
+                // Cloud provider sign-in check removed (no cloud provider)
                 let provider_unavailable =
-                    missing_token || mercury_has_error || zed_cloud_needs_sign_in;
+                    missing_token || mercury_has_error;
 
                 let icon_button = IconButton::new("zed-predict-pending-button", ep_icon)
                     .shape(IconButtonShape::Square)
@@ -440,8 +437,6 @@ impl Render for EditPredictionButton {
                         element.tooltip(move |_window, cx| {
                             let description = if !enabled {
                                 "Disabled For This File"
-                            } else if zed_cloud_needs_sign_in {
-                                "Sign In Or Configure a Provider"
                             } else if provider_unavailable || show_editor_predictions {
                                 tooltip_meta
                             } else {
@@ -516,7 +511,6 @@ impl Render for EditPredictionButton {
 impl EditPredictionButton {
     pub fn new(
         fs: Arc<dyn Fs>,
-        user_store: Entity<UserStore>,
         popover_menu_handle: PopoverMenuHandle<ContextMenu>,
         project: Entity<Project>,
         cx: &mut Context<Self>,
@@ -558,7 +552,6 @@ impl EditPredictionButton {
             language: None,
             file: None,
             edit_prediction_provider: None,
-            user_store,
             popover_menu_handle,
             project: project.downgrade(),
             fs,
@@ -571,13 +564,8 @@ impl EditPredictionButton {
         current_provider: EditPredictionProvider,
         cx: &mut App,
     ) -> ContextMenu {
-        let organization_configuration = self
-            .user_store
-            .read(cx)
-            .current_organization_configuration();
-
-        let is_xenomorphic_provider_disabled = organization_configuration
-            .is_some_and(|configuration| !configuration.edit_prediction.is_enabled);
+        // Cloud organization configuration check removed - edit prediction always enabled
+        let is_xenomorphic_provider_disabled = false;
 
         let available_providers = get_available_providers(cx);
 
@@ -1082,13 +1070,7 @@ impl EditPredictionButton {
         cx: &mut Context<Self>,
     ) -> Entity<ContextMenu> {
         ContextMenu::build(window, cx, |mut menu, window, cx| {
-            let user = self.user_store.read(cx).current_user();
-
-            let needs_sign_in = user.is_none()
-                && matches!(
-                    provider,
-                    EditPredictionProvider::None | EditPredictionProvider::Xenomorphic
-                );
+            let needs_sign_in = false; // Cloud sign-in check removed
 
             if needs_sign_in {
                 menu = menu
@@ -1209,7 +1191,7 @@ impl EditPredictionButton {
                             })
                         })
                         .separator();
-                } else if self.user_store.read(cx).account_too_young() {
+                } else if false { // Cloud account_too_young check removed
                     menu = menu
                         .custom_entry(
                             |_window, _cx| {
@@ -1228,7 +1210,7 @@ impl EditPredictionButton {
                             );
                         })
                         .separator();
-                } else if self.user_store.read(cx).has_overdue_invoices() {
+                } else if false { // Cloud overdue invoices check removed
                     menu = menu
                         .custom_entry(
                             |_window, _cx| {

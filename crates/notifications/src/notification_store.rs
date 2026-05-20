@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use client::{Client, UserStore};
+use client::Client;
 use futures_lite::stream::StreamExt;
 use gpui::{App, AppContext as _, AsyncApp, Context, Entity, EventEmitter, Global, Task};
 use rpc::{Notification, TypedEnvelope, proto};
@@ -8,8 +8,8 @@ use sum_tree::{Bias, Dimensions, SumTree};
 use time::OffsetDateTime;
 use util::ResultExt;
 
-pub fn init(client: Arc<Client>, user_store: Entity<UserStore>, cx: &mut App) {
-    let notification_store = cx.new(|cx| NotificationStore::new(client, user_store, cx));
+pub fn init(client: Arc<Client>, cx: &mut App) {
+    let notification_store = cx.new(|cx| NotificationStore::new(client, cx));
     cx.set_global(GlobalNotificationStore(notification_store));
 }
 
@@ -19,7 +19,6 @@ impl Global for GlobalNotificationStore {}
 
 pub struct NotificationStore {
     client: Arc<Client>,
-    user_store: Entity<UserStore>,
     notifications: SumTree<NotificationEntry>,
     loaded_all_notifications: bool,
     _watch_connection_status: Task<Option<()>>,
@@ -70,7 +69,7 @@ impl NotificationStore {
         cx.global::<GlobalNotificationStore>().0.clone()
     }
 
-    pub fn new(client: Arc<Client>, user_store: Entity<UserStore>, cx: &mut Context<Self>) -> Self {
+    pub fn new(client: Arc<Client>, cx: &mut Context<Self>) -> Self {
         let mut connection_status = client.status();
         let watch_connection_status = cx.spawn(async move |this, cx| {
             while let Some(status) = connection_status.next().await {
@@ -97,7 +96,6 @@ impl NotificationStore {
                 client.add_message_handler(cx.weak_entity(), Self::handle_new_notification),
                 client.add_message_handler(cx.weak_entity(), Self::handle_delete_notification),
             ],
-            user_store,
             client,
         }
     }
@@ -251,11 +249,7 @@ impl NotificationStore {
             }
         }
 
-        let user_store = this.read_with(cx, |this, _| this.user_store.clone());
-
-        user_store
-            .update(cx, |store, cx| store.get_users(user_ids, cx))
-            .await?;
+        // Cloud user fetch removed; skip user ID resolution
         this.update(cx, |this, cx| {
             if options.clear_old {
                 cx.emit(NotificationEvent::NotificationsUpdated {
@@ -350,12 +344,8 @@ impl NotificationStore {
         cx: &mut Context<Self>,
     ) {
         match notification {
-            Notification::ContactRequest { sender_id } => {
-                self.user_store
-                    .update(cx, |store, cx| {
-                        store.respond_to_contact_request(sender_id, response, cx)
-                    })
-                    .detach();
+            Notification::ContactRequest { sender_id: _ } => {
+                // Cloud contact request handling removed
             }
             _ => {}
         }
