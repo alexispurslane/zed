@@ -14,13 +14,13 @@ use settings::{EditPredictionDataCollectionChoice, update_settings_file};
 
 use crate::{BufferEditPrediction, EditPredictionStore};
 
-pub struct XenomorphicEditPredictionDelegate {
+pub struct EditPredictionStoreDelegate {
     store: Entity<EditPredictionStore>,
     project: Entity<Project>,
     singleton_buffer: Option<Entity<Buffer>>,
 }
 
-impl XenomorphicEditPredictionDelegate {
+impl EditPredictionStoreDelegate {
     pub fn new(
         project: Entity<Project>,
         singleton_buffer: Option<Entity<Buffer>>,
@@ -45,13 +45,13 @@ impl XenomorphicEditPredictionDelegate {
     }
 }
 
-impl EditPredictionDelegate for XenomorphicEditPredictionDelegate {
+impl EditPredictionDelegate for EditPredictionStoreDelegate {
     fn name() -> &'static str {
-        "zed-predict"
+        "edit-prediction"
     }
 
     fn display_name() -> &'static str {
-        "Xenomorphic's Edit Predictions"
+        "Edit Predictions"
     }
 
     fn show_predictions_in_menu() -> bool {

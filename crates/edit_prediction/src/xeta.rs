@@ -1,7 +1,7 @@
 use crate::{
     CurrentEditPrediction, DebugEvent, EditPredictionFinishedDebugEvent, EditPredictionId,
     EditPredictionModelInput, EditPredictionStartedDebugEvent, EditPredictionStore, StoredEvent,
-    XenomorphicUpdateRequiredError, buffer_path_with_id_fallback,
+    buffer_path_with_id_fallback,
     cursor_excerpt::{self, compute_cursor_excerpt, compute_syntax_ranges},
     prediction::EditPredictionResult,
 };
@@ -15,8 +15,6 @@ use language::{
 };
 use release_channel::AppVersion;
 use text::{Anchor, Bias, Point};
-use ui::SharedString;
-use workspace::notifications::{ErrorMessagePrompt, NotificationId, show_app_notification};
 use xeta_prompt::{ParsedOutput, XetaPromptInput};
 
 use std::{env, ops::Range, path::Path, sync::Arc};
@@ -448,9 +446,9 @@ pub fn request_prediction_with_zeta(
 }
 
 fn handle_api_response<T>(
-    this: &WeakEntity<EditPredictionStore>,
+    _this: &WeakEntity<EditPredictionStore>,
     response: Result<(T, Option<client::EditPredictionUsage>)>,
-    cx: &mut gpui::AsyncApp,
+    _cx: &mut gpui::AsyncApp,
 ) -> Result<T> {
     match response {
         Ok((data, usage)) => {
@@ -458,29 +456,7 @@ fn handle_api_response<T>(
             let _ = usage;
             Ok(data)
         }
-        Err(err) => {
-            if err.is::<XenomorphicUpdateRequiredError>() {
-                cx.update(|cx| {
-                    this.update(cx, |this, _cx| {
-                        this.update_required = true;
-                    })
-                    .ok();
-
-                    let error_message: SharedString = err.to_string().into();
-                    show_app_notification(
-                        NotificationId::unique::<XenomorphicUpdateRequiredError>(),
-                        cx,
-                        move |cx| {
-                            cx.new(|cx| {
-                                ErrorMessagePrompt::new(error_message.clone(), cx)
-                                    .with_link_button("Update Xenomorphic", "https://zed.dev/releases")
-                            })
-                        },
-                    );
-                });
-            }
-            Err(err)
-        }
+        Err(err) => Err(err),
     }
 }
 

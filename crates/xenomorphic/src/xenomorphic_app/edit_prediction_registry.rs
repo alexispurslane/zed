@@ -2,7 +2,7 @@ use client::Client;
 use codestral::{CodestralEditPredictionDelegate, load_codestral_api_key};
 use collections::HashMap;
 use copilot::CopilotEditPredictionDelegate;
-use edit_prediction::{EditPredictionModel, XenomorphicEditPredictionDelegate};
+use edit_prediction::{EditPredictionModel, EditPredictionStoreDelegate};
 use editor::Editor;
 use gpui::{AnyWindowHandle, App, AppContext as _, Context, WeakEntity};
 use language::{
@@ -94,9 +94,6 @@ fn edit_prediction_provider_config_for_settings(cx: &App) -> Option<EditPredicti
     match provider {
         EditPredictionProvider::None => None,
         EditPredictionProvider::Copilot => Some(EditPredictionProviderConfig::Copilot),
-        EditPredictionProvider::Xenomorphic => {
-            Some(EditPredictionProviderConfig::Xenomorphic(EditPredictionModel::Xeta))
-        }
         EditPredictionProvider::Codestral => Some(EditPredictionProviderConfig::Codestral),
         EditPredictionProvider::Ollama | EditPredictionProvider::OpenAiCompatibleApi => {
             let custom_settings = if provider == EditPredictionProvider::Ollama {
@@ -116,15 +113,15 @@ fn edit_prediction_provider_config_for_settings(cx: &App) -> Option<EditPredicti
             }
 
             if matches!(format, EditPredictionPromptFormat::Xeta(_)) {
-                Some(EditPredictionProviderConfig::Xenomorphic(EditPredictionModel::Xeta))
+                Some(EditPredictionProviderConfig::Store(EditPredictionModel::Xeta))
             } else {
-                Some(EditPredictionProviderConfig::Xenomorphic(
+                Some(EditPredictionProviderConfig::Store(
                     EditPredictionModel::Fim { format },
                 ))
             }
         }
 
-        EditPredictionProvider::Mercury => Some(EditPredictionProviderConfig::Xenomorphic(
+        EditPredictionProvider::Mercury => Some(EditPredictionProviderConfig::Store(
             EditPredictionModel::Mercury,
         )),
     }
@@ -153,7 +150,7 @@ fn infer_prompt_format(model: &str) -> Option<EditPredictionPromptFormat> {
 enum EditPredictionProviderConfig {
     Copilot,
     Codestral,
-    Xenomorphic(EditPredictionModel),
+    Store(EditPredictionModel),
 }
 
 impl EditPredictionProviderConfig {
@@ -161,7 +158,7 @@ impl EditPredictionProviderConfig {
         match self {
             EditPredictionProviderConfig::Copilot => "Copilot",
             EditPredictionProviderConfig::Codestral => "Codestral",
-            EditPredictionProviderConfig::Xenomorphic(model) => match model {
+            EditPredictionProviderConfig::Store(model) => match model {
                 EditPredictionModel::Xeta => "Xeta",
                 EditPredictionModel::Fim { .. } => "FIM",
                 EditPredictionModel::Mercury => "Mercury",
@@ -225,7 +222,7 @@ fn assign_edit_prediction_provider(
 
     match provider_config {
         None => {
-            editor.set_edit_prediction_provider::<XenomorphicEditPredictionDelegate>(None, window, cx);
+            editor.set_edit_prediction_provider::<EditPredictionStoreDelegate>(None, window, cx);
         }
         Some(EditPredictionProviderConfig::Copilot) => {
             let ep_store = edit_prediction::EditPredictionStore::global(client, cx);
@@ -250,7 +247,7 @@ fn assign_edit_prediction_provider(
             let provider = cx.new(|_| CodestralEditPredictionDelegate::new(http_client));
             editor.set_edit_prediction_provider(Some(provider), window, cx);
         }
-        Some(EditPredictionProviderConfig::Xenomorphic(model)) => {
+        Some(EditPredictionProviderConfig::Store(model)) => {
             let ep_store = edit_prediction::EditPredictionStore::global(client, cx);
 
             // Cloud organization configuration check removed - edit prediction always enabled
@@ -264,7 +261,7 @@ fn assign_edit_prediction_provider(
                 });
 
                 let provider = cx.new(|cx| {
-                    XenomorphicEditPredictionDelegate::new(
+                    EditPredictionStoreDelegate::new(
                         project.clone(),
                         singleton_buffer,
                         &client,
@@ -298,7 +295,7 @@ mod tests {
         });
 
         // Override the default provider to None so the subscribe closure
-        // captures None at init time. (The test default is Xenomorphic/Xeta1, which
+        // captures None at init time. (The test default is Mercury/Xeta1, which
         // is a no-op on project-less editors and would mask the bug.)
         cx.update(|cx| {
             cx.update_global::<SettingsStore, _>(|store: &mut SettingsStore, cx| {

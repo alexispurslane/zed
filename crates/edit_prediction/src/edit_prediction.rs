@@ -4,7 +4,7 @@ use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, global_llm_token
     PREDICT_EDITS_MODE_HEADER_NAME, PredictEditsMode,
     PredictEditsV3Request, PredictEditsV3Response,
     EditPredictionRejectReason, EditPredictionRejection,
-    MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
+    MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST,
     PREFERRED_EXPERIMENT_HEADER_NAME, RejectEditPredictionsBody,
     XENOMORPHIC_VERSION_HEADER_NAME, LlmApiToken, OrganizationId,
     AcceptEditPredictionBody,
@@ -12,7 +12,6 @@ use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, global_llm_token
 use collections::{HashMap, HashSet};
 use copilot::{Copilot, Reinstall, SignIn, SignOut};
 use credentials_provider::CredentialsProvider;
-use db::kvp::{Dismissable, KeyValueStore};
 use edit_prediction_context::{RelatedExcerptStore, RelatedExcerptStoreEvent, RelatedFile};
 use feature_flags::{FeatureFlag, FeatureFlagAppExt as _, PresenceFlag, register_feature_flag};
 use futures::{
@@ -56,7 +55,6 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use thiserror::Error;
 use util::{RangeExt as _, ResultExt as _};
 
 pub mod cursor_excerpt;
@@ -66,7 +64,6 @@ mod license_detection;
 pub mod mercury;
 pub mod metrics;
 pub mod ollama;
-mod onboarding_modal;
 pub mod open_ai_response;
 mod prediction;
 
@@ -74,7 +71,7 @@ pub mod udiff;
 
 mod capture_example;
 pub mod open_ai_compatible;
-mod xenomorphic_edit_prediction_delegate;
+mod edit_prediction_store_delegate;
 pub mod xeta;
 
 #[cfg(test)]
@@ -85,14 +82,13 @@ use crate::example_spec::ExampleSpec;
 use crate::license_detection::LicenseDetectionWatcher;
 use crate::mercury::Mercury;
 pub use crate::metrics::{KeptRateResult, compute_kept_rate};
-use crate::onboarding_modal::XenomorphicPredictModal;
 pub use crate::prediction::EditPrediction;
 pub use crate::prediction::EditPredictionId;
 use crate::prediction::EditPredictionResult;
 pub use capture_example::capture_example;
 pub use language_model::ApiKeyState;
 pub use telemetry_events::EditPredictionRating;
-pub use xenomorphic_edit_prediction_delegate::XenomorphicEditPredictionDelegate;
+pub use edit_prediction_store_delegate::EditPredictionStoreDelegate;
 
 actions!(
     edit_prediction,
@@ -110,7 +106,6 @@ const CHANGE_GROUPING_LINE_SPAN: u32 = 8;
 const EDIT_HISTORY_DIFF_SIZE_LIMIT: usize = 2048 * 3; // ~2048 tokens or ~50% of typical prompt budget
 const COLLABORATOR_EDIT_LOCALITY_CONTEXT_TOKENS: usize = 512;
 const LAST_CHANGE_GROUPING_TIME: Duration = Duration::from_secs(1);
-const XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE: &str = "zed_predict_data_collection_choice";
 const REJECT_REQUEST_DEBOUNCE: Duration = Duration::from_secs(15);
 const EDIT_PREDICTION_SETTLED_EVENT: &str = "Edit Prediction Settled";
 const EDIT_PREDICTION_SETTLED_TTL: Duration = Duration::from_secs(60 * 5);
@@ -144,7 +139,6 @@ pub struct EditPredictionStore {
     llm_token: LlmApiToken,
     _fetch_experiments_task: Task<()>,
     projects: HashMap<EntityId, ProjectState>,
-    update_required: bool,
     edit_prediction_model: EditPredictionModel,
     xeta2_raw_config: Option<Xeta2RawConfig>,
     preferred_experiment: Option<String>,
@@ -800,7 +794,6 @@ impl EditPredictionStore {
             client,
             llm_token,
             _fetch_experiments_task: fetch_experiments_task,
-            update_required: false,
             edit_prediction_model: EditPredictionModel::Xeta,
             xeta2_raw_config: Self::xeta2_raw_config_from_env(),
             preferred_experiment: None,
@@ -2089,8 +2082,7 @@ fn currently_following(project: &Entity<Project>, cx: &App) -> bool {
 
 fn is_ep_store_provider(provider: EditPredictionProvider) -> bool {
     match provider {
-        EditPredictionProvider::Xenomorphic
-        | EditPredictionProvider::Mercury
+        EditPredictionProvider::Mercury
         | EditPredictionProvider::Ollama
         | EditPredictionProvider::OpenAiCompatibleApi => true,
         EditPredictionProvider::None
@@ -2127,7 +2119,7 @@ impl EditPredictionStore {
 
         let (needs_acceptance_tracking, max_pending_predictions) =
             match all_language_settings(None, cx).edit_predictions.provider {
-                EditPredictionProvider::Xenomorphic | EditPredictionProvider::Mercury => (true, 2),
+                EditPredictionProvider::Mercury => (true, 2),
                 EditPredictionProvider::Ollama => (false, 1),
                 EditPredictionProvider::OpenAiCompatibleApi => (false, 2),
                 EditPredictionProvider::None
@@ -2653,19 +2645,6 @@ impl EditPredictionStore {
 
             let mut response = http_client.send(request).await?;
 
-            if let Some(minimum_required_version) = response
-                .headers()
-                .get(MINIMUM_REQUIRED_VERSION_HEADER_NAME)
-                .and_then(|version| Version::from_str(version.to_str().ok()?).ok())
-            {
-                anyhow::ensure!(
-                    app_version >= minimum_required_version,
-                    XenomorphicUpdateRequiredError {
-                        minimum_version: minimum_required_version
-                    }
-                );
-            }
-
             if response.status().is_success() {
                 let usage = EditPredictionUsage::from_headers(response.headers()).ok();
 
@@ -2771,13 +2750,8 @@ impl EditPredictionStore {
         }
     }
 
-    fn load_legacy_data_collection_enabled(cx: &App) -> bool {
-        KeyValueStore::global(cx)
-            .read_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE)
-            .log_err()
-            .flatten()
-            .as_deref()
-            == Some("true")
+    fn load_legacy_data_collection_enabled(_cx: &App) -> bool {
+        false
     }
 
     pub(crate) fn is_data_collection_allowed_by_organization(&self, _cx: &App) -> bool {
@@ -2939,60 +2913,8 @@ fn merge_anchor_ranges(
     start..end
 }
 
-#[derive(Error, Debug)]
-#[error(
-    "You must update to Xenomorphic version {minimum_version} or higher to continue using edit predictions."
-)]
-pub struct XenomorphicUpdateRequiredError {
-    minimum_version: Version,
-}
-
-struct XenomorphicPredictUpsell;
-
-fn is_upsell_dismissed(cx: &App) -> bool {
-    // To make this backwards compatible with older versions of Xenomorphic, we
-    // check if the user has seen the previous Edit Prediction Onboarding
-    // before, by checking the data collection choice which was written to
-    // the database once the user clicked on "Accept and Enable"
-    let kvp = KeyValueStore::global(cx);
-    if kvp
-        .read_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE)
-        .log_err()
-        .is_some_and(|s| s.is_some())
-    {
-        return true;
-    }
-
-    kvp.read_kvp(XenomorphicPredictUpsell::KEY)
-        .log_err()
-        .is_some_and(|s| s.is_some())
-}
-
-impl Dismissable for XenomorphicPredictUpsell {
-    const KEY: &'static str = "dismissed-edit-predict-upsell";
-
-    fn dismissed(cx: &App) -> bool {
-        is_upsell_dismissed(cx)
-    }
-}
-
-pub fn should_show_upsell_modal(cx: &App) -> bool {
-    !is_upsell_dismissed(cx)
-}
-
 pub fn init(cx: &mut App) {
     cx.observe_new(move |workspace: &mut Workspace, _, _cx| {
-        workspace.register_action(
-            move |workspace, _: &xenomorphic_actions::OpenZedPredictOnboarding, window, cx| {
-                XenomorphicPredictModal::toggle(
-                    workspace,
-                    workspace.client().clone(),
-                    window,
-                    cx,
-                )
-            },
-        );
-
         workspace.register_action(|workspace, _: &ResetOnboarding, _window, cx| {
             update_settings_file(workspace.app_state().fs.clone(), cx, move |settings, _| {
                 settings

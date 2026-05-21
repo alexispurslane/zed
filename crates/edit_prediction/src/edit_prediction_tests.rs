@@ -2403,7 +2403,7 @@ fn init_test_with_fake_client(
 
 fn init_test_with_fake_client_and_legacy_data_collection(
     cx: &mut TestAppContext,
-    legacy_data_collection_choice: Option<&str>,
+    _legacy_data_collection_choice: Option<&str>,
 ) -> (Entity<EditPredictionStore>, RequestChannels) {
     cx.update(move |cx| {
         cx.set_global(AppDatabase::test_new());
@@ -2411,16 +2411,8 @@ fn init_test_with_fake_client_and_legacy_data_collection(
         cx.set_global(settings_store);
         xlog::init_test();
 
-        if let Some(legacy_data_collection_choice) = legacy_data_collection_choice {
-            KeyValueStore::global(cx)
-                .write_kvp(
-                    XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into(),
-                    legacy_data_collection_choice.to_string(),
-                )
-                .now_or_never()
-                .expect("legacy data collection write should complete immediately")
-                .expect("legacy data collection write should succeed");
-        }
+        // Legacy KV-store data collection initialization removed;
+        // load_legacy_data_collection_enabled() now always returns false.
 
         let (predict_req_tx, predict_req_rx) = mpsc::unbounded();
         let (reject_req_tx, reject_req_rx) = mpsc::unbounded();
@@ -3441,56 +3433,7 @@ async fn test_data_collection_disabled_by_default(cx: &mut TestAppContext) {
     });
 }
 
-#[gpui::test]
-async fn test_data_collection_enabled_via_legacy_kv_store(cx: &mut TestAppContext) {
-    let (ep_store, _channels) =
-        init_test_with_fake_client_and_legacy_data_collection(cx, Some("true"));
 
-    cx.update(|cx| {
-        assert!(ep_store.read(cx).is_data_collection_enabled(cx));
-    });
-}
-
-#[gpui::test]
-async fn test_data_collection_default_uses_cached_legacy_value(cx: &mut TestAppContext) {
-    let (ep_store, _channels) =
-        init_test_with_fake_client_and_legacy_data_collection(cx, Some("true"));
-
-    cx.update(|cx| {
-        assert!(ep_store.read(cx).is_data_collection_enabled(cx));
-    });
-
-    cx.update(|cx| KeyValueStore::global(cx))
-        .delete_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into())
-        .await
-        .unwrap();
-
-    cx.update(|cx| {
-        assert!(ep_store.read(cx).is_data_collection_enabled(cx));
-    });
-}
-
-#[gpui::test]
-async fn test_data_collection_setting_overrides_kv_store(cx: &mut TestAppContext) {
-    let (ep_store, _channels) =
-        init_test_with_fake_client_and_legacy_data_collection(cx, Some("true"));
-
-    // An explicit false in settings.json wins over the KV store.
-    cx.update_global::<SettingsStore, _>(|settings, cx| {
-        settings.update_user_settings(cx, |content| {
-            content
-                .project
-                .all_languages
-                .edit_predictions
-                .get_or_insert_default()
-                .allow_data_collection = Some(EditPredictionDataCollectionChoice::No);
-        });
-    });
-
-    cx.update(|cx| {
-        assert!(!ep_store.read(cx).is_data_collection_enabled(cx));
-    });
-}
 
 #[gpui::test]
 async fn test_data_collection_enabled_via_setting(cx: &mut TestAppContext) {
@@ -3545,120 +3488,9 @@ async fn test_data_collection_disabled_by_organization_configuration(cx: &mut Te
     });
 }
 
-// When a user had data collection enabled via the legacy KV store (with no explicit
-// setting in settings.json), toggle_data_collection must read the *resolved* state
-// (true) and write Some(false).
-#[gpui::test]
-async fn test_toggle_data_collection_from_kv_enabled_state(cx: &mut TestAppContext) {
-    let (ep_store, _channels) =
-        init_test_with_fake_client_and_legacy_data_collection(cx, Some("true"));
 
-    cx.update(|cx| {
-        assert!(
-            ep_store.read(cx).is_data_collection_enabled(cx),
-            "data collection should be enabled via KV store before toggle"
-        );
-    });
 
-    // Simulate what toggle_data_collection does: capture the resolved current
-    // state, then write its inverse.
-    let is_currently_enabled = cx.update(|cx| ep_store.read(cx).is_data_collection_enabled(cx));
-    cx.update_global::<SettingsStore, _>(|settings, cx| {
-        settings.update_user_settings(cx, |content| {
-            content
-                .project
-                .all_languages
-                .edit_predictions
-                .get_or_insert_default()
-                .allow_data_collection = Some(if is_currently_enabled {
-                EditPredictionDataCollectionChoice::No
-            } else {
-                EditPredictionDataCollectionChoice::Yes
-            });
-        });
-    });
 
-    cx.update(|cx| {
-        assert!(
-            !ep_store.read(cx).is_data_collection_enabled(cx),
-            "data collection should be disabled after toggling off from KV-enabled state"
-        );
-    });
-}
-
-#[gpui::test]
-async fn test_upsell_shown_by_default(cx: &mut TestAppContext) {
-    init_test(cx);
-    let kvp = cx.update(|cx| KeyValueStore::global(cx));
-    kvp.delete_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into())
-        .await
-        .ok();
-    kvp.delete_kvp(XenomorphicPredictUpsell::KEY.into()).await.ok();
-
-    cx.update(|cx| assert!(should_show_upsell_modal(cx)));
-}
-
-#[gpui::test]
-async fn test_upsell_dismissed_when_data_collection_choice_in_kv_store(cx: &mut TestAppContext) {
-    init_test(cx);
-
-    // Any value for the data collection key means the old upsell was already
-    // shown, regardless of whether data collection was accepted or declined.
-    for value in &["true", "false"] {
-        cx.update(|cx| KeyValueStore::global(cx))
-            .write_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into(), value.to_string())
-            .await
-            .unwrap();
-
-        cx.update(|cx| {
-            assert!(
-                !should_show_upsell_modal(cx),
-                "upsell should be suppressed when data collection choice is '{value}'"
-            );
-        });
-    }
-
-    cx.update(|cx| KeyValueStore::global(cx))
-        .delete_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into())
-        .await
-        .unwrap();
-}
-
-#[gpui::test]
-async fn test_upsell_dismissed_when_dismissed_key_set(cx: &mut TestAppContext) {
-    init_test(cx);
-    let kvp = cx.update(|cx| KeyValueStore::global(cx));
-    kvp.delete_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into())
-        .await
-        .ok();
-    kvp.write_kvp(XenomorphicPredictUpsell::KEY.into(), "1".into())
-        .await
-        .unwrap();
-
-    cx.update(|cx| assert!(!should_show_upsell_modal(cx)));
-
-    kvp.delete_kvp(XenomorphicPredictUpsell::KEY.into()).await.unwrap();
-}
-
-#[gpui::test]
-async fn test_upsell_dismissed_via_dismissable_api(cx: &mut TestAppContext) {
-    init_test(cx);
-    let kvp = cx.update(|cx| KeyValueStore::global(cx));
-    kvp.delete_kvp(XENOMORPHIC_PREDICT_DATA_COLLECTION_CHOICE.into())
-        .await
-        .ok();
-    kvp.delete_kvp(XenomorphicPredictUpsell::KEY.into()).await.ok();
-
-    cx.update(|cx| {
-        assert!(should_show_upsell_modal(cx));
-        XenomorphicPredictUpsell::set_dismissed(true, cx);
-    });
-    cx.run_until_parked();
-
-    cx.update(|cx| assert!(!should_show_upsell_modal(cx)));
-
-    kvp.delete_kvp(XenomorphicPredictUpsell::KEY.into()).await.unwrap();
-}
 
 #[ctor::ctor]
 fn init_logger() {

@@ -700,7 +700,7 @@ mod tests {
                 &r#"
                 {
                     "edit_predictions": {
-                        "provider": "xenomorphic"
+                        "provider": "copilot"
                     }
                 }
                 "#
@@ -2902,7 +2902,7 @@ mod tests {
                 &r#"
                 {
                     "edit_predictions": {
-                        "provider": "xenomorphic",
+                        "provider": "copilot",
                         "mode": "eager"
                     }
                 }
@@ -2950,7 +2950,16 @@ mod tests {
             }
             "#
             .unindent(),
-            None,
+            Some(
+                &r#"
+                {
+                    "edit_predictions": {
+                        "provider": "copilot"
+                    }
+                }
+                "#
+                .unindent(),
+            ),
         );
 
         // Non-object edit_predictions (e.g. true) should gracefully skip
@@ -3073,7 +3082,7 @@ mod tests {
                     },
                     "macos": {
                         "edit_predictions": {
-                            "provider": "xenomorphic"
+                            "provider": "copilot"
                         }
                     },
                     "profiles": {
@@ -3211,7 +3220,7 @@ mod tests {
                 &r#"
                 {
                     "edit_predictions": {
-                        "provider": "xenomorphic"
+                        "provider": "copilot"
                     }
                 }
                 "#

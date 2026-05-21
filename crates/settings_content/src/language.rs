@@ -83,7 +83,6 @@ pub enum EditPredictionProvider {
     None,
     #[default]
     Copilot,
-    Xenomorphic,
     Codestral,
     Ollama,
     OpenAiCompatibleApi,
@@ -91,21 +90,8 @@ pub enum EditPredictionProvider {
 }
 
 impl EditPredictionProvider {
-    pub fn is_zed(&self) -> bool {
-        match self {
-            EditPredictionProvider::Xenomorphic => true,
-            EditPredictionProvider::None
-            | EditPredictionProvider::Copilot
-            | EditPredictionProvider::Codestral
-            | EditPredictionProvider::Ollama
-            | EditPredictionProvider::OpenAiCompatibleApi
-            | EditPredictionProvider::Mercury => false,
-        }
-    }
-
     pub fn display_name(&self) -> Option<&'static str> {
         match self {
-            EditPredictionProvider::Xenomorphic => Some("Xenomorphic AI"),
             EditPredictionProvider::Copilot => Some("GitHub Copilot"),
             EditPredictionProvider::Codestral => Some("Codestral"),
             EditPredictionProvider::Mercury => Some("Mercury"),

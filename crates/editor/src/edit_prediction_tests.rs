@@ -340,8 +340,8 @@ async fn test_edit_prediction_jump_disabled_for_non_zed_providers(cx: &mut gpui:
     init_test(cx, |_| {});
 
     let mut cx = EditorTestContext::new(cx).await;
-    let provider = cx.new(|_| FakeNonXenomorphicEditPredictionDelegate::default());
-    assign_editor_completion_provider_non_zed(provider.clone(), &mut cx);
+    let provider = cx.new(|_| FakeEditPredictionDelegate::default());
+    assign_editor_edit_prediction_provider(provider.clone(), &mut cx);
 
     // Cursor is 2+ lines above the proposed edit
     cx.set_state(indoc! {"
@@ -352,7 +352,7 @@ async fn test_edit_prediction_jump_disabled_for_non_zed_providers(cx: &mut gpui:
         line
     "});
 
-    propose_edits_non_zed(
+    propose_edits(
         &provider,
         vec![(Point::new(4, 3)..Point::new(4, 3), " 4")],
         &mut cx,
@@ -1479,8 +1479,8 @@ fn assign_editor_completion_menu_provider(cx: &mut EditorTestContext) {
     });
 }
 
-fn propose_edits_non_zed<T: ToOffset>(
-    provider: &Entity<FakeNonXenomorphicEditPredictionDelegate>,
+fn propose_edits<T: ToOffset>(
+    provider: &Entity<FakeEditPredictionDelegate>,
     edits: Vec<(Range<T>, &str)>,
     cx: &mut EditorTestContext,
 ) {
@@ -1502,8 +1502,8 @@ fn propose_edits_non_zed<T: ToOffset>(
     });
 }
 
-fn assign_editor_completion_provider_non_zed(
-    provider: Entity<FakeNonXenomorphicEditPredictionDelegate>,
+fn assign_editor_edit_prediction_provider(
+    provider: Entity<FakeEditPredictionDelegate>,
     cx: &mut EditorTestContext,
 ) {
     cx.update_editor(|editor, window, cx| {
@@ -1642,11 +1642,11 @@ impl EditPredictionDelegate for FakeEditPredictionDelegate {
 }
 
 #[derive(Default, Clone)]
-pub struct FakeNonXenomorphicEditPredictionDelegate {
+pub struct FakeEditPredictionDelegate {
     pub completion: Option<edit_prediction_types::EditPrediction>,
 }
 
-impl FakeNonXenomorphicEditPredictionDelegate {
+impl FakeEditPredictionDelegate {
     pub fn set_edit_prediction(
         &mut self,
         completion: Option<edit_prediction_types::EditPrediction>,
@@ -1655,13 +1655,13 @@ impl FakeNonXenomorphicEditPredictionDelegate {
     }
 }
 
-impl EditPredictionDelegate for FakeNonXenomorphicEditPredictionDelegate {
+impl EditPredictionDelegate for FakeEditPredictionDelegate {
     fn name() -> &'static str {
-        "fake-non-zed-provider"
+        "fake-provider"
     }
 
     fn display_name() -> &'static str {
-        "Fake Non-Xenomorphic Provider"
+        "Fake Provider"
     }
 
     fn show_predictions_in_menu() -> bool {
