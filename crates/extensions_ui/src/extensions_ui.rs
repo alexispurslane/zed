@@ -189,7 +189,6 @@ fn extension_provides_label(provides: ExtensionProvides) -> &'static str {
         ExtensionProvides::IndexedDocsProviders => "Indexed Docs Providers",
         ExtensionProvides::Snippets => "Snippets",
         ExtensionProvides::DebugAdapters => "Debug Adapters",
-        ExtensionProvides::LanguageModels => "Language Models",
     }
 }
 
@@ -474,7 +473,7 @@ impl ExtensionsPage {
                     }
                 })
                 .filter(|(_, extension)| match self.provides_filter {
-                    Some(provides) => extension.manifest.provides().contains(&provides),
+                    Some(provides) => extension.manifest.provides.contains(&provides),
                     None => true,
                 })
                 .map(|(ix, _)| ix),
@@ -794,7 +793,7 @@ impl ExtensionsPage {
                                     }),
                             )
                             .map(|parent| {
-                                if extension.manifest.provides().is_empty() {
+                                if extension.manifest.provides.is_empty() {
                                     return parent;
                                 }
 
@@ -802,7 +801,7 @@ impl ExtensionsPage {
                                     h_flex().gap_1().children(
                                         extension
                                             .manifest
-                                            .provides()
+                                            .provides
                                             .iter()
                                             .filter_map(|provides| {
                                                 match provides {
@@ -872,7 +871,7 @@ impl ExtensionsPage {
                             .gap_1()
                             .flex_shrink_0()
                             .child({
-                                let repo_url_for_tooltip: SharedString = repository_url.clone().unwrap_or_default().into();
+                                let repo_url_for_tooltip: SharedString = repository_url.clone().into();
 
                                 IconButton::new(
                                     SharedString::from(format!("repository-{}", extension.id)),
@@ -888,9 +887,7 @@ impl ExtensionsPage {
                                     )
                                 })
                                 .on_click(cx.listener(move |_, _, _, cx| {
-                                        if let Some(url) = repository_url.as_ref() {
-                                            cx.open_url(url);
-                                        }
+                                        cx.open_url(&repository_url);
                                     }))
                             })
                             .child(
@@ -1024,7 +1021,7 @@ impl ExtensionsPage {
 
         let is_configurable = extension
             .manifest
-            .provides()
+            .provides
             .contains(&ExtensionProvides::ContextServers);
 
         match status.clone() {

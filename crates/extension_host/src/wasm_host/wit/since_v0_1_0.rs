@@ -36,15 +36,15 @@ wasmtime::component::bindgen!({
     with: {
          "worktree": ExtensionWorktree,
          "key-value-store": ExtensionKeyValueStore,
-         "xenomorphic:extension/http-client/http-response-stream": ExtensionHttpResponseStream,
-         "xenomorphic:extension/github": since_v0_6_0::xenomorphic::extension::github,
-         "xenomorphic:extension/nodejs": latest::xenomorphic::extension::nodejs,
-         "xenomorphic:extension/platform": latest::xenomorphic::extension::platform,
-         "xenomorphic:extension/slash-command": latest::xenomorphic::extension::slash_command,
+         "zed:extension/http-client/http-response-stream": ExtensionHttpResponseStream,
+         "zed:extension/github": since_v0_6_0::zed::extension::github,
+         "zed:extension/nodejs": latest::zed::extension::nodejs,
+         "zed:extension/platform": latest::zed::extension::platform,
+         "zed:extension/slash-command": latest::zed::extension::slash_command,
     },
 });
 
-pub use self::xenomorphic::extension::*;
+pub use self::zed::extension::*;
 
 mod settings {
     include!(concat!(env!("OUT_DIR"), "/since_v0.1.0/settings.rs"));

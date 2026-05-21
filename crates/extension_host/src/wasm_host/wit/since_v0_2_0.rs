@@ -22,16 +22,16 @@ wasmtime::component::bindgen!({
          "worktree": ExtensionWorktree,
          "project": ExtensionProject,
          "key-value-store": ExtensionKeyValueStore,
-         "xenomorphic:extension/github": since_v0_6_0::xenomorphic::extension::github,
-         "xenomorphic:extension/http-client": latest::xenomorphic::extension::http_client,
-         "xenomorphic:extension/lsp": since_v0_6_0::xenomorphic::extension::lsp,
-         "xenomorphic:extension/nodejs": latest::xenomorphic::extension::nodejs,
-         "xenomorphic:extension/platform": latest::xenomorphic::extension::platform,
-         "xenomorphic:extension/slash-command": latest::xenomorphic::extension::slash_command,
+         "zed:extension/github": since_v0_6_0::zed::extension::github,
+         "zed:extension/http-client": latest::zed::extension::http_client,
+         "zed:extension/lsp": since_v0_6_0::zed::extension::lsp,
+         "zed:extension/nodejs": latest::zed::extension::nodejs,
+         "zed:extension/platform": latest::zed::extension::platform,
+         "zed:extension/slash-command": latest::zed::extension::slash_command,
     },
 });
 
-pub use self::xenomorphic::extension::*;
+pub use self::zed::extension::*;
 
 mod settings {
     #![allow(dead_code)]

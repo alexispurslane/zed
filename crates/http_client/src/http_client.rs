@@ -12,7 +12,6 @@ pub use http::{self, Method, Request, Response, StatusCode, Uri, request::Builde
 
 use futures::future::BoxFuture;
 use parking_lot::Mutex;
-use serde::Serialize;
 use std::sync::Arc;
 #[cfg(feature = "test-support")]
 use std::{any::type_name, fmt};
@@ -210,8 +209,8 @@ impl HttpClientWithUrl {
         format!("{}{}", self.base_url(), path)
     }
 
-    /// Builds a Xenomorphic API URL using the given path.
-    pub fn build_zed_api_url(&self, path: &str, query: &[(&str, &str)]) -> Result<Url> {
+    /// Builds an API URL using the given path.
+    pub fn build_api_url(&self, path: &str, query: &[(&str, &str)]) -> Result<Url> {
         let base_url = self.base_url();
         let base_api_url = match base_url.as_ref() {
             "https://zed.dev" => "https://api.zed.dev",
@@ -226,34 +225,8 @@ impl HttpClientWithUrl {
         )?)
     }
 
-    /// Builds a Xenomorphic Cloud URL using the given path.
-    pub fn build_zed_cloud_url(&self, path: &str) -> Result<Url> {
-        let base_url = self.base_url();
-        let base_api_url = match base_url.as_ref() {
-            "https://zed.dev" => "https://cloud.zed.dev",
-            "https://staging.zed.dev" => "https://cloud.zed.dev",
-            "http://localhost:3000" => "http://localhost:8787",
-            other => other,
-        };
-
-        Ok(Url::parse(&format!("{}{}", base_api_url, path))?)
-    }
-
-    /// Builds a Xenomorphic Cloud URL using the given path and query params.
-    pub fn build_zed_cloud_url_with_query(&self, path: &str, query: impl Serialize) -> Result<Url> {
-        let base_url = self.base_url();
-        let base_api_url = match base_url.as_ref() {
-            "https://zed.dev" => "https://cloud.zed.dev",
-            "https://staging.zed.dev" => "https://cloud.zed.dev",
-            "http://localhost:3000" => "http://localhost:8787",
-            other => other,
-        };
-        let query = serde_urlencoded::to_string(&query)?;
-        Ok(Url::parse(&format!("{}{}?{}", base_api_url, path, query))?)
-    }
-
-    /// Builds a Xenomorphic LLM URL using the given path.
-    pub fn build_zed_llm_url(&self, path: &str, query: &[(&str, &str)]) -> Result<Url> {
+    /// Builds an LLM URL using the given path.
+    pub fn build_llm_url(&self, path: &str, query: &[(&str, &str)]) -> Result<Url> {
         let base_url = self.base_url();
         let base_api_url = match base_url.as_ref() {
             "https://zed.dev" => "https://cloud.zed.dev",

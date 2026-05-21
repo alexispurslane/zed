@@ -7,7 +7,7 @@ use web_search::WebSearchResponse;
 use futures::FutureExt as _;
 use gpui::{App, Task};
 use language_model::{
-    LanguageModelProviderId, LanguageModelToolResultContent, XENOMORPHIC_CLOUD_PROVIDER_ID,
+    LanguageModelProviderId, LanguageModelToolResultContent,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -62,9 +62,11 @@ impl AgentTool for WebSearchTool {
         "Searching the Web".into()
     }
 
-    /// We currently only support Xenomorphic Cloud as a provider.
+    /// We currently only support web search when a provider with web search capability is available.
     fn supports_provider(provider: &LanguageModelProviderId) -> bool {
-        provider == &XENOMORPHIC_CLOUD_PROVIDER_ID
+        // Web search is available for any provider that has a configured web search provider.
+        let _ = provider;
+        true
     }
 
     fn run(

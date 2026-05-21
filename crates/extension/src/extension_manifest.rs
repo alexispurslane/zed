@@ -119,8 +119,6 @@ pub struct ExtensionManifest {
     pub debug_locators: BTreeMap<Arc<str>, DebugLocatorManifestEntry>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub language_model_providers: BTreeMap<Arc<str>, LanguageModelProviderManifestEntry>,
-    #[serde(default)]
-    pub wasm_api_version: Option<String>,
 }
 
 impl ExtensionManifest {
@@ -441,7 +439,6 @@ fn manifest_from_old_manifest(
         debug_adapters: Default::default(),
         debug_locators: Default::default(),
         language_model_providers: Default::default(),
-        wasm_api_version: None,
     }
 }
 
@@ -478,7 +475,6 @@ mod tests {
             debug_adapters: Default::default(),
             debug_locators: Default::default(),
             language_model_providers: BTreeMap::default(),
-            wasm_api_version: None,
         }
     }
 
@@ -622,8 +618,20 @@ mod tests {
 }
 
 /// Features that an extension can provide.
-/// Previously came from `cloud_api_types`; defined locally now.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum ExtensionProvides {
     Themes,
     IconThemes,
@@ -632,11 +640,10 @@ pub enum ExtensionProvides {
     LanguageServers,
     ContextServers,
     AgentServers,
-    Snippets,
-    DebugAdapters,
     SlashCommands,
     IndexedDocsProviders,
-    LanguageModels,
+    Snippets,
+    DebugAdapters,
 }
 
 impl ExtensionProvides {
@@ -649,11 +656,10 @@ impl ExtensionProvides {
             ExtensionProvides::LanguageServers,
             ExtensionProvides::ContextServers,
             ExtensionProvides::AgentServers,
-            ExtensionProvides::Snippets,
-            ExtensionProvides::DebugAdapters,
             ExtensionProvides::SlashCommands,
             ExtensionProvides::IndexedDocsProviders,
-            ExtensionProvides::LanguageModels,
+            ExtensionProvides::Snippets,
+            ExtensionProvides::DebugAdapters,
         ]
     }
 }
@@ -668,43 +674,44 @@ impl fmt::Display for ExtensionProvides {
             Self::LanguageServers => write!(f, "language_servers"),
             Self::ContextServers => write!(f, "context_servers"),
             Self::AgentServers => write!(f, "agent_servers"),
-            Self::Snippets => write!(f, "snippets"),
-            Self::DebugAdapters => write!(f, "debug_adapters"),
             Self::SlashCommands => write!(f, "slash_commands"),
             Self::IndexedDocsProviders => write!(f, "indexed_docs_providers"),
-            Self::LanguageModels => write!(f, "language_models"),
+            Self::Snippets => write!(f, "snippets"),
+            Self::DebugAdapters => write!(f, "debug_adapters"),
         }
     }
 }
 
-/// Metadata for an extension from the extension marketplace.
-/// Previously came from `cloud_api_types`; defined locally now.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtensionMetadata {
-    pub id: Arc<str>,
+/// Manifest information returned by the Zed extension store API.
+/// This is a lighter-weight version of [`ExtensionManifest`] that only contains
+/// the fields the API returns.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct ExtensionApiManifest {
     pub name: String,
     pub version: Arc<str>,
+    pub description: Option<String>,
     pub authors: Vec<String>,
-    pub description: String,
     pub repository: String,
-    pub download_count: i64,
+    pub schema_version: Option<i32>,
+    pub wasm_api_version: Option<String>,
     #[serde(default)]
-    
+    pub provides: BTreeSet<ExtensionProvides>,
+}
+
+/// Metadata for an extension from the extension marketplace.
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct ExtensionMetadata {
+    pub id: Arc<str>,
+    #[serde(flatten)]
+    pub manifest: ExtensionApiManifest,
     pub published_at: Option<String>,
-    pub manifest: ExtensionManifest,
-    #[serde(default)]
-    pub context_servers: Vec<serde_json::Value>,
-    #[serde(default)]
-    pub dev: bool,
-    #[serde(default)]
-    pub toml: Option<String>,
-    #[serde(default)]
-    pub wasm: Option<String>,
+    pub download_count: u64,
 }
 
 /// Response from the extensions API endpoint.
-/// Previously came from `cloud_api_types`; defined locally now.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+#[derive(Serialize, Deserialize)]
 pub struct GetExtensionsResponse {
     pub data: Vec<ExtensionMetadata>,
 }

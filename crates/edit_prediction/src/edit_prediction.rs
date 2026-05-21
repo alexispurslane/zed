@@ -6,7 +6,7 @@ use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, global_llm_token
     EditPredictionRejectReason, EditPredictionRejection,
     MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
     PREFERRED_EXPERIMENT_HEADER_NAME, RejectEditPredictionsBody,
-    XENOMORPHIC_VERSION_HEADER_NAME, LlmApiToken, OrganizationId, SubmitEditPredictionFeedbackBody,
+    XENOMORPHIC_VERSION_HEADER_NAME, LlmApiToken, OrganizationId,
     AcceptEditPredictionBody,
 };
 use collections::{HashMap, HashSet};
@@ -879,7 +879,7 @@ impl EditPredictionStore {
                     let token = client
                         .acquire_llm_token(&llm_token, organization_id.clone())
                         .await?;
-                    let url = http_client.build_zed_llm_url("/edit_prediction_experiments", &[])?;
+                    let url = http_client.build_llm_url("/edit_prediction_experiments", &[])?;
                     let request = http_client::Request::builder()
                         .method(Method::GET)
                         .uri(url.as_ref())
@@ -1539,7 +1539,7 @@ impl EditPredictionStore {
 
             let url = client
                 .http_client()
-                .build_zed_llm_url("/predict_edits/reject", &[])
+                .build_llm_url("/predict_edits/reject", &[])
                 .unwrap();
 
             let flush_count = batched
@@ -2549,7 +2549,7 @@ impl EditPredictionStore {
         } else {
             client
                 .http_client()
-                .build_zed_llm_url("/predict_edits/raw", &[])?
+                .build_llm_url("/predict_edits/raw", &[])?
         };
 
         Self::send_api_request(
@@ -2580,7 +2580,7 @@ impl EditPredictionStore {
     ) -> Result<(PredictEditsV3Response, Option<EditPredictionUsage>)> {
         let url = client
             .http_client()
-            .build_zed_llm_url("/predict_edits/v3", &[])?;
+            .build_llm_url("/predict_edits/v3", &[])?;
 
         let request = PredictEditsV3Request { input: serde_json::to_value(&input).unwrap_or_default(), trigger, ..Default::default() };
 
@@ -2804,11 +2804,8 @@ impl EditPredictionStore {
         feedback: String,
         cx: &mut Context<Self>,
     ) {
-        let organization: Option<client::Organization> = None; // Cloud organization check removed
-
         self.rated_predictions.insert(prediction.id.clone());
 
-        // Cloud edit prediction feedback submission removed
         // Rating is no longer sent to a cloud server
 
         cx.notify();

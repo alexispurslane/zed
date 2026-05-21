@@ -1,11 +1,6 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow};
-use crate::cloud_types::{
-    AuthenticatedUser, GetAuthenticatedUserResponse, KnownOrUnknown, Plan, PlanInfo,
-    CurrentUsage, UsageData, UsageLimit,
-};
 use futures::{StreamExt, stream::BoxStream};
 use gpui::{AppContext as _, TestAppContext};
 use http_client::{AsyncBody, Method, Request, http};
@@ -46,32 +41,6 @@ impl FakeServer {
                 let old_handler = old_handler.clone();
                 async move {
                     match (req.method(), req.uri().path()) {
-                        (&Method::GET, "/client/users/me") => {
-                            let credentials = parse_authorization_header(&req);
-                            if credentials
-                                != Some(Credentials {
-                                    user_id: client_user_id,
-                                    access_token: state.lock().access_token.to_string(),
-                                })
-                            {
-                                return Ok(http_client::Response::builder()
-                                    .status(401)
-                                    .body("Unauthorized".into())
-                                    .unwrap());
-                            }
-
-                            Ok(http_client::Response::builder()
-                                .status(200)
-                                .body(
-                                    serde_json::to_string(&make_get_authenticated_user_response(
-                                        client_user_id as i32,
-                                        format!("user-{client_user_id}"),
-                                    ))
-                                    .unwrap()
-                                    .into(),
-                                )
-                                .unwrap())
-                        }
                         _ => old_handler(req).await,
                     }
                 }
@@ -232,39 +201,4 @@ pub fn parse_authorization_header(req: &Request<AsyncBody>) -> Option<Credential
         user_id,
         access_token: access_token.to_string(),
     })
-}
-
-pub fn make_get_authenticated_user_response(
-    user_id: i32,
-    github_login: String,
-) -> GetAuthenticatedUserResponse {
-    GetAuthenticatedUserResponse {
-        user: AuthenticatedUser {
-            id: user_id,
-            metrics_id: format!("metrics-id-{user_id}"),
-            avatar_url: "".to_string(),
-            github_login,
-            name: None,
-            is_staff: false,
-            accepted_tos_at: None,
-        },
-        feature_flags: vec![],
-        organizations: vec![],
-        default_organization_id: None,
-        plans_by_organization: BTreeMap::new(),
-        configuration_by_organization: BTreeMap::new(),
-        plan: PlanInfo {
-            plan: KnownOrUnknown::Known(Plan::XenomorphicPro),
-            subscription_period: None,
-            usage: CurrentUsage {
-                edit_predictions: UsageData {
-                    used: 250,
-                    limit: UsageLimit::Unlimited,
-                },
-            },
-            trial_started_at: None,
-            is_account_too_young: false,
-            has_overdue_invoices: false,
-        },
-    }
 }

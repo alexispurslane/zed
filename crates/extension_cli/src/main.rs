@@ -8,9 +8,8 @@ use std::sync::Arc;
 use ::fs::{CopyOptions, Fs, RealFs, copy_recursive};
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::Parser;
-use extension::ExtensionProvides;
+use extension::{ExtensionApiManifest, ExtensionManifest, ExtensionProvides, ExtensionSnippets};
 use extension::extension_builder::{CompileExtensionOptions, ExtensionBuilder};
-use extension::{ExtensionManifest, ExtensionSnippets};
 use language::LanguageConfig;
 use reqwest_client::ReqwestClient;
 use settings_content::SemanticTokenRules;
@@ -108,7 +107,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    let manifest_json = serde_json::to_string(&cloud_api_types::ExtensionApiManifest {
+    let manifest_json = serde_json::to_string(&ExtensionApiManifest {
         name: manifest.name,
         version: manifest.version,
         description: manifest.description,

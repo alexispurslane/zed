@@ -39,11 +39,6 @@ impl ThreadFeedbackState {
             return;
         };
 
-        let project = thread.read(cx).project().read(cx);
-        let client = project.client();
-        // Cloud organization check removed
-        let organization: Option<client::Organization> = None;
-
         if self.feedback == Some(feedback) {
             return;
         }
@@ -58,16 +53,10 @@ impl ThreadFeedbackState {
             }
         }
         let session_id = thread.read(cx).session_id().clone();
-        let parent_session_id = thread.read(cx).parent_session_id().cloned();
-        let agent_telemetry_id = thread.read(cx).connection().telemetry_id();
         let task = telemetry.thread_data(&session_id, cx);
-        let rating = match feedback {
-            ThreadFeedback::Positive => "positive",
-            ThreadFeedback::Negative => "negative",
-        };
         cx.background_spawn(async move {
             let _thread = task.await?;
-            // Cloud agent feedback submission removed
+            // Feedback submission no longer goes through cloud
             anyhow::Ok(())
         })
         .detach_and_log_err(cx);
@@ -1141,8 +1130,7 @@ impl ThreadView {
         let (error_kind, message): (&str, SharedString) = match error {
                 ThreadError::PaymentRequired => (
                     "payment_required",
-                    "You reached your free usage limit. Upgrade to Xenomorphic Pro for more prompts."
-                        .into(),
+                    "You reached your usage limit.".into(),
                 ),
                 ThreadError::Refusal => {
                     let model_or_agent_name = self.current_model_name(cx);
@@ -8116,22 +8104,17 @@ impl ThreadView {
             .dismiss_action(self.dismiss_error_button(cx))
     }
 
-    fn render_payment_required_error(&self, cx: &mut Context<Self>) -> Callout {
+    fn render_payment_required_error(&self, _cx: &mut Context<Self>) -> Callout {
         const ERROR_MESSAGE: &str =
-            "You reached your free usage limit. Upgrade to Xenomorphic Pro for more prompts.";
+            "You reached your usage limit.";
 
         Callout::new()
             .severity(Severity::Error)
             .icon(IconName::XCircle)
-            .title("Free Usage Exceeded")
+            .title("Usage Limit Exceeded")
             .description(ERROR_MESSAGE)
-            .actions_slot(
-                h_flex()
-                    .gap_0p5()
-                    .child(self.upgrade_button(cx))
-                    .child(self.create_copy_button(ERROR_MESSAGE)),
-            )
-            .dismiss_action(self.dismiss_error_button(cx))
+            .actions_slot(self.create_copy_button(ERROR_MESSAGE))
+            .dismiss_action(self.dismiss_error_button(_cx))
     }
 
     fn render_error_callout(
@@ -8197,18 +8180,6 @@ impl ThreadView {
             .on_click(cx.listener(|this, _, window, cx| {
                 this.clear_thread_error(cx);
                 window.dispatch_action(NewThread.boxed_clone(), cx);
-            }))
-    }
-
-    fn upgrade_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        Button::new("upgrade", "Upgrade")
-            .label_size(LabelSize::Small)
-            .style(ButtonStyle::Tinted(ui::TintColor::Accent))
-            .on_click(cx.listener({
-                move |this, _, _, cx| {
-                    this.clear_thread_error(cx);
-                    cx.open_url("https://xenomorphic.dev/account/upgrade");
-                }
             }))
     }
 

@@ -39,9 +39,90 @@ const WASI_SDK_ASSET_NAME: Option<&str> = cfg_select! {
     _ => None
 };
 
+/// Resolved paths to Rust toolchain binaries that are consistent with each other
+/// (i.e., all from the same rustup-managed toolchain).
+#[derive(Clone, Debug)]
+struct RustToolchainPaths {
+    cargo: PathBuf,
+    rustc: PathBuf,
+    rustup: PathBuf,
+}
+
+impl RustToolchainPaths {
+    /// Resolve the Rust toolchain paths by using `rustup which` to find the
+    /// rustup-managed binaries. This ensures we use a consistent toolchain that
+    /// has the `wasm32-wasip2` target installed, even if Homebrew's Rust is
+    /// earlier on the PATH.
+    async fn resolve() -> Result<Self> {
+        // Try `rustup which` first to get the rustup-managed binary paths.
+        // This avoids the issue where Homebrew's rustc/cargo are found first
+        // on PATH but don't have the wasm32-wasip2 target installed.
+        let rustup_path = Self::find_on_path("rustup");
+
+        if let Some(rustup) = &rustup_path {
+            // Use `rustup which cargo` and `rustup which rustc` to get the
+            // toolchain-specific binary paths.
+            let cargo_output = util::command::new_command(rustup)
+                .args(["which", "cargo"])
+                .output()
+                .await;
+
+            let rustc_output = util::command::new_command(rustup)
+                .args(["which", "rustc"])
+                .output()
+                .await;
+
+            if let (Ok(cargo_out), Ok(rustc_out)) = (cargo_output, rustc_output) {
+                if cargo_out.status.success() && rustc_out.status.success() {
+                    let cargo = PathBuf::from(
+                        String::from_utf8_lossy(&cargo_out.stdout).trim(),
+                    );
+                    let rustc = PathBuf::from(
+                        String::from_utf8_lossy(&rustc_out.stdout).trim(),
+                    );
+                    if cargo.exists() && rustc.exists() {
+                        return Ok(Self {
+                            cargo,
+                            rustc,
+                            rustup: rustup.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Fallback: use whatever is on PATH.
+        let cargo = Self::find_on_path("cargo").unwrap_or_else(|| PathBuf::from("cargo"));
+        let rustc = Self::find_on_path("rustc").unwrap_or_else(|| PathBuf::from("rustc"));
+        let rustup = rustup_path.unwrap_or_else(|| PathBuf::from("rustup"));
+
+        Ok(Self {
+            cargo,
+            rustc,
+            rustup,
+        })
+    }
+
+    /// Find a binary on PATH using `which`.
+    fn find_on_path(name: &str) -> Option<PathBuf> {
+        // Use a quick synchronous check - just check common locations.
+        // The `which` crate would be ideal, but we avoid the dependency.
+        // Instead, we'll resolve it lazily.
+        let path_var = env::var_os("PATH").unwrap_or_default();
+        for dir in env::split_paths(&path_var) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+}
+
 pub struct ExtensionBuilder {
     cache_dir: PathBuf,
     pub http: Arc<dyn HttpClient>,
+    rust_paths: std::sync::Mutex<Option<RustToolchainPaths>>,
 }
 
 pub struct CompileExtensionOptions {
@@ -69,7 +150,29 @@ impl ExtensionBuilder {
         Self {
             cache_dir,
             http: http_client,
+            rust_paths: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Returns the resolved Rust toolchain paths, resolving them on first access.
+    async fn rust_paths(&self) -> Result<RustToolchainPaths> {
+        {
+            let guard = self.rust_paths.lock().unwrap();
+            if let Some(paths) = guard.as_ref() {
+                return Ok(paths.clone());
+            }
+        }
+
+        let paths = RustToolchainPaths::resolve().await?;
+        log::info!(
+            "Resolved Rust toolchain: cargo={}, rustc={}",
+            paths.cargo.display(),
+            paths.rustc.display()
+        );
+
+        let mut guard = self.rust_paths.lock().unwrap();
+        guard.get_or_insert_with(|| paths.clone());
+        Ok(paths)
     }
 
     pub async fn compile_extension(
@@ -141,7 +244,8 @@ impl ExtensionBuilder {
         manifest: &mut ExtensionManifest,
         options: CompileExtensionOptions,
     ) -> anyhow::Result<()> {
-        self.install_rust_wasm_target_if_needed().await?;
+        let rust_paths = self.rust_paths().await?;
+        self.install_rust_wasm_target_if_needed(&rust_paths).await?;
 
         let cargo_toml_content = fs::read_to_string(extension_dir.join("Cargo.toml"))?;
         let cargo_toml: CargoToml = toml::from_str(&cargo_toml_content)?;
@@ -150,13 +254,16 @@ impl ExtensionBuilder {
             "compiling Rust crate for extension {}",
             extension_dir.display()
         );
-        let output = util::command::new_command("cargo")
+        let output = util::command::new_command(&rust_paths.cargo)
             .args(["build", "--target", RUST_TARGET])
             .args(options.release.then_some("--release"))
             .arg("--target-dir")
             .arg(extension_dir.join("target"))
             // WASI builds do not work with sccache and just stuck, so disable it.
             .env("RUSTC_WRAPPER", "")
+            // Explicitly tell cargo which rustc to use, so it doesn't
+            // resolve a different one from PATH (e.g., Homebrew's).
+            .env("RUSTC", &rust_paths.rustc)
             .current_dir(extension_dir)
             .output()
             .await
@@ -367,8 +474,8 @@ impl ExtensionBuilder {
         Ok(())
     }
 
-    async fn install_rust_wasm_target_if_needed(&self) -> Result<()> {
-        let rustc_output = util::command::new_command("rustc")
+    async fn install_rust_wasm_target_if_needed(&self, rust_paths: &RustToolchainPaths) -> Result<()> {
+        let rustc_output = util::command::new_command(&rust_paths.rustc)
             .arg("--print")
             .arg("sysroot")
             .output()
@@ -386,7 +493,7 @@ impl ExtensionBuilder {
             return Ok(());
         }
 
-        let output = util::command::new_command("rustup")
+        let output = util::command::new_command(&rust_paths.rustup)
             .args(["target", "add", RUST_TARGET])
             .stderr(Stdio::piped())
             .stdout(Stdio::inherit())

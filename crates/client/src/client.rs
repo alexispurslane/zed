@@ -41,21 +41,19 @@ use thiserror::Error;
 use url::Url;
 use util::{ConnectionResult, ResultExt};
 
-// Explicitly re-export cloud_types items needed by other crates.
 // Re-export cloud_types items needed by other crates.
 pub use cloud_types::{
     AcceptEditPredictionBody, CurrentUsage, EditPredictionRejection,
-    EditPredictionRejectReason, KnownOrUnknown,
+    EditPredictionRejectReason,
     LlmApiToken, NeedsLlmTokenRefresh,
-    Organization, OrganizationConfiguration,
-    OrganizationEditPredictionConfiguration, OrganizationId, Plan, PlanInfo,
+    OrganizationId,
     PREDICT_EDITS_MODE_HEADER_NAME, MINIMUM_REQUIRED_VERSION_HEADER_NAME,
     PREFERRED_EXPERIMENT_HEADER_NAME, XENOMORPHIC_VERSION_HEADER_NAME,
     PredictEditsMode, PredictEditsV3Request, PredictEditsV3Response,
     RejectEditPredictionsBody,
     EDIT_PREDICTIONS_USAGE_AMOUNT_HEADER_NAME, EDIT_PREDICTIONS_USAGE_LIMIT_HEADER_NAME,
     EXPIRED_LLM_TOKEN_HEADER_NAME, OUTDATED_LLM_TOKEN_HEADER_NAME,
-    SubmitEditPredictionFeedbackBody, SubscriptionPeriod,
+    SubmitEditPredictionFeedbackBody,
     UsageData, UsageLimit,
     global_llm_token, predict_edits_v3,
     MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST,

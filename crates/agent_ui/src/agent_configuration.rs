@@ -198,7 +198,7 @@ impl AgentConfiguration {
             .copied()
             .unwrap_or(false);
 
-        let is_signed_in = self
+        let _is_signed_in = self
             .workspace
             .read_with(cx, |workspace, _| {
                 !workspace.client().status().borrow().is_signed_out()

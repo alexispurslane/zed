@@ -593,7 +593,7 @@ pub(crate) fn edit_prediction_accepted(
         } else {
             client
                 .http_client()
-                .build_zed_llm_url("/predict_edits/accept", &[])?
+                .build_llm_url("/predict_edits/accept", &[])?
         };
 
         let response = EditPredictionStore::send_api_request::<()>(

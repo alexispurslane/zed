@@ -1,44 +1,28 @@
-//! See [Telemetry in Xenomorphic](https://zed.dev/docs/telemetry) for additional information.
+//! Telemetry events have been removed. Types are kept as minimal stubs for compilation.
 
-use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Display, time::Duration};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct EventRequestBody {
-    /// Identifier unique to each system Xenomorphic is installed on
     pub system_id: Option<String>,
-    /// Identifier unique to each Xenomorphic installation (differs for stable, preview, dev)
     pub installation_id: Option<String>,
-    /// Identifier unique to each logged in Xenomorphic user (randomly generated on first sign in)
-    /// Identifier unique to each Xenomorphic session (differs for each time you open Xenomorphic)
     pub session_id: Option<String>,
     pub metrics_id: Option<String>,
-    /// True for Xenomorphic staff, otherwise false
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_staff: Option<bool>,
-    /// Xenomorphic version number
     pub app_version: String,
     pub os_name: String,
     pub os_version: Option<String>,
     pub architecture: String,
-    /// Xenomorphic release channel (stable, preview, dev)
     pub release_channel: Option<String>,
     pub events: Vec<EventWrapper>,
-}
-
-impl EventRequestBody {
-    pub fn semver(&self) -> Option<Version> {
-        self.app_version.parse().ok()
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EventWrapper {
     pub signed_in: bool,
-    /// Duration between this event's timestamp and the timestamp of the first event in the current batch
     pub milliseconds_since_first_event: i64,
-    /// The event itself
     #[serde(flatten)]
     pub event: Event,
 }
@@ -50,17 +34,14 @@ pub enum AssistantKind {
     Inline,
     InlineTerminal,
 }
+
 impl Display for AssistantKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Panel => "panel",
-                Self::Inline => "inline",
-                Self::InlineTerminal => "inline_terminal",
-            }
-        )
+        match self {
+            Self::Panel => write!(f, "panel"),
+            Self::Inline => write!(f, "inline"),
+            Self::InlineTerminal => write!(f, "inline_terminal"),
+        }
     }
 }
 
@@ -76,16 +57,12 @@ pub enum AssistantPhase {
 
 impl Display for AssistantPhase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Response => "response",
-                Self::Invoked => "invoked",
-                Self::Accepted => "accepted",
-                Self::Rejected => "rejected",
-            }
-        )
+        match self {
+            Self::Response => write!(f, "response"),
+            Self::Invoked => write!(f, "invoked"),
+            Self::Accepted => write!(f, "accepted"),
+            Self::Rejected => write!(f, "rejected"),
+        }
     }
 }
 
@@ -109,15 +86,11 @@ pub enum EditPredictionRating {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AssistantEventData {
-    /// Unique random identifier for each assistant tab (None for inline assist)
     pub conversation_id: Option<String>,
-    /// Server-generated message ID (only supported for some providers)
     pub message_id: Option<String>,
-    /// The kind of assistant (Panel, Inline)
     pub kind: AssistantKind,
     #[serde(default)]
     pub phase: AssistantPhase,
-    /// Name of the AI model used (gpt-4o, claude-3-5-sonnet, etc)
     pub model: String,
     pub model_provider: String,
     pub response_latency: Option<Duration>,

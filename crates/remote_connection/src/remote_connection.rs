@@ -481,8 +481,8 @@ impl remote::RemoteClientDelegate for RemoteClientDelegate {
         let this = self.clone();
         cx.spawn(async move |_cx| {
             // TODO: Reimplement remote server binary download without auto_update crate.
-            // Previously used AutoUpdater::download_remote_server_release which hit
-            // the Zed Cloud releases API. Need to implement direct GitHub release download.
+            // Previously used AutoUpdater::download_remote_server_release. Need to implement
+            // direct GitHub release download.
             this.set_status(Some("Downloading remote server is not yet reimplemented"), _cx);
             Err(anyhow::anyhow!(
                 "Remote server binary download not yet reimplemented after auto_update removal"

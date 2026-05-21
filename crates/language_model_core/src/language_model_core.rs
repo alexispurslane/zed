@@ -27,7 +27,7 @@ pub use crate::tool_schema::LanguageModelToolSchemaFormat;
 pub use crate::util::{fix_streamed_json, parse_prompt_too_long, parse_tool_arguments};
 pub use gpui_shared_string::SharedString;
 
-/// Status of a completion request, previously from cloud_llm_client.
+/// Status of a completion request.
 /// Defined locally after that crate was removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -240,7 +240,8 @@ impl LanguageModelCompletionError {
             .strip_prefix("http_")
             .and_then(|code| StatusCode::from_str(code).ok())
         {
-            Self::from_http_status(XENOMORPHIC_CLOUD_PROVIDER_NAME, status_code, message, retry_after)
+            // HTTP-level error from the cloud proxy — attribute to the upstream provider
+            Self::from_http_status(upstream_provider, status_code, message, retry_after)
         } else {
             anyhow!("completion request failed, code: {code}, message: {message}").into()
         }
