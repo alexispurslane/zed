@@ -4445,9 +4445,21 @@ impl Window {
         let mut keystroke: Option<Keystroke> = None;
 
         if let Some(event) = event.downcast_ref::<ModifiersChangedEvent>() {
+            // When a lone modifier key is pressed and released without any
+            // other key in between, we generate a synthetic keystroke for it
+            // (e.g. pressing and releasing Escape). However, when there is
+            // pending multi-key input (like ctrl-x in the emacs keymap), we
+            // must NOT generate a synthetic keystroke, because doing so would
+            // flush the pending input. This happens when the user presses
+            // a modifier key (like shift) between the keystrokes of a
+            // multi-key sequence — for example, a keyboard layout that
+            // requires shift to type digits: ctrl-x, (release ctrl), (press
+            // shift), 3 would otherwise generate a synthetic "shift" keystroke
+            // that destroys the pending ctrl-x.
             if event.modifiers.number_of_modifiers() == 0
                 && self.pending_modifier.modifiers.number_of_modifiers() == 1
                 && !self.pending_modifier.saw_keystroke
+                && self.pending_input.is_none()
             {
                 let key = match self.pending_modifier.modifiers {
                     modifiers if modifiers.shift => Some("shift"),

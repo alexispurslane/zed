@@ -252,41 +252,133 @@ impl Keymap {
     }
 
     /// Find the bindings that can follow the current input sequence.
+    ///
+    /// Unlike the old implementation, this method now applies the same
+    /// NoAction/Unbind filtering that `bindings_for_input` uses, so that
+    /// which-key only shows bindings that would actually be dispatchable.
+    /// A pending binding at depth N is hidden if a NoAction or Unbind at
+    /// depth >= N would block the completed binding during real dispatch.
     pub fn possible_next_bindings_for_input(
         &self,
         input: &[Keystroke],
         context_stack: &[KeyContext],
     ) -> Vec<KeyBinding> {
-        let mut bindings = self
-            .bindings()
-            .enumerate()
-            .rev()
-            .filter_map(|(ix, binding)| {
-                let depth = self.binding_enabled(binding, context_stack)?;
-                let pending = binding.match_keystrokes(input);
-                match pending {
-                    None => None,
-                    Some(is_pending) => {
-                        if !is_pending
-                            || is_no_action(&*binding.action)
-                            || is_unbind(&*binding.action)
-                        {
-                            return None;
-                        }
-                        Some((depth, BindingIndex(ix), binding))
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
+        // Step 1: Gather ALL bindings (complete + pending) that match the
+        // current input, exactly as `bindings_for_input` does.
+        let mut matched_bindings = SmallVec::<[(usize, BindingIndex, &KeyBinding); 1]>::new();
+        let mut pending_bindings = SmallVec::<[(BindingIndex, &KeyBinding); 1]>::new();
 
-        bindings.sort_by(|(depth_a, ix_a, _), (depth_b, ix_b, _)| {
+        for (ix, binding) in self.bindings().enumerate().rev() {
+            let Some(depth) = self.binding_enabled(binding, context_stack) else {
+                continue;
+            };
+            let Some(pending) = binding.match_keystrokes(input) else {
+                continue;
+            };
+
+            if !pending {
+                matched_bindings.push((depth, BindingIndex(ix), binding));
+            } else {
+                pending_bindings.push((BindingIndex(ix), binding));
+            }
+        }
+
+        matched_bindings.sort_by(|(depth_a, ix_a, _), (depth_b, ix_b, _)| {
             depth_b.cmp(depth_a).then(ix_b.cmp(ix_a))
         });
 
-        bindings
-            .into_iter()
-            .map(|(_, _, binding)| binding.clone())
-            .collect::<Vec<_>>()
+        // Step 2: Apply the same NoAction/Unbind filtering that
+        // `bindings_for_input` uses for complete bindings. This tells us
+        // which complete bindings survive shadowing, and in particular
+        // which *depth* the highest-priority surviving binding sits at.
+        // If a NoAction at depth D breaks the loop, it also shadows any
+        // pending bindings at depth <= D.
+        let mut first_binding_index: Option<BindingIndex> = None;
+        let mut noaction_break_depth: Option<usize> = None;
+
+        for (_, ix, binding) in &matched_bindings {
+            if is_no_action(&*binding.action) {
+                if let Some(meta) = binding.meta {
+                    if meta.0 == 0 {
+                        // User-level NoAction: shadows everything at this depth and shallower
+                        noaction_break_depth = noaction_break_depth
+                            .or_else(|| binding.context_predicate.as_ref().and_then(|p| p.depth_of(context_stack)));
+                        break;
+                    }
+                } else {
+                    noaction_break_depth = noaction_break_depth
+                        .or_else(|| binding.context_predicate.as_ref().and_then(|p| p.depth_of(context_stack)));
+                    break;
+                }
+                continue;
+            }
+
+            if is_unbind(&*binding.action) {
+                continue;
+            }
+
+            first_binding_index.get_or_insert(*ix);
+        }
+
+        // Step 3: Filter pending bindings using the same rules as
+        // `bindings_for_input`:
+        //   - Skip if the binding's index > first_binding_index
+        //   - Skip if the binding is NoAction/Unbind
+        //   - Skip if a NoAction broke the loop at a depth >= the pending
+        //     binding's depth (the NoAction shadows it)
+        let mut pending = collections::HashSet::default();
+        for (ix, binding) in pending_bindings.into_iter().rev() {
+            if let Some(binding_ix) = first_binding_index
+                && binding_ix > ix
+            {
+                continue;
+            }
+            if is_no_action(&*binding.action) || is_unbind(&*binding.action) {
+                pending.remove(&&binding.keystrokes);
+                continue;
+            }
+            // If a NoAction broke at depth D, shadow any pending binding
+            // at depth <= D, since the completed binding would be blocked.
+            if let Some(break_depth) = noaction_break_depth {
+                let pending_depth = self.binding_enabled(binding, context_stack).unwrap_or(0);
+                if pending_depth <= break_depth {
+                    continue;
+                }
+            }
+            pending.insert(&binding.keystrokes);
+        }
+
+        // Step 4: Collect the surviving pending bindings, expanded to
+        // include the full keystroke sequence (prefix + remaining).
+        let mut result = Vec::new();
+        let mut seen_keystrokes = collections::HashSet::default();
+        for (ix, binding) in self.bindings().enumerate().rev() {
+            let Some(_depth) = self.binding_enabled(binding, context_stack) else {
+                continue;
+            };
+            let Some(is_pending) = binding.match_keystrokes(input) else {
+                continue;
+            };
+            if !is_pending || is_no_action(&*binding.action) || is_unbind(&*binding.action) {
+                continue;
+            }
+            if !pending.contains(&&binding.keystrokes) {
+                continue;
+            }
+            if seen_keystrokes.contains(&binding.keystrokes) {
+                continue;
+            }
+            // Apply first_binding_index filter
+            if let Some(binding_ix) = first_binding_index
+                && binding_ix > BindingIndex(ix)
+            {
+                continue;
+            }
+            seen_keystrokes.insert(binding.keystrokes.clone());
+            result.push(binding.clone());
+        }
+
+        result
     }
 }
 
@@ -826,6 +918,63 @@ mod tests {
         keymap.add_bindings(bindings);
 
         assert!(keymap.bindings_for_action(&ActionAlpha {}).next().is_none());
+    }
+
+    #[test]
+    fn test_possible_next_bindings_respects_noaction_at_deeper_context() {
+        // When a NoAction at Editor depth shadows a pending binding
+        // at Workspace depth, the pending binding should NOT appear
+        // in possible_next_bindings_for_input (i.e. which-key should
+        // not show it as available).
+        let bindings = [
+            KeyBinding::new("ctrl-x 3", ActionAlpha {}, Some("Workspace")),
+            KeyBinding::new("ctrl-x", NoAction {}, Some("Editor")),
+        ];
+
+        let mut keymap = Keymap::default();
+        keymap.add_bindings(bindings);
+
+        // With just [Workspace] context, the NoAction at Editor doesn't apply
+        // and the pending binding should be visible.
+        let result = keymap.possible_next_bindings_for_input(
+            &[Keystroke::parse("ctrl-x").unwrap()],
+            &[KeyContext::parse("Workspace").unwrap()],
+        );
+        assert_eq!(result.len(), 1);
+        assert!(result[0].action.partial_eq(&ActionAlpha {}));
+
+        // With [Workspace, Editor] context, the NoAction at Editor depth
+        // shadows the pending binding at Workspace depth.
+        let result = keymap.possible_next_bindings_for_input(
+            &[Keystroke::parse("ctrl-x").unwrap()],
+            &[
+                KeyContext::parse("Workspace").unwrap(),
+                KeyContext::parse("Editor").unwrap(),
+            ],
+        );
+        // The NoAction blocks the binding in the editor context
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_possible_next_bindings_without_noaction() {
+        // When there's no NoAction, all pending bindings should be visible.
+        let bindings = [
+            KeyBinding::new("ctrl-x 3", ActionAlpha {}, Some("Workspace")),
+            KeyBinding::new("ctrl-x k", ActionBeta {}, Some("Workspace")),
+        ];
+
+        let mut keymap = Keymap::default();
+        keymap.add_bindings(bindings);
+
+        let result = keymap.possible_next_bindings_for_input(
+            &[Keystroke::parse("ctrl-x").unwrap()],
+            &[
+                KeyContext::parse("Workspace").unwrap(),
+                KeyContext::parse("Editor").unwrap(),
+            ],
+        );
+        assert_eq!(result.len(), 2);
     }
 
     #[test]

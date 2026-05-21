@@ -329,27 +329,77 @@ impl FileFinder {
             if let Some(workspace) = delegate.workspace.upgrade()
                 && let Some(m) = delegate.matches.get(delegate.selected_index())
             {
-                let path = match m {
+                match m {
                     Match::History { path, .. } => {
                         let worktree_id = path.project.worktree_id;
-                        ProjectPath {
+                        let project_path = ProjectPath {
                             worktree_id,
                             path: Arc::clone(&path.project.path),
-                        }
+                        };
+                        let open_task = workspace.update(cx, move |workspace, cx| {
+                            workspace.split_path_preview(
+                                project_path,
+                                false,
+                                Some(split_direction),
+                                window,
+                                cx,
+                            )
+                        });
+                        open_task.detach_and_log_err(cx);
                     }
-                    Match::Search(m) => ProjectPath {
-                        worktree_id: WorktreeId::from_usize(m.0.worktree_id),
-                        path: m.0.path.clone(),
-                    },
-                    Match::CreateNew(p) => p.clone(),
-                    // Thread-related variants don't support split in the same way;
-                    // they delegate to FinderProvider::confirm instead.
-                    _ => return,
-                };
-                let open_task = workspace.update(cx, move |workspace, cx| {
-                    workspace.split_path_preview(path, false, Some(split_direction), window, cx)
-                });
-                open_task.detach_and_log_err(cx);
+                    Match::Search(m) => {
+                        let project_path = ProjectPath {
+                            worktree_id: WorktreeId::from_usize(m.0.worktree_id),
+                            path: m.0.path.clone(),
+                        };
+                        let open_task = workspace.update(cx, move |workspace, cx| {
+                            workspace.split_path_preview(
+                                project_path,
+                                false,
+                                Some(split_direction),
+                                window,
+                                cx,
+                            )
+                        });
+                        open_task.detach_and_log_err(cx);
+                    }
+                    Match::CreateNew(p) => {
+                        let project_path = p.clone();
+                        let open_task = workspace.update(cx, move |workspace, cx| {
+                            workspace.split_path_preview(
+                                project_path,
+                                false,
+                                Some(split_direction),
+                                window,
+                                cx,
+                            )
+                        });
+                        open_task.detach_and_log_err(cx);
+                    }
+                    Match::Thread(thread_match) => {
+                        // Delegate to the provider's confirm() with
+                        // secondary=true (which conventionally means "open in
+                        // split"), then dismiss the finder.
+                        let pmatch = delegate.provider_match_for_thread(thread_match);
+                        if let Some((provider, pmatch)) = pmatch {
+                            workspace.update(cx, |workspace, cx| {
+                                provider.confirm(&pmatch, true, workspace, window, cx);
+                            });
+                        }
+                        delegate
+                            .file_finder
+                            .update(cx, |_, cx| cx.emit(DismissEvent))
+                            .log_err();
+                    }
+                    // SectionHeader, NewSession, CreateSession, NewFile are not
+                    // applicable to split — they are either non-selectable
+                    // visual groupings or item-creation actions that don't
+                    // target a file. Silently return rather than crashing.
+                    Match::SectionHeader(_)
+                    | Match::NewSession
+                    | Match::CreateSession(_)
+                    | Match::NewFile => return,
+                }
             }
         })
     }
@@ -1973,8 +2023,15 @@ impl PickerDelegate for FileFinderDelegate {
                         window,
                         cx,
                     ),
-                    // Thread, CreateSession, NewSession, SectionHeader are handled above
-                    _ => unreachable!(),
+                    // Thread, CreateSession, NewSession, SectionHeader, NewFile
+                    // are all handled by early returns above, so this arm is
+                    // unreachable. We enumerate the types explicitly so the
+                    // compiler can verify exhaustiveness of the early returns.
+                    Match::Thread(_)
+                    | Match::CreateSession(_)
+                    | Match::NewSession
+                    | Match::SectionHeader(_)
+                    | Match::NewFile => unreachable!(),
                 }
             });
 

@@ -492,7 +492,14 @@ impl DispatchTree {
         if pending {
             return DispatchResult {
                 pending: input,
-                pending_has_binding: !bindings.is_empty(),
+                // Always true when we reach this branch: we know there are
+                // pending (partial) bindings that could be completed by
+                // further keystrokes. Previously this was `!bindings.is_empty()`
+                // which was false whenever a NoAction binding broke the
+                // matched-bindings loop, preventing the 1-second timeout
+                // from being set and making multi-stroke keybindings
+                // fragile to any focus change.
+                pending_has_binding: true,
                 context_stack,
                 ..Default::default()
             };
@@ -630,7 +637,7 @@ mod tests {
 
     use crate::{
         ActionRegistry, App, Bounds, Context, DispatchTree, FocusHandle, InputHandler, IntoElement,
-        KeyBinding, KeyContext, Keymap, Pixels, Point, Render, Subscription, TestAppContext,
+        KeyBinding, KeyContext, Keymap, NoAction, Pixels, Point, Render, Subscription, TestAppContext,
         UTF16Selection, Unbind, Window,
     };
 
@@ -743,14 +750,22 @@ mod tests {
             tree.dispatch_key(pending, Keystroke::parse(key).unwrap(), path)
         }
 
+        // When a prefix key (like ctrl-b) is pressed and there are
+        // pending multi-stroke bindings, pending_has_binding must be true
+        // so that a 1-second flush timeout is set. Without the timeout,
+        // any focus change between keystrokes would clear the pending
+        // input and the second key would be dispatched as standalone
+        // input (e.g. typing a literal "3" instead of completing
+        // "ctrl-x 3 → pane::SplitRight").
         let dispatch_path: DispatchPath = SmallVec::new();
         let result = dispatch(&mut tree, SmallVec::new(), "ctrl-b", &dispatch_path);
         assert_eq!(result.pending.len(), 1);
-        assert!(!result.pending_has_binding);
+        assert!(result.pending_has_binding);
 
         let result = dispatch(&mut tree, result.pending, "h", &dispatch_path);
         assert_eq!(result.pending.len(), 0);
         assert_eq!(result.bindings.len(), 1);
+        // No longer pending, so pending_has_binding is irrelevant (it's false by default)
         assert!(!result.pending_has_binding);
 
         let node_id = tree.push_node();
@@ -761,7 +776,99 @@ mod tests {
         let result = dispatch(&mut tree, SmallVec::new(), "space", &dispatch_path);
 
         assert_eq!(result.pending.len(), 1);
-        assert!(!result.pending_has_binding);
+        // Same fix: pending bindings exist, so pending_has_binding is true
+        assert!(result.pending_has_binding);
+    }
+
+    /// Regression test: when a prefix key (like ctrl-x in the Emacs
+    /// keymap) has a NoAction binding at a deeper context but pending
+    /// multi-stroke bindings at a shallower context (Workspace),
+    /// pending_has_binding must still be true so the 1-second flush
+    /// timeout is set. Without it, any focus change between the
+    /// prefix and the next key destroys the pending input, causing
+    /// the second key to be dispatched as standalone text input.
+    #[test]
+    fn test_pending_has_binding_with_noaction_at_deeper_context() {
+        let bindings = vec![
+            // Simulates: Emacs keymap ctrl-x 3 → pane::SplitRight in Workspace
+            KeyBinding::new("ctrl-x 3", TestAction, Some("Workspace")),
+            // Simulates: Linux Emacs "ctrl-x": null in Editor
+            KeyBinding::new("ctrl-x", NoAction {}, Some("Editor")),
+        ];
+        let mut tree = test_dispatch_tree(bindings);
+
+        type DispatchPath = SmallVec<[super::DispatchNodeId; 32]>;
+        fn dispatch(
+            tree: &mut DispatchTree,
+            pending: SmallVec<[Keystroke; 1]>,
+            key: &str,
+            path: &DispatchPath,
+        ) -> DispatchResult {
+            tree.dispatch_key(pending, Keystroke::parse(key).unwrap(), path)
+        }
+
+        // Build a nested dispatch path: [Workspace > Editor]
+        // This mirrors the real structure: Workspace → Pane → Editor
+        let _workspace_node = tree.push_node();
+        tree.set_key_context(KeyContext::parse("Workspace").unwrap());
+        let editor_node = tree.push_node();
+        tree.set_key_context(KeyContext::parse("Editor").unwrap());
+        // Don't pop — we need the dispatch_path from the innermost node
+        // which will walk up to the root through all parents.
+        let dispatch_path = tree.dispatch_path(editor_node);
+
+        // Press ctrl-x: should enter pending state
+        let result = dispatch(&mut tree, SmallVec::new(), "ctrl-x", &dispatch_path);
+        assert_eq!(result.pending.len(), 1);
+        assert!(result.pending_has_binding,
+            "pending_has_binding must be true even when NoAction at a deeper context\n\
+             prevents any complete binding from matching the prefix alone");
+
+        // Press 3: should complete the binding
+        let result = dispatch(&mut tree, result.pending, "3", &dispatch_path);
+        assert_eq!(result.bindings.len(), 1);
+        assert!(result.bindings[0].action.partial_eq(&TestAction));
+    }
+
+    /// Same scenario, but without the NoAction binding (macOS Emacs
+    /// keymap doesn't have "ctrl-x": null). The fix must still work.
+    #[test]
+    fn test_pending_has_binding_without_noaction() {
+        let bindings = vec![
+            // ctrl-x 3 → pane::SplitRight in Workspace
+            KeyBinding::new("ctrl-x 3", TestAction, Some("Workspace")),
+            // ctrl-x k → pane::CloseActiveItem in Workspace
+            KeyBinding::new("ctrl-x k", TestAction, Some("Workspace")),
+        ];
+        let mut tree = test_dispatch_tree(bindings);
+
+        type DispatchPath = SmallVec<[super::DispatchNodeId; 32]>;
+        fn dispatch(
+            tree: &mut DispatchTree,
+            pending: SmallVec<[Keystroke; 1]>,
+            key: &str,
+            path: &DispatchPath,
+        ) -> DispatchResult {
+            tree.dispatch_key(pending, Keystroke::parse(key).unwrap(), path)
+        }
+
+        // Build a nested dispatch path: [Workspace > Editor]
+        let _workspace_node = tree.push_node();
+        tree.set_key_context(KeyContext::parse("Workspace").unwrap());
+        let editor_node = tree.push_node();
+        tree.set_key_context(KeyContext::parse("Editor").unwrap());
+        let dispatch_path = tree.dispatch_path(editor_node);
+
+        // Press ctrl-x: should enter pending state with pending_has_binding=true
+        let result = dispatch(&mut tree, SmallVec::new(), "ctrl-x", &dispatch_path);
+        assert_eq!(result.pending.len(), 1);
+        assert!(result.pending_has_binding,
+            "pending_has_binding must be true when there are pending bindings");
+
+        // Press 3: should complete the binding
+        let result = dispatch(&mut tree, result.pending, "3", &dispatch_path);
+        assert_eq!(result.bindings.len(), 1);
+        assert!(result.bindings[0].action.partial_eq(&TestAction));
     }
 
     #[crate::test]
