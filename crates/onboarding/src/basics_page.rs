@@ -14,7 +14,7 @@ use ui::{
     ToggleButtonGroup, ToggleButtonGroupSize, ToggleButtonSimple, ToggleButtonWithIcon, Tooltip,
     prelude::*,
 };
-use vim_mode_setting::VimModeSetting;
+use vim_mode_setting::{HelixModeSetting, VimModeSetting};
 
 use crate::{
     ImportCursorSettings, ImportVsCodeSettings, SettingsImportState,
@@ -316,11 +316,57 @@ fn render_vim_mode_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoEleme
                 };
                 update_settings_file(fs.clone(), cx, move |setting, _| {
                     setting.vim_mode = Some(vim_mode);
+                    // Vim and Helix are mutually exclusive; disable helix when enabling vim
+                    if vim_mode {
+                        setting.helix_mode = Some(false);
+                    }
                 });
 
                 telemetry::event!(
                     "Welcome Vim Mode Toggled",
                     options = if vim_mode { "on" } else { "off" },
+                );
+            }
+        },
+    )
+    .tab_index({
+        *tab_index += 1;
+        *tab_index - 1
+    })
+}
+
+fn render_helix_mode_switch(tab_index: &mut isize, cx: &mut App) -> impl IntoElement {
+    let toggle_state = if HelixModeSetting::get_global(cx).0 {
+        ui::ToggleState::Selected
+    } else {
+        ui::ToggleState::Unselected
+    };
+    SwitchField::new(
+        "onboarding-helix-mode",
+        Some("Helix Mode"),
+        Some("Coming from Helix? Use our first-class implementation of Helix's selection-first modal editing".into()),
+        toggle_state,
+        {
+            let fs = <dyn Fs>::global(cx);
+            move |&selection, _, cx| {
+                let helix_mode = match selection {
+                    ToggleState::Selected => true,
+                    ToggleState::Unselected => false,
+                    ToggleState::Indeterminate => {
+                        return;
+                    }
+                };
+                update_settings_file(fs.clone(), cx, move |setting, _| {
+                    setting.helix_mode = Some(helix_mode);
+                    // Vim and Helix are mutually exclusive; disable vim when enabling helix
+                    if helix_mode {
+                        setting.vim_mode = Some(false);
+                    }
+                });
+
+                telemetry::event!(
+                    "Welcome Helix Mode Toggled",
+                    options = if helix_mode { "on" } else { "off" },
                 );
             }
         },
@@ -445,5 +491,6 @@ pub(crate) fn render_basics_page(cx: &mut App) -> impl IntoElement {
         .child(render_base_keymap_section(&mut tab_index, cx))
         .child(render_import_settings_section(&mut tab_index, cx))
         .child(render_vim_mode_switch(&mut tab_index, cx))
+        .child(render_helix_mode_switch(&mut tab_index, cx))
         .child(render_worktree_auto_trust_switch(&mut tab_index, cx))
 }

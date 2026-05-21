@@ -60,8 +60,10 @@ static CURRENT_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// The resolved config directory, combining custom override or platform defaults.
 /// This is set once and cached for subsequent calls.
-/// On macOS, this is `~/.config/xenomorphic`.
-/// On Linux/FreeBSD, this is `$XDG_CONFIG_HOME/zed`.
+///
+/// On macOS and Linux/FreeBSD, this is `$XDG_CONFIG_HOME/xenomorphic`
+/// (falling back to `~/.config/xenomorphic` when `XDG_CONFIG_HOME` is unset).
+/// On Linux/FreeBSD, `$FLATPAK_XDG_CONFIG_HOME` takes priority over `$XDG_CONFIG_HOME`.
 /// On Windows, this is `%APPDATA%\Xenomorphic`.
 static CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
@@ -118,7 +120,19 @@ pub fn set_custom_data_dir(dir: &str) -> &'static PathBuf {
     })
 }
 
+/// Resolves the base configuration directory according to the XDG Base Directory
+/// Specification: honor `$XDG_CONFIG_HOME` when set, falling back to `$HOME/.config`.
+fn xdg_config_home() -> PathBuf {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| home_dir().join(".config"))
+}
+
 /// Returns the path to the configuration directory used by Xenomorphic.
+///
+/// Respects the `$XDG_CONFIG_HOME` environment variable (falling back to
+/// `$HOME/.config`) on all platforms. On Linux/FreeBSD, `$FLATPAK_XDG_CONFIG_HOME`
+/// takes precedence over `$XDG_CONFIG_HOME`.
 pub fn config_dir() -> &'static PathBuf {
     CONFIG_DIR.get_or_init(|| {
         if let Some(custom_dir) = CUSTOM_DATA_DIR.get() {
@@ -131,11 +145,11 @@ pub fn config_dir() -> &'static PathBuf {
             if let Ok(flatpak_xdg_config) = std::env::var("FLATPAK_XDG_CONFIG_HOME") {
                 flatpak_xdg_config.into()
             } else {
-                dirs::config_dir().expect("failed to determine XDG_CONFIG_HOME directory")
+                xdg_config_home()
             }
             .join(APP_NAME_LOWERCASE)
         } else {
-            home_dir().join(".config").join(APP_NAME_LOWERCASE)
+            xdg_config_home().join(APP_NAME_LOWERCASE)
         }
     })
 }
