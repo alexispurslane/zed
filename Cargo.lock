@@ -264,6 +264,7 @@ dependencies = [
  "extension",
  "extension_host",
  "feature_flags",
+ "file_finder",
  "file_icons",
  "fs",
  "futures 0.3.32",

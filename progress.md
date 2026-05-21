@@ -1,36 +1,32 @@
-# Progress
+# Progress: Stopping AgentPanel from appearing as a dock panel
 
-## Status
-Completed - Phase 8 (Remove UserStore from workspace, title_bar, main.rs, and all dependents)
+## Changes Made
 
-## Summary
+### `crates/xenomorphic/src/xenomorphic_app.rs`
+- Removed `initialize_agent_panel()` call from workspace setup (replaced with comment)
+- Removed `register_sidebar()` call for the agent sidebar
+- Replaced `agent_ui::AgentPanel::toggle_focus/focus/toggle` action registrations with inline closures using `xenomorphic_actions::assistant::ToggleFocus/FocusAgent/Toggle`
+- Added `open_agent_session_or_focus()` helper function that opens a new `AgentSessionItem` tab (or focuses existing one)
+- Marked `initialize_agent_panel()` as `#[allow(dead_code)]`
 
-All 12 phases of the remove-zed-cloud refactor are now substantially complete:
+### `crates/xenomorphic/src/main.rs`
+- Changed `OpenRequestKind::AgentPanel` handler to create `AgentSessionItem` tab via `thread_finder_provider::create_conversation_view()` instead of `workspace.focus_panel::<AgentPanel>()`
+- Changed `OpenRequestKind::SharedAgentThread` handler to use `ThreadStore::global(cx)` instead of `workspace.panel::<AgentPanel>(cx)`, and open the thread as an `AgentSessionItem` tab
+- Replaced `use agent_ui::AgentPanel` with `use agent_ui::AgentSessionItem`
 
-- **20 crates fully deleted** (journal, feedback, nc, ai_onboarding, language_onboarding, denoise, audio, livekit_api, livekit_client, call, channel, collab_ui, collab, auto_update, auto_update_helper, auto_update_ui, cloud_api_client, cloud_api_types, cloud_llm_client, language_models_cloud)
-- **UserStore removed** from workspace AppState, title_bar, main.rs, and all test code
-- **is_via_collab()** removed from all crates (was always false after collab removal)
-- **xenomorphic_urls** module removed from client crate and all references cleaned
-- **Plan/plan_chip** removed from title_bar (cloud subscription UI)
-- **Cloud LLM proxy** (provider/cloud.rs) deleted
-- **Proto cloud messages** stripped
-- **Feature flags** cloud-fetching removed
-- **Settings UI** cloud pages removed
-- **Onboarding** cloud-gated sections removed
-- **Build passes** with only warnings (0 errors)
+### `crates/agent_ui/src/conversation_view.rs`
+- Added public `thread_id()` and `root_session_id()` accessor methods (fields remain pub(crate))
 
-## Remaining Cleanup (low priority)
-- client crate cloud_types.rs stub (468 lines) - could be further trimmed
-- client crate proxy.rs unused code
-- client crate telemetry.rs unused http_client field
-- Various unused variable warnings in workspace/editor
-- extension_cli still references cloud types
+### `crates/sidebar/src/sidebar.rs`
+- Added `AgentPanel` and `AgentSessionItem` imports
+- Fixed dead code in `dump_single_workspace` that referenced old AgentPanel state
+- Removed duplicate code block from agent panel dump
 
-## Files Changed
+### `crates/xenomorphic/src/xenomorphic_app.rs` (additional)
+- Made `ensure_agent_panel_for_workspace()` return `Task::ready(Ok(()))` — no-op
 
-Too many to list - 19 crates deleted, 50+ files modified across the codebase.
-
-## Notes
-
-Total lines removed: ~89,000+ (approximately 7% of the codebase)
-Client crate shrunk from 5,644 to 4,139 lines
+## Build Status
+✅ `xenomorphic` binary compiles and links successfully
+✅ `agent_ui` compiles successfully
+✅ `sidebar` compiles successfully (dead code, not instantiated)
+✅ `file_finder` compiles successfully

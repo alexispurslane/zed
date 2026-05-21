@@ -3909,7 +3909,11 @@ fn collect_search_matches(picker: &Picker<FileFinderDelegate>) -> SearchEntries 
                 search_entries.search_matches.push(path_match.0.clone());
             }
             Match::CreateNew(_) => {}
-            Match::Channel { .. } => {}
+            Match::Thread(_) => {}
+            Match::CreateSession(_) => {}
+            Match::SectionHeader(_) => {}
+            Match::NewSession => {}
+            Match::NewFile => {}
         }
     }
     search_entries
@@ -3944,7 +3948,11 @@ fn assert_match_at_position(
         Match::History { path, .. } => path.absolute.file_name().and_then(|s| s.to_str()),
         Match::Search(path_match) => path_match.0.path.file_name(),
         Match::CreateNew(project_path) => project_path.path.file_name(),
-        Match::Channel { channel_name, .. } => Some(channel_name.as_str()),
+        Match::Thread(thread_match) => Some(thread_match.title.as_ref()),
+        Match::CreateSession(query) => Some(query.as_str()),
+        Match::SectionHeader(label) => Some(*label),
+        Match::NewSession => Some("New Agent Session"),
+        Match::NewFile => Some("New File"),
     }
     .unwrap();
     assert_eq!(match_file_name, expected_file_name);

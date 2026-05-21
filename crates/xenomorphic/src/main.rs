@@ -16,7 +16,7 @@ const _: () = assert!(
 
 use agent::{SharedThread, ThreadStore};
 use agent_thread::schema;
-use agent_ui::AgentPanel;
+use agent_ui::AgentSessionItem;
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use cli::FORCE_CLI_MODE_ENV_VAR_NAME;
@@ -942,21 +942,28 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
             OpenRequestKind::AgentPanel {
                 external_source_prompt,
             } => {
+                // Open as an AgentSessionItem tab instead of focusing the panel.
                 cx.spawn(async move |cx| {
                     let multi_workspace =
                         workspace::get_any_active_multi_workspace(app_state, cx.clone()).await?;
 
                     multi_workspace.update(cx, |multi_workspace, window, cx| {
                         multi_workspace.workspace().update(cx, |workspace, cx| {
-                            if let Some(panel) = workspace.focus_panel::<AgentPanel>(window, cx) {
-                                panel.update(cx, |panel, cx| {
-                                    panel.new_agent_thread_with_external_source_prompt(
-                                        external_source_prompt,
-                                        window,
-                                        cx,
-                                    );
-                                });
-                            }
+                            let initial_content = external_source_prompt.map(|prompt| {
+                                agent_ui::AgentInitialContent::FromExternalSource(prompt)
+                            });
+                            let conversation_view =
+                                agent_ui::thread_finder_provider::create_conversation_view(
+                                    None, None, None, initial_content,
+                                    workspace, window, cx,
+                                );
+                            let item = cx.new(|_| {
+                                AgentSessionItem::new(
+                                    conversation_view,
+                                    workspace.weak_handle(),
+                                )
+                            });
+                            workspace.add_item_to_active_pane(Box::new(item), None, true, window, cx);
                         });
                     })
                 })
@@ -975,16 +982,11 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                         multi_workspace.update(cx, |_, _window, cx| {
                             workspace.update(cx, |workspace, cx| {
                                 let client = workspace.project().read(cx).client();
-                                let thread_store: Option<gpui::Entity<ThreadStore>> = workspace
-                                    .panel::<AgentPanel>(cx)
-                                    .map(|panel| panel.read(cx).thread_store().clone());
+                                // ThreadStore is now a global singleton, not owned by AgentPanel
+                                let thread_store = agent::ThreadStore::global(cx);
                                 anyhow::Ok((client, thread_store))
                             })
                         })??;
-
-                    let Some(thread_store): Option<gpui::Entity<ThreadStore>> = thread_store else {
-                        anyhow::bail!("Agent panel not available");
-                    };
 
                     let response = client
                         .request(proto::GetSharedAgentThread {
@@ -1014,18 +1016,24 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
 
                     multi_workspace.update(cx, |_, window, cx| {
                         workspace.update(cx, |workspace, cx| {
-                            if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                                panel.update(cx, |panel, cx| {
-                                    panel.open_thread(
-                                        session_id,
-                                        None,
-                                        Some(format!("🔗 {}", response.title).into()),
-                                        window,
-                                        cx,
-                                    );
-                                });
-                                panel.focus_handle(cx).focus(window, cx);
-                            }
+                            // Open the shared thread as an AgentSessionItem tab
+                            let conversation_view =
+                                agent_ui::thread_finder_provider::create_conversation_view(
+                                    Some(session_id),
+                                    None,
+                                    None,
+                                    None,
+                                    workspace,
+                                    window,
+                                    cx,
+                                );
+                            let item = cx.new(|_| {
+                                AgentSessionItem::new(
+                                    conversation_view,
+                                    workspace.weak_handle(),
+                                )
+                            });
+                            workspace.add_item_to_active_pane(Box::new(item), None, true, window, cx);
 
                             struct ImportedThreadToast;
                             workspace.show_toast(

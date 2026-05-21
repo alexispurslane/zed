@@ -1,11 +1,13 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
 use agent_thread::{AgentConnection, LoadError};
 use agent_servers::{AgentServer, AgentServerDelegate};
 use anyhow::Result;
 use collections::HashMap;
+use fs::Fs;
 use futures::{FutureExt, future::Shared};
-use gpui::{App, AppContext, Context, Entity, Task};
+use gpui::{App, AppContext, Context, Entity, Global, Task};
 
 use project::Project;
 
@@ -60,6 +62,48 @@ pub struct ActiveAgentConnection {
 pub struct AgentConnectionStore {
     project: Entity<Project>,
     entries: HashMap<Agent, Entity<AgentConnectionEntry>>,
+}
+
+/// Global wrapper so that all tabs in a process share one connection store.
+/// Initialized in `agent_ui::init`.
+struct GlobalConnectionStore(Entity<AgentConnectionStore>);
+
+impl Global for GlobalConnectionStore {}
+
+impl AgentConnectionStore {
+    /// Initializes the global `AgentConnectionStore`. Called from
+    /// `create_conversation_view` on first use, or from `agent_ui::init`
+    /// when the project is available.
+    pub fn init_global(project: Entity<Project>, cx: &mut App) {
+        if cx.try_global::<GlobalConnectionStore>().is_some() {
+            return;
+        }
+
+        let fs = <dyn Fs>::global(cx);
+        let thread_store = agent::ThreadStore::global(cx);
+
+        let store = cx.new(|cx| {
+            let mut store = AgentConnectionStore::new(project.clone(), cx);
+            store.request_connection(
+                Agent::NativeAgent,
+                Agent::NativeAgent.server(fs.clone(), thread_store.clone()),
+                cx,
+            );
+            store
+        });
+
+        cx.set_global(GlobalConnectionStore(store));
+    }
+
+    /// Returns the global `AgentConnectionStore`, if initialized.
+    pub fn try_global(cx: &App) -> Option<Entity<Self>> {
+        cx.try_global::<GlobalConnectionStore>().map(|g| g.0.clone())
+    }
+
+    /// Returns the global `AgentConnectionStore`, panicking if not initialized.
+    pub fn global(cx: &App) -> Entity<Self> {
+        Self::try_global(cx).expect("AgentConnectionStore::init_global has not been called")
+    }
 }
 
 impl AgentConnectionStore {

@@ -487,6 +487,16 @@ pub struct ConversationView {
 
 impl ConversationView {
 
+    /// Public accessor for the thread ID.
+    pub fn thread_id(&self) -> ThreadId {
+        self.thread_id
+    }
+
+    /// Public accessor for the root session ID.
+    pub fn root_session_id(&self) -> Option<&schema::SessionId> {
+        self.root_session_id.as_ref()
+    }
+
     pub fn active_thread(&self) -> Option<&Entity<ThreadView>> {
         match &self.server_state {
             ServerState::Connected(connected) => connected.active_view(),

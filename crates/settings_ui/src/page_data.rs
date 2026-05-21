@@ -10,6 +10,7 @@ use crate::{
     ActionLink, DynamicItem, PROJECT, SettingField, SettingItem, SettingsFieldMetadata,
     SettingsPage, SettingsPageItem, SubPageLink, USER, active_language, all_language_names,
     pages::{
+        render_agent_profiles_setup_page,
         render_edit_prediction_setup_page,
         render_tool_permissions_setup_page,
     },
@@ -7592,10 +7593,87 @@ fn ai_page(cx: &App) -> SettingsPage {
         })]
     }
 
+    fn llm_providers_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("LLM Providers"),
+            SettingsPageItem::ActionLink(ActionLink {
+                title: "Configure LLM Providers".into(),
+                description: Some(
+                    "Add and configure LLM providers (OpenAI, Anthropic, Ollama, etc.) \
+                     to use AI-powered features with Xenomorphic's native agent.".into(),
+                ),
+                button_text: "Open".into(),
+                on_click: Arc::new(|settings_window, window, cx| {
+                    let Some(original_window) = settings_window.original_window else {
+                        return;
+                    };
+                    original_window
+                        .update(cx, |_workspace, original_window, cx| {
+                            original_window
+                                .dispatch_action(xenomorphic_actions::assistant::ToggleFocus.boxed_clone(), cx);
+                            original_window.activate_window();
+                        })
+                        .ok();
+                    window.remove_window();
+                }),
+                files: USER,
+            }),
+        ]
+    }
+
+    fn mcp_servers_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("MCP Servers"),
+            SettingsPageItem::ActionLink(ActionLink {
+                title: "Configure MCP Servers".into(),
+                description: Some(
+                    "Add and configure Model Context Protocol (MCP) servers \
+                     connected directly or via a Xenomorphic extension.".into(),
+                ),
+                button_text: "Open".into(),
+                on_click: Arc::new(|settings_window, window, cx| {
+                    let Some(original_window) = settings_window.original_window else {
+                        return;
+                    };
+                    original_window
+                        .update(cx, |_workspace, original_window, cx| {
+                            original_window
+                                .dispatch_action(xenomorphic_actions::agent::OpenSettings.boxed_clone(), cx);
+                            original_window.activate_window();
+                        })
+                        .ok();
+                    window.remove_window();
+                }),
+                files: USER,
+            }),
+        ]
+    }
+
+    fn agent_profiles_section() -> [SettingsPageItem; 2] {
+        [
+            SettingsPageItem::SectionHeader("Agent Profiles"),
+            SettingsPageItem::SubPageLink(SubPageLink {
+                title: "Manage Profiles".into(),
+                r#type: Default::default(),
+                json_path: Some("agent.profiles"),
+                description: Some(
+                    "Create, edit, and delete agent profiles. Each profile controls \
+                     which tools, MCP servers, and default model the agent uses.".into(),
+                ),
+                in_json: true,
+                files: USER,
+                render: render_agent_profiles_setup_page,
+            }),
+        ]
+    }
+
     SettingsPage {
         title: "AI",
         items: concat_sections![
             general_section(),
+            llm_providers_section(),
+            mcp_servers_section(),
+            agent_profiles_section(),
             agent_configuration_section(cx),
             context_servers_section(),
             edit_prediction_language_settings_section(),

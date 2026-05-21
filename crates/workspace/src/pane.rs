@@ -4201,8 +4201,19 @@ fn default_render_tab_bar_buttons(
                 .anchor(Anchor::TopRight)
                 .with_handle(pane.new_item_context_menu_handle.clone())
                 .menu(move |window, cx| {
+                    // Gather extra entries registered by other crates
+                    // (e.g. "New Agent Thread" from agent_ui)
+                    // before entering the ContextMenu builder, since it
+                    // borrows cx.
+                    let extra_entries =
+                        crate::new_item_menu::new_item_menu_entries(cx)
+                            .iter()
+                            .map(|e| (e.label, e.action.boxed_clone()))
+                            .collect::<Vec<_>>();
+
                     Some(ContextMenu::build(window, cx, |menu, _, _| {
-                        menu.action("New File", NewFile.boxed_clone())
+                        let menu = menu
+                            .action("New File", NewFile.boxed_clone())
                             .action("Open File", ToggleFileFinder::default().boxed_clone())
                             .separator()
                             .action("Search Project", DeploySearch::default().boxed_clone())
@@ -4212,7 +4223,19 @@ fn default_render_tab_bar_buttons(
                             .action(
                                 "New Center Terminal",
                                 NewCenterTerminal::default().boxed_clone(),
-                            )
+                            );
+
+                        let menu = if !extra_entries.is_empty() {
+                            let mut menu = menu.separator();
+                            for (label, action) in extra_entries {
+                                menu = menu.action(label, action);
+                            }
+                            menu
+                        } else {
+                            menu
+                        };
+
+                        menu
                     }))
                 }),
         )

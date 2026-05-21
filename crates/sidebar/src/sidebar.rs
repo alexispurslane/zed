@@ -13,7 +13,7 @@ use agent_ui::threads_archive_view::{
     fuzzy_match_positions,
 };
 use agent_ui::{
-    Agent, AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo,
+    Agent, AgentConnectionStore, AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo, AgentSessionItem,
     ArchiveSelectedThread, CrossChannelImportOnboarding, DEFAULT_THREAD_TITLE, NewThread,
     TerminalId, ThreadId, channels_with_threads,
     import_threads_from_other_channels,
@@ -5058,11 +5058,7 @@ impl Sidebar {
         else {
             return;
         };
-        let Some(agent_panel) = active_workspace.read(cx).panel::<AgentPanel>(cx) else {
-            return;
-        };
-
-        let agent_connection_store = agent_panel.read(cx).connection_store().downgrade();
+        let agent_connection_store = AgentConnectionStore::global(cx).downgrade();
 
         let archive_view = cx.new(|cx| {
             ThreadsArchiveView::new(
@@ -5602,20 +5598,12 @@ fn dump_single_workspace(workspace: &Workspace, output: &mut String, cx: &gpui::
         writeln!(output).ok();
     }
 
-    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-        let panel = panel.read(cx);
-
-        let panel_workspace_id = panel.workspace_id();
-        if panel_workspace_id != workspace_db_id {
-            writeln!(
-                output,
-                "  \u{26a0} workspace ID mismatch! panel has {panel_workspace_id:?}, workspace has {workspace_db_id:?}"
-            )
-            .ok();
-        }
-
-        if let Some(thread) = panel.active_agent_thread(cx) {
-            let thread = thread.read(cx);
+    // Read active agent sessions from open tabs instead of AgentPanel.
+    let active_item = workspace.active_item(cx);
+    if let Some(session_item) = active_item.as_ref().and_then(|item| item.act_as::<AgentSessionItem>(cx)) {
+        let cv = session_item.read(cx).conversation_view();
+        if let Some(thread_view) = cv.read(cx).root_thread_view() {
+            let thread = thread_view.read(cx).thread.read(cx);
             let title = thread.title().unwrap_or_else(|| "(untitled)".into());
             let session_id = thread.session_id();
             let status = match thread.status() {
@@ -5624,55 +5612,13 @@ fn dump_single_workspace(workspace: &Workspace, output: &mut String, cx: &gpui::
             };
             let entry_count = thread.entries().len();
             write!(output, "Active thread: {title} (session: {session_id})").ok();
-            write!(output, " [{status}, {entry_count} entries").ok();
-            if panel
-                .active_conversation_view()
-                .is_some_and(|conversation_view| {
-                    conversation_view
-                        .read(cx)
-                        .root_thread_has_pending_tool_call(cx)
-                })
-            {
-                write!(output, ", awaiting confirmation").ok();
-            }
-            writeln!(output, "]").ok();
+            write!(output, " [{status}, {entry_count} entries]").ok();
+            writeln!(output).ok();
         } else {
-            writeln!(output, "Active thread: (none)").ok();
-        }
-
-        let background_threads = panel.retained_threads();
-        if !background_threads.is_empty() {
-            writeln!(
-                output,
-                "Background threads ({}): ",
-                background_threads.len()
-            )
-            .ok();
-            for (session_id, conversation_view) in background_threads {
-                if let Some(thread_view) = conversation_view.read(cx).root_thread_view() {
-                    let thread = thread_view.read(cx).thread.read(cx);
-                    let title = thread.title().unwrap_or_else(|| "(untitled)".into());
-                    let status = match thread.status() {
-                        ThreadStatus::Idle => "idle",
-                        ThreadStatus::Generating => "generating",
-                    };
-                    let entry_count = thread.entries().len();
-                    write!(output, "  - {title} (thread: {session_id:?})").ok();
-                    write!(output, " [{status}, {entry_count} entries").ok();
-                    if conversation_view
-                        .read(cx)
-                        .root_thread_has_pending_tool_call(cx)
-                    {
-                        write!(output, ", awaiting confirmation").ok();
-                    }
-                    writeln!(output, "]").ok();
-                } else {
-                    writeln!(output, "  - (not connected) (thread: {session_id:?})").ok();
-                }
-            }
+            writeln!(output, "Active thread: (connecting...)").ok();
         }
     } else {
-        writeln!(output, "Agent panel: not loaded").ok();
+        writeln!(output, "Active thread: (none)").ok();
     }
 
     writeln!(output).ok();

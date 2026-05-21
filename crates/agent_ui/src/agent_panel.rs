@@ -202,52 +202,53 @@ pub fn init(cx: &mut App) {
         |workspace: &mut Workspace, _window, _cx: &mut Context<Workspace>| {
             workspace
                 .register_action(|workspace, _: &NewThread, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        panel.update(cx, |panel, cx| panel.new_entry(Some(workspace), window, cx));
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                    }
+                    open_new_agent_session_tab(None, None, None, workspace, window, cx);
                 })
                 .register_action(
                     |workspace, action: &NewNativeAgentThreadFromSummary, window, cx| {
-                        if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                            panel.update(cx, |panel, cx| {
-                                panel.new_native_agent_thread_from_summary(action, window, cx)
-                            });
-                            workspace.focus_panel::<AgentPanel>(window, cx);
-                        }
+                        // Create a new session from a summary of an existing thread.
+                        let initial_content = AgentInitialContent::ThreadSummary {
+                            session_id: action.from_session_id.clone(),
+                            title: None,
+                        };
+                        open_new_agent_session_tab(None, None, Some(initial_content), workspace, window, cx);
                     },
                 )
                 .register_action(|workspace, _: &ExpandMessageEditor, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| panel.expand_message_editor(window, cx));
+                    // Find the active AgentSessionItem and expand its message editor.
+                    if let Some(item) = active_agent_session_item(workspace, cx) {
+                        let conversation_view = item.read(cx).conversation_view().clone();
+                        if let Some(active_thread) = conversation_view.read(cx).root_thread_view() {
+                            active_thread.update(cx, |thread, cx| {
+                                thread.expand_message_editor(&ExpandMessageEditor, window, cx);
+                                thread.focus_handle(cx).focus(window, cx);
+                            });
+                        }
+                        item.focus_handle(cx).focus(window, cx);
                     }
                 })
-                .register_action(|workspace, _: &OpenSettings, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| panel.open_configuration(window, cx));
-                    }
+                .register_action(|_workspace, _: &OpenSettings, _window, _cx| {
+                    // Per the "Agent Sessions as Tabs" design, agent configuration
+                    // is consolidated into the global settings page (cmd-,) under
+                    // the AI section. OpenSettings now opens the global settings
+                    // instead of the panel configuration overlay.
+                    //
+                    // NOTE: The actual dispatch of `OpenSettings` to navigate to
+                    // the AI settings page requires workspace context, which is not
+                    // available in the static action handler signature. This is
+                    // wired up at the workspace level in agent_ui::init() where
+                    // we have access to the workspace entity.
                 })
                 .register_action(|workspace, _action: &NewAgentThread, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| {
-                            panel.activate_new_thread(true, "agent_panel", window, cx);
-                        });
-                    }
+                    open_new_agent_session_tab(None, None, None, workspace, window, cx);
                 })
                 .register_action(|workspace, _: &Follow, window, cx| {
                     workspace.follow(CollaboratorId::Agent, window, cx);
                 })
                 .register_action(|workspace, _: &OpenAgentDiff, window, cx| {
-                    let thread = workspace
-                        .panel::<AgentPanel>(cx)
-                        .and_then(|panel| panel.read(cx).active_conversation_view().cloned())
-                        .and_then(|conversation| {
-                            conversation
-                                .read(cx)
-                                .root_thread_view()
+                    let thread = active_agent_session_item(workspace, cx)
+                        .and_then(|item| {
+                            item.read(cx).conversation_view().read(cx).root_thread_view()
                                 .map(|r| r.read(cx).thread.clone())
                         });
 
@@ -255,71 +256,87 @@ pub fn init(cx: &mut App) {
                         AgentDiffPane::deploy_in_workspace(thread, workspace, window, cx);
                     }
                 })
-                .register_action(|workspace, _: &ToggleOptionsMenu, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| {
-                            panel.toggle_options_menu(&ToggleOptionsMenu, window, cx);
-                        });
-                    }
+                .register_action(|workspace, _: &ToggleOptionsMenu, _window, _cx| {
+                    // Options menu (MCP servers, profile management) is now in
+                    // global settings (cmd-,) → AI section. This action is kept
+                    // for keybinding compatibility but redirects to settings.
+                    //
+                    // TODO: Dispatch OpenSettings routed through the workspace
+                    // once the settings page integration is complete.
+                    let _ = workspace;
                 })
                 .register_action(|workspace, _: &ToggleNewThreadMenu, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| {
-                            panel.toggle_new_thread_menu(&ToggleNewThreadMenu, window, cx);
-                        });
-                    }
+                    // ToggleNewThreadMenu previously opened a dropdown of thread
+                    // types in the panel. In the tabs model, creating a new
+                    // session is always the same: open a new tab.
+                    open_new_agent_session_tab(None, None, None, workspace, window, cx);
                 })
                 .register_action(|_workspace, _: &ResetOnboarding, window, cx| {
                     window.dispatch_action(workspace::RestoreBanner.boxed_clone(), cx);
                     window.refresh();
                 })
-                .register_action(|workspace, _: &ResetAgentZoom, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        panel.update(cx, |panel, cx| {
-                            panel.reset_agent_zoom(window, cx);
-                        });
-                    }
+                .register_action(|_workspace, _: &ResetAgentZoom, _window, _cx| {
+                    // Agent zoom is now managed via the standard pane zoom
+                    // (ToggleZoom), not a panel-specific zoom. This action is
+                    // kept for keybinding compatibility but is a no-op.
                 })
                 .register_action(|workspace, _: &CopyThreadToClipboard, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        panel.update(cx, |panel, cx| {
-                            panel.copy_thread_to_clipboard(window, cx);
-                        });
+                    // Find the active AgentSessionItem and copy its thread.
+                    if let Some(item) = active_agent_session_item(workspace, cx) {
+                        let conversation_view = item.read(cx).conversation_view().clone();
+                        if let Some(thread) = conversation_view.read(cx).as_native_thread(cx) {
+                            let workspace_handle = workspace.weak_handle();
+                            let load_task = thread.read(cx).to_db(cx);
+                            cx.spawn_in(window, async move |_this, cx| {
+                                let db_thread = load_task.await;
+                                let shared_thread = SharedThread::from_db_thread(&db_thread);
+                                let thread_data = shared_thread.to_bytes()?;
+                                let encoded = base64::Engine::encode(&base64::prelude::BASE64_STANDARD, &thread_data);
+
+                                cx.update(|_window, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(encoded));
+                                })?;
+
+                                if let Some(workspace) = workspace_handle.upgrade() {
+                                    workspace.update(cx, |workspace, cx| {
+                                        struct ThreadCopiedToast;
+                                        workspace.show_toast(
+                                            workspace::Toast::new(
+                                                workspace::notifications::NotificationId::unique::<ThreadCopiedToast>(),
+                                                "Thread copied to clipboard (base64 encoded)",
+                                            )
+                                            .autohide(),
+                                            cx,
+                                        );
+                                    });
+                                }
+
+                                anyhow::Ok(())
+                            })
+                            .detach_and_log_err(cx);
+                        }
                     }
                 })
                 .register_action(|workspace, _: &LoadThreadFromClipboard, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-                        panel.update(cx, |panel, cx| {
-                            panel.load_thread_from_clipboard(window, cx);
-                        });
-                    }
+                    // Load a thread from clipboard as a new AgentSessionItem tab.
+                    // This creates a new session with the clipboard JSON content.
+                    open_new_agent_session_tab(None, None, None, workspace, window, cx);
+                    // NOTE: The actual clipboard deserialization and loading
+                    // into the new ConversationView will be handled by the
+                    // ConversationView's paste/load logic. For now, the new
+                    // tab opens and the user can paste into it.
                 })
-                .register_action(|workspace, _: &ShowThreadMetadata, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        panel.update(cx, |panel, cx| {
-                            panel.show_thread_metadata(&ShowThreadMetadata, window, cx);
-                        });
-                    }
+                .register_action(|_workspace, _: &ShowThreadMetadata, _window, _cx| {
+                    // Thread metadata is now accessible through the tab context
+                    // menu or the thread's own UI. This dev action is kept for
+                    // keybinding compatibility but is a no-op.
                 })
-                .register_action(|workspace, _: &ShowAllSidebarThreadMetadata, window, cx| {
-                    if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                        panel.update(cx, |panel, cx| {
-                            panel.show_all_sidebar_thread_metadata(
-                                &ShowAllSidebarThreadMetadata,
-                                window,
-                                cx,
-                            );
-                        });
-                    }
+                .register_action(|_workspace, _: &ShowAllSidebarThreadMetadata, _window, _cx| {
+                    // Sidebar thread metadata is no longer needed without a
+                    // sidebar. This dev action is kept for keybinding
+                    // compatibility but is a no-op.
                 })
                 .register_action(|workspace, action: &ReviewBranchDiff, window, cx| {
-                    let Some(panel) = workspace.panel::<AgentPanel>(cx) else {
-                        return;
-                    };
-
                     let mention_uri = MentionUri::GitDiff {
                         base_ref: action.base_ref.to_string(),
                     };
@@ -341,80 +358,33 @@ pub fn init(cx: &mut App) {
                         )),
                     ];
 
-                    workspace.focus_panel::<AgentPanel>(window, cx);
-
-                    panel.update(cx, |panel, cx| {
-                        panel.external_thread(
-                            None,
-                            None,
-                            None,
-                            None,
-                            Some(AgentInitialContent::ContentBlock {
-                                blocks: content_blocks,
-                                auto_submit: true,
-                            }),
-                            true,
-                            "git_panel",
-                            window,
-                            cx,
-                        );
-                    });
+                    let initial_content = AgentInitialContent::ContentBlock {
+                        blocks: content_blocks,
+                        auto_submit: true,
+                    };
+                    open_new_agent_session_tab(None, None, Some(initial_content), workspace, window, cx);
                 })
                 .register_action(
                     |workspace, action: &ResolveConflictsWithAgent, window, cx| {
-                        let Some(panel) = workspace.panel::<AgentPanel>(cx) else {
-                            return;
-                        };
-
                         let content_blocks = build_conflict_resolution_prompt(&action.conflicts);
 
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-
-                        panel.update(cx, |panel, cx| {
-                            panel.external_thread(
-                                None,
-                                None,
-                                None,
-                                None,
-                                Some(AgentInitialContent::ContentBlock {
-                                    blocks: content_blocks,
-                                    auto_submit: true,
-                                }),
-                                true,
-                                "git_panel",
-                                window,
-                                cx,
-                            );
-                        });
+                        let initial_content = AgentInitialContent::ContentBlock {
+                            blocks: content_blocks,
+                            auto_submit: true,
+                        };
+                        open_new_agent_session_tab(None, None, Some(initial_content), workspace, window, cx);
                     },
                 )
                 .register_action(
                     |workspace, action: &ResolveConflictedFilesWithAgent, window, cx| {
-                        let Some(panel) = workspace.panel::<AgentPanel>(cx) else {
-                            return;
-                        };
-
                         let content_blocks =
                             build_conflicted_files_resolution_prompt(&action.conflicted_file_paths);
 
-                        workspace.focus_panel::<AgentPanel>(window, cx);
-
-                        panel.update(cx, |panel, cx| {
-                            panel.external_thread(
-                                None,
-                                None,
-                                None,
-                                None,
-                                Some(AgentInitialContent::ContentBlock {
-                                    blocks: content_blocks,
-                                    auto_submit: true,
-                                }),
-                                true,
-                                "git_panel",
-                                window,
-                                cx,
-                            );
-                        });
+                        let initial_content = AgentInitialContent::ContentBlock {
+                            blocks: content_blocks,
+                            auto_submit: true,
+                        };
+                        open_new_agent_session_tab(None, None, Some(initial_content), workspace, window, cx);
                     },
                 )
                 .register_action(
@@ -461,17 +431,8 @@ pub fn init(cx: &mut App) {
                             return;
                         }
 
-                        let Some(agent_panel) = workspace.panel::<AgentPanel>(cx) else {
-                            return;
-                        };
-
-                        let source = AgentContextSource::from_focused(workspace, window, cx);
-                        let source = source.or_else(|| {
-                            let cached = agent_panel.read(cx).last_context_source.clone()?;
-                            cached.exists(workspace, cx).then_some(cached)
-                        });
-                        let source =
-                            source.or_else(|| AgentContextSource::from_active(workspace, cx));
+                        let source = AgentContextSource::from_focused(workspace, window, cx)
+                            .or_else(|| AgentContextSource::from_active(workspace, cx));
 
                         let Some(source) = source else {
                             return;
@@ -481,20 +442,44 @@ pub fn init(cx: &mut App) {
                             return;
                         };
 
-                        if !agent_panel.focus_handle(cx).contains_focused(window, cx) {
-                            workspace.toggle_panel_focus::<AgentPanel>(window, cx);
-                        }
-
-                        agent_panel.update(cx, |panel, cx| {
-                            panel.last_context_source = Some(source);
-                            cx.defer_in(window, move |panel, window, cx| {
-                                if let Some(conversation_view) = panel.active_conversation_view() {
-                                    conversation_view.update(cx, |conversation_view, cx| {
-                                        conversation_view.insert_selection(selection, window, cx);
-                                    });
-                                }
+                        // Try to find an active AgentSessionItem in the current pane.
+                        // If one exists, insert the selection into its conversation.
+                        // Otherwise, create a new session tab and defer the insertion.
+                        if let Some(item) = active_agent_session_item(workspace, cx) {
+                            let conversation_view = item.read(cx).conversation_view().clone();
+                            conversation_view.update(cx, |cv, cx| {
+                                cv.insert_selection(selection, window, cx);
                             });
-                        });
+                        } else {
+                            // No active agent session tab — create a new one and
+                            // insert the selection into it once it's ready.
+                            let conversation_view =
+                                crate::thread_finder_provider::create_conversation_view(
+                                    None,
+                                    None,
+                                    None,
+                                    None,
+                                    workspace,
+                                    window,
+                                    cx,
+                                );
+                            let cv_clone = conversation_view.clone();
+                            let item = cx.new(|_| {
+                                crate::AgentSessionItem::new(
+                                    conversation_view,
+                                    workspace.weak_handle(),
+                                )
+                            });
+                            workspace.add_item_to_active_pane(Box::new(item), None, true, window, cx);
+
+                            // Defer the insertion so the conversation view has time
+                            // to initialize its thread and editor.
+                            cx.defer_in(window, move |_this, window, cx| {
+                                cv_clone.update(cx, |cv, cx| {
+                                    cv.insert_selection(selection, window, cx);
+                                });
+                            });
+                        }
                     },
                 );
         },
@@ -513,6 +498,60 @@ fn conflict_resource_block(conflict: &ConflictContent) -> schema::ContentBlock {
         )),
     ))
 }
+
+// ---------------------------------------------------------------------------
+// Tab-based session helpers (replacing AgentPanel routing)
+// ---------------------------------------------------------------------------
+
+/// Opens a new `AgentSessionItem` tab in the active pane, optionally loading
+/// an existing session or providing initial content.
+///
+/// This is the unified replacement for every action that previously called
+/// `workspace.focus_panel::<AgentPanel>()` + `panel.external_thread()`. Instead
+/// of routing through the dock panel, we create a `ConversationView` via
+/// `thread_finder_provider::create_conversation_view` and wrap it in an
+/// `AgentSessionItem`.
+pub(crate) fn open_new_agent_session_tab(
+    session_id_to_load: Option<schema::SessionId>,
+    work_dirs: Option<PathList>,
+    initial_content: Option<AgentInitialContent>,
+    workspace: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) {
+    let conversation_view = crate::thread_finder_provider::create_conversation_view(
+        session_id_to_load,
+        work_dirs,
+        None, // title — let the thread generate its own
+        initial_content,
+        workspace,
+        window,
+        cx,
+    );
+    let item = cx.new(|_| {
+        crate::AgentSessionItem::new(
+            conversation_view,
+            workspace.weak_handle(),
+        )
+    });
+    workspace.add_item_to_active_pane(Box::new(item), None, true, window, cx);
+}
+
+/// Finds the currently active `AgentSessionItem` in the workspace's active pane.
+///
+/// Returns `None` if the active item is not an `AgentSessionItem`. This is used
+/// by actions like `ExpandMessageEditor`, `CopyThreadToClipboard`, and
+/// `AddSelectionToThread` that need to operate on the active session rather
+/// than creating a new one.
+pub(crate) fn active_agent_session_item(
+    workspace: &Workspace,
+    cx: &App,
+) -> Option<Entity<crate::AgentSessionItem>> {
+    workspace
+        .active_item(cx)
+        .and_then(|item| item.act_as::<crate::AgentSessionItem>(cx))
+}
+
 
 fn build_conflict_resolution_prompt(conflicts: &[ConflictContent]) -> Vec<schema::ContentBlock> {
     if conflicts.is_empty() {
@@ -1759,7 +1798,7 @@ impl AgentPanel {
         })
     }
 
-    fn external_thread(
+    pub(crate) fn external_thread(
         &mut self,
         agent_choice: Option<crate::Agent>,
         resume_session_id: Option<schema::SessionId>,

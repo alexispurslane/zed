@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod file_finder_tests;
 
-pub mod provider;
+mod provider;
 
-pub use provider::{FinderProvider, FinderProviderRegistry, ProviderMatch, ProviderMatchData, SearchMode, finder_providers, register_finder_provider};
+pub use provider::{FinderProvider, ProviderMatch, ProviderMatchData, SearchMode};
 
 use futures::future::join_all;
 pub use open_path_prompt::OpenPathDelegate;
@@ -26,8 +26,7 @@ use open_path_prompt::{
 };
 use picker::{Picker, PickerDelegate};
 use project::{
-    PathMatchCandidateSet, Project, ProjectPath, WorktreeId, WorktreePaths,
-    worktree_store::WorktreeStore,
+    PathMatchCandidateSet, Project, ProjectPath, WorktreeId, worktree_store::WorktreeStore,
 };
 use project_panel::project_panel_settings::ProjectPanelSettings;
 use settings::Settings;
@@ -43,7 +42,7 @@ use std::{
 };
 use ui::{
     ButtonLike, CommonAnimationExt, ContextMenu, HighlightedLabel, Indicator, KeyBinding, ListItem,
-    ListItemSpacing, ListSubHeader, PopoverMenu, PopoverMenuHandle, TintColor, Tooltip, prelude::*,
+    ListItemSpacing, PopoverMenu, PopoverMenuHandle, TintColor, Tooltip, prelude::*,
 };
 use ui_input::ErasedEditor;
 use util::{
@@ -53,7 +52,7 @@ use util::{
     rel_path::RelPath,
 };
 use workspace::{
-    ModalView, NewFile, OpenOptions, OpenVisible, SplitDirection, Workspace,
+    ModalView, OpenOptions, OpenVisible, SplitDirection, Workspace,
     item::PreviewTabsSettings, notifications::NotifyResultExt, pane,
 };
 use xenomorphic_actions::search::ToggleIncludeIgnored;
@@ -342,9 +341,6 @@ impl FileFinder {
                         path: m.0.path.clone(),
                     },
                     Match::CreateNew(p) => p.clone(),
-                    // Thread-related variants don't support split in the same way;
-                    // they delegate to FinderProvider::confirm instead.
-                    _ => return,
                 };
                 let open_task = workspace.update(cx, move |workspace, cx| {
                     workspace.split_path_preview(path, false, Some(split_direction), window, cx)
@@ -420,10 +416,6 @@ pub struct FileFinderDelegate {
     focus_handle: FocusHandle,
     include_ignored: Option<bool>,
     include_ignored_refresh: Task<()>,
-    // NEW: Current search mode derived from query prefix (#, $, or none)
-    search_mode: SearchMode,
-    // NEW: Registered providers that contribute non-file results
-    providers: Vec<Arc<dyn FinderProvider>>,
 }
 
 /// Use a custom ordering for file finder: the regular one
@@ -465,23 +457,6 @@ struct Matches {
     matches: Vec<Match>,
 }
 
-/// A match representing an existing agent thread, returned by a
-/// [`FinderProvider`](crate::provider::FinderProvider).
-#[derive(Debug, Clone)]
-struct ThreadMatch {
-    thread_id: Arc<str>,
-    session_id: Option<Arc<str>>,
-    title: SharedString,
-    worktree_paths: Option<WorktreePaths>,
-    relative_time: Option<SharedString>,
-    score: f64,
-    highlight_positions: Vec<usize>,
-    /// Index into `FileFinderDelegate::providers` identifying which provider
-    /// produced this match. Used to dispatch `confirm()` to the correct
-    /// provider instead of guessing.
-    provider_index: usize,
-}
-
 #[derive(Debug, Clone)]
 enum Match {
     History {
@@ -490,20 +465,6 @@ enum Match {
     },
     Search(ProjectPanelOrdMatch),
     CreateNew(ProjectPath),
-    // NEW: An existing thread result from a FinderProvider.
-    Thread(ThreadMatch),
-    // NEW: "Start agent session: <query>" — creates a new session with query
-    // pre-filled as the first message.
-    CreateSession(String),
-    // NEW: Non-selectable visual section header (e.g. "Recent Files",
-    // "Recent Agent Sessions").
-    SectionHeader(&'static str),
-    // NEW: "New Agent Session" entry — always at the bottom of the threads
-    // section in empty-query or `#` mode.
-    NewSession,
-    // NEW: "New File" entry shown at the top of the empty-query recent files
-    // list, so users can create a new file from the picker without typing.
-    NewFile,
 }
 
 impl Match {
@@ -512,11 +473,6 @@ impl Match {
             Match::History { path, .. } => Some(&path.project.path),
             Match::Search(panel_match) => Some(&panel_match.0.path),
             Match::CreateNew(_) => None,
-            Match::Thread(_) => None,
-            Match::CreateSession(_) => None,
-            Match::SectionHeader(_) => None,
-            Match::NewSession => None,
-            Match::NewFile => None,
         }
     }
 
@@ -531,11 +487,6 @@ impl Match {
                     .absolutize(&path_match.path),
             ),
             Match::CreateNew(_) => None,
-            Match::Thread(_) => None,
-            Match::CreateSession(_) => None,
-            Match::SectionHeader(_) => None,
-            Match::NewSession => None,
-            Match::NewFile => None,
         }
     }
 
@@ -544,31 +495,13 @@ impl Match {
             Match::History { panel_match, .. } => panel_match.as_ref(),
             Match::Search(panel_match) => Some(panel_match),
             Match::CreateNew(_) => None,
-            Match::Thread(_) => None,
-            Match::CreateSession(_) => None,
-            Match::SectionHeader(_) => None,
-            Match::NewSession => None,
-            Match::NewFile => None,
         }
-    }
-
-    /// Whether this match is selectable in the picker.
-    ///
-    /// Section headers are non-selectable visual groupings that
-    /// arrow-key navigation should skip over.
-    fn is_selectable(&self) -> bool {
-        !matches!(self, Match::SectionHeader(_))
     }
 }
 
 impl Matches {
     fn len(&self) -> usize {
         self.matches.len()
-    }
-
-    /// The number of *selectable* matches (excluding SectionHeaders).
-    fn selectable_len(&self) -> usize {
-        self.matches.iter().filter(|m| m.is_selectable()).count()
     }
 
     fn get(&self, index: usize) -> Option<&Match> {
@@ -596,15 +529,6 @@ impl Matches {
                     None => false,
                 })
                 .ok_or(0)
-        } else if let Match::Thread(thread_match) = entry {
-            // Thread matches: linear search by thread_id
-            self.matches
-                .iter()
-                .position(|m| match m {
-                    Match::Thread(existing) => existing.thread_id == thread_match.thread_id,
-                    _ => false,
-                })
-                .ok_or(0)
         } else {
             self.matches.binary_search_by(|m| {
                 // `reverse()` since if cmp_matches(a, b) == Ordering::Greater, then a is better than b.
@@ -624,9 +548,6 @@ impl Matches {
         new_search_matches: impl Iterator<Item = ProjectPanelOrdMatch>,
         extend_old_matches: bool,
         path_style: PathStyle,
-        // NEW: Provider-related parameters
-        search_mode: SearchMode,
-        providers: &[Arc<dyn FinderProvider>],
     ) {
         let Some(query) = query else {
             // assuming that if there's no query, then there's no search matches.
@@ -636,51 +557,8 @@ impl Matches {
                 panel_match: None,
             };
 
-            // --- Sectioned empty-query display ---
-            if search_mode.show_files() {
-                self.matches.push(Match::SectionHeader("Recent Files"));
-                self.matches
-                    .extend(history_items.into_iter().map(path_to_entry));
-                self.matches.push(Match::NewFile);
-            }
-
-            if search_mode.show_threads() {
-                // Add provider recent items with section headers
-                for (provider_idx, provider) in providers.iter().enumerate() {
-                    if provider.supports_mode(search_mode) {
-                        self.matches.push(Match::SectionHeader(provider.section_label()));
-                        for pmatch in provider.recent_items(cx) {
-                            match pmatch.data {
-                                ProviderMatchData::SectionHeader { label } => {
-                                    self.matches.push(Match::SectionHeader(label));
-                                }
-                                ProviderMatchData::NewSession => {
-                                    self.matches.push(Match::NewSession);
-                                }
-                                ProviderMatchData::CreateSession { query } => {
-                                    self.matches.push(Match::CreateSession(query.to_string()));
-                                }
-                                ProviderMatchData::Thread { thread_id, session_id } => {
-                                    self.matches.push(Match::Thread(ThreadMatch {
-                                        thread_id,
-                                        session_id,
-                                        title: pmatch.label.clone(),
-                                        worktree_paths: pmatch.worktree_paths.clone(),
-                                        relative_time: pmatch.relative_time.clone(),
-                                        score: pmatch.score,
-                                        highlight_positions: pmatch.highlight_positions.clone(),
-                                        provider_index: provider_idx,
-                                    }));
-                                }
-                            }
-                        }
-                        // Note: The provider's recent_items() already includes a
-                        // NewSession entry at the end, so we don't need to add
-                        // another one here. Previously this caused a duplicate.
-                    }
-                }
-            }
-
+            self.matches
+                .extend(history_items.into_iter().map(path_to_entry));
             return;
         };
 
@@ -751,38 +629,22 @@ impl Matches {
         a: &Match,
         b: &Match,
     ) -> cmp::Ordering {
-        // Handle non-scoring variants that always go at extremes
+        // Handle CreateNew variant - always put it at the end
         match (a, b) {
-            // SectionHeaders are positioned by insertion, not by score — treat as equal
-            (Match::SectionHeader(_), Match::SectionHeader(_)) => return cmp::Ordering::Equal,
-            (Match::SectionHeader(_), _) => return cmp::Ordering::Greater, // headers are "better" (placed first in group)
-            (_, Match::SectionHeader(_)) => return cmp::Ordering::Less,
-
-            // CreateNew and CreateSession and NewSession always go at the very bottom
-            (Match::CreateNew(_), Match::CreateNew(_)) => return cmp::Ordering::Equal,
-            (Match::CreateSession(_), Match::CreateSession(_)) => return cmp::Ordering::Equal,
-            (Match::NewSession, Match::NewSession) => return cmp::Ordering::Equal,
-            (Match::NewFile, Match::NewFile) => return cmp::Ordering::Equal,
             (Match::CreateNew(_), _) => return cmp::Ordering::Less,
             (_, Match::CreateNew(_)) => return cmp::Ordering::Greater,
-            (Match::CreateSession(_), _) => return cmp::Ordering::Less,
-            (_, Match::CreateSession(_)) => return cmp::Ordering::Greater,
-            (Match::NewSession, _) => return cmp::Ordering::Less,
-            (_, Match::NewSession) => return cmp::Ordering::Greater,
-            (Match::NewFile, _) => return cmp::Ordering::Less,
-            (_, Match::NewFile) => return cmp::Ordering::Greater,
-
             _ => {}
         }
 
-        // Bubble currently opened files to the top
         match (&a, &b) {
+            // bubble currently opened files to the top
             (Match::History { path, .. }, _) if Some(path) == currently_opened => {
                 return cmp::Ordering::Greater;
             }
             (_, Match::History { path, .. }) if Some(path) == currently_opened => {
                 return cmp::Ordering::Less;
             }
+
             _ => {}
         }
 
@@ -790,6 +652,7 @@ impl Matches {
             match (a, b) {
                 (Match::History { .. }, Match::Search(_)) => return cmp::Ordering::Greater,
                 (Match::Search(_), Match::History { .. }) => return cmp::Ordering::Less,
+
                 _ => {}
             }
         }
@@ -799,19 +662,9 @@ impl Matches {
             return a_panel.cmp(b_panel);
         }
 
-        // Thread-vs-thread: compare by thread score
-        if let (Match::Thread(a_thread), Match::Thread(b_thread)) = (a, b) {
-            return a_thread
-                .score
-                .partial_cmp(&b_thread.score)
-                .unwrap_or(cmp::Ordering::Equal);
-        }
-
-        // Thread-vs-file or file-vs-thread: interleave by score.
-        // File results with higher scores come first, then threads with
-        // high scores, then lower-scored files, then lower-scored threads.
         let a_score = Self::match_score(a);
         let b_score = Self::match_score(b);
+        // When at least one side is a channel, compare by raw score.
         a_score
             .partial_cmp(&b_score)
             .unwrap_or(cmp::Ordering::Equal)
@@ -822,11 +675,6 @@ impl Matches {
             Match::History { panel_match, .. } => panel_match.as_ref().map_or(0.0, |pm| pm.0.score),
             Match::Search(pm) => pm.0.score,
             Match::CreateNew(_) => 0.0,
-            Match::Thread(thread) => thread.score,
-            Match::CreateSession(_) => 0.0,
-            Match::SectionHeader(_) => 0.0,
-            Match::NewSession => 0.0,
-            Match::NewFile => 0.0,
         }
     }
 }
@@ -998,8 +846,6 @@ impl FileFinderDelegate {
             focus_handle: cx.focus_handle(),
             include_ignored: FileFinderSettings::get_global(cx).include_ignored,
             include_ignored_refresh: Task::ready(()),
-            search_mode: SearchMode::Unified,
-            providers: finder_providers(cx),
         }
     }
 
@@ -1019,15 +865,6 @@ impl FileFinderDelegate {
             };
         })
         .detach();
-    }
-
-    /// Register a [`FinderProvider`] that contributes search results to the
-    /// unified file finder.
-    ///
-    /// Prefer using [`register_finder_provider`] during application init instead;
-    /// this method exists for programmatic registration after the finder is open.
-    pub fn register_provider(&mut self, provider: Arc<dyn FinderProvider>) {
-        self.providers.push(provider);
     }
 
     fn spawn_search(
@@ -1122,14 +959,10 @@ impl FileFinderDelegate {
                 matches.into_iter(),
                 extend_old_matches,
                 path_style,
-                self.search_mode,
-                &self.providers,
             );
 
             let query_path = query.raw_query.as_str();
-            // Only add CreateNew file entry when showing files in search results
-            if self.search_mode.show_files() {
-                if let Ok(mut query_path) = RelPath::new(Path::new(query_path), path_style) {
+            if let Ok(mut query_path) = RelPath::new(Path::new(query_path), path_style) {
                 let available_worktree = self
                     .project
                     .read(cx)
@@ -1170,76 +1003,6 @@ impl FileFinderDelegate {
                             worktree_id: worktree.id(),
                             path: query_path.into_arc(),
                         }));
-                    }
-                }
-            } // close if let Ok(mut query_path)
-            } // close if self.search_mode.show_files()
-
-            // --- NEW: Thread provider results ---
-            // Query all registered providers for thread matches and insert
-            // them into the results list, interleaved by score.
-            if self.search_mode.show_threads() {
-                let query_str = query.path_query();
-                for (provider_idx, provider) in self.providers.iter().enumerate() {
-                    if !provider.supports_mode(self.search_mode) {
-                        continue;
-                    }
-                    let provider_matches = provider.search(query_str, cx);
-                    for pmatch in provider_matches {
-                        match pmatch.data {
-                            ProviderMatchData::Thread { thread_id, session_id } => {
-                                let thread_match = ThreadMatch {
-                                    thread_id,
-                                    session_id,
-                                    title: pmatch.label.clone(),
-                                    worktree_paths: pmatch.worktree_paths.clone(),
-                                    relative_time: pmatch.relative_time.clone(),
-                                    score: pmatch.score,
-                                    highlight_positions: pmatch.highlight_positions.clone(),
-                                    provider_index: provider_idx,
-                                };
-                                match self.matches.position(&Match::Thread(thread_match.clone()), self.currently_opened_path.as_ref()) {
-                                    Ok(_) => continue, // duplicate
-                                    Err(i) => {
-                                        self.matches.matches.insert(i, Match::Thread(thread_match));
-                                        if self.matches.len() == 100 {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            // Non-thread provider match types are not inserted here;
-                            // they appear in the empty-query sectioned display.
-                            _ => {}
-                        }
-                    }
-                }
-
-                // Check if we need "Create from query" entries
-                let _has_file_matches = self.matches.matches.iter().any(|m| {
-                    matches!(m, Match::History { .. } | Match::Search(_))
-                });
-                let has_thread_matches = self.matches.matches.iter().any(|m| {
-                    matches!(m, Match::Thread(_))
-                });
-
-                // When no file matches exist and mode shows files, CreateNew is
-                // already added above.
-
-                // When no thread matches exist and mode shows threads, offer
-                // CreateSession from providers.
-                if !has_thread_matches {
-                    for provider in self.providers.iter() {
-                        if let Some(pmatch) = provider.create_from_query(query_str) {
-                            match pmatch.data {
-                                ProviderMatchData::CreateSession { query } => {
-                                    self.matches.matches.push(
-                                        Match::CreateSession(query.to_string())
-                                    );
-                                }
-                                _ => {}
-                            }
-                        }
                     }
                 }
             }
@@ -1319,13 +1082,6 @@ impl FileFinderDelegate {
                     String::from(""),
                     vec![],
                 ),
-                // Thread-related variants are rendered directly in render_match
-                // and never reach this function. Provide placeholder labels.
-                Match::Thread(_) => (String::new(), vec![], String::new(), vec![]),
-                Match::CreateSession(_) => (String::new(), vec![], String::new(), vec![]),
-                Match::SectionHeader(_) => (String::new(), vec![], String::new(), vec![]),
-                Match::NewSession => (String::new(), vec![], String::new(), vec![]),
-                Match::NewFile => ("New File".to_string(), vec![], String::new(), vec![]),
             };
 
         if file_name_positions.is_empty() {
@@ -1531,33 +1287,6 @@ impl FileFinderDelegate {
         }
         key_context
     }
-
-    /// Given a `ThreadMatch`, find the owning provider and reconstruct the
-    /// corresponding `ProviderMatch` for delegation to `confirm()`.
-    fn provider_match_for_thread(
-        &self,
-        thread_match: &ThreadMatch,
-    ) -> Option<(&dyn FinderProvider, ProviderMatch)> {
-        // Use the recorded provider_index to dispatch to the correct
-        // provider, rather than iterating and guessing.
-        let provider = self.providers.get(thread_match.provider_index)?;
-        let pmatch = ProviderMatch {
-            id: 0, // Not used for confirm
-            label: thread_match.title.clone(),
-            secondary_label: None,
-            icon: Some(IconName::XenomorphicAssistant),
-            icon_color: None,
-            score: thread_match.score,
-            highlight_positions: thread_match.highlight_positions.clone(),
-            relative_time: thread_match.relative_time.clone(),
-            worktree_paths: thread_match.worktree_paths.clone(),
-            data: ProviderMatchData::Thread {
-                thread_id: thread_match.thread_id.clone(),
-                session_id: thread_match.session_id.clone(),
-            },
-        };
-        Some((provider.as_ref(), pmatch))
-    }
 }
 
 fn full_path_budget(
@@ -1573,11 +1302,7 @@ impl PickerDelegate for FileFinderDelegate {
     type ListItem = ListItem;
 
     fn placeholder_text(&self, _window: &mut Window, _cx: &mut App) -> Arc<str> {
-        match self.search_mode {
-            SearchMode::ThreadsOnly => "Search agent sessions...".into(),
-            SearchMode::FilesOnly => "Search project files...".into(),
-            SearchMode::Unified => "Search files and threads...".into(),
-        }
+        "Search project files...".into()
     }
 
     fn match_count(&self) -> usize {
@@ -1588,15 +1313,6 @@ impl PickerDelegate for FileFinderDelegate {
         self.selected_index
     }
 
-    fn can_select(
-        &self,
-        ix: usize,
-        _window: &mut Window,
-        _cx: &mut Context<Picker<Self>>,
-    ) -> bool {
-        self.matches.get(ix).map_or(false, |m| m.is_selectable())
-    }
-
     fn set_selected_index(&mut self, ix: usize, _: &mut Window, cx: &mut Context<Picker<Self>>) {
         self.has_changed_selected_index = true;
         self.selected_index = ix;
@@ -1604,8 +1320,6 @@ impl PickerDelegate for FileFinderDelegate {
     }
 
     fn separators_after_indices(&self) -> Vec<usize> {
-        let mut separators = Vec::new();
-
         if self.separate_history {
             let first_non_history_index = self
                 .matches
@@ -1617,20 +1331,10 @@ impl PickerDelegate for FileFinderDelegate {
             if let Some(first_non_history_index) = first_non_history_index
                 && first_non_history_index > 0
             {
-                separators.push(first_non_history_index - 1);
+                return vec![first_non_history_index - 1];
             }
         }
-
-        // Add separators after section headers (i.e. before each new section)
-        // We put a separator *before* each SectionHeader (after the item at i-1)
-        // except for the very first item.
-        for (i, m) in self.matches.matches.iter().enumerate() {
-            if matches!(m, Match::SectionHeader(_)) && i > 0 {
-                separators.push(i - 1);
-            }
-        }
-
-        separators
+        Vec::new()
     }
 
     fn update_matches(
@@ -1639,37 +1343,30 @@ impl PickerDelegate for FileFinderDelegate {
         window: &mut Window,
         cx: &mut Context<Picker<Self>>,
     ) -> Task<()> {
-        // --- NEW: Parse # and $ prefixes for search mode ---
-        let (parsed_mode, trimmed_query) = SearchMode::from_query(raw_query.trim());
-        self.search_mode = parsed_mode;
-        let mut raw_query = trimmed_query.to_owned();
+        let raw_query = raw_query.trim();
 
-        // If not in FilesOnly mode, skip the a\\/b\\ prefix stripping since
-        // the query might be a thread search, not a file path.
-        if parsed_mode.show_files() {
-            raw_query = match &raw_query.get(0..2) {
-                Some(".\\" | "./") => raw_query[2..].to_owned(),
-                Some(prefix @ ("a\\" | "a/" | "b\\" | "b/")) => {
-                    if self
-                        .workspace
-                        .upgrade()
-                        .into_iter()
-                        .flat_map(|workspace| workspace.read(cx).worktrees(cx))
-                        .all(|worktree| {
-                            worktree
-                                .read(cx)
-                                .entry_for_path(RelPath::unix(prefix.split_at(1).0).unwrap())
-                                .is_none_or(|entry| !entry.is_dir())
-                        })
-                    {
-                        raw_query[2..].to_owned()
-                    } else {
-                        raw_query
-                    }
+        let raw_query = match &raw_query.get(0..2) {
+            Some(".\\" | "./") => &raw_query[2..],
+            Some(prefix @ ("a\\" | "a/" | "b\\" | "b/")) => {
+                if self
+                    .workspace
+                    .upgrade()
+                    .into_iter()
+                    .flat_map(|workspace| workspace.read(cx).worktrees(cx))
+                    .all(|worktree| {
+                        worktree
+                            .read(cx)
+                            .entry_for_path(RelPath::unix(prefix.split_at(1).0).unwrap())
+                            .is_none_or(|entry| !entry.is_dir())
+                    })
+                {
+                    &raw_query[2..]
+                } else {
+                    raw_query
                 }
-                _ => raw_query,
-            };
-        }
+            }
+            _ => raw_query,
+        };
 
         if raw_query.is_empty() {
             // if there was no query before, and we already have some (history) matches
@@ -1701,8 +1398,6 @@ impl PickerDelegate for FileFinderDelegate {
                     None.into_iter(),
                     false,
                     path_style,
-                    self.search_mode,
-                    &self.providers,
                 );
 
                 self.first_update = false;
@@ -1711,7 +1406,7 @@ impl PickerDelegate for FileFinderDelegate {
             cx.notify();
             Task::ready(())
         } else {
-            let path_position = PathWithPosition::parse_str(&raw_query);
+            let path_position = PathWithPosition::parse_str(raw_query);
             let raw_query = raw_query.trim().trim_end_matches(':').to_owned();
             let path = path_position.path.clone();
             let path_str = path_position.path.to_str();
@@ -1729,49 +1424,25 @@ impl PickerDelegate for FileFinderDelegate {
                 path_position,
             };
 
-            let show_files = self.search_mode.show_files();
-            let show_threads = self.search_mode.show_threads();
-
             cx.spawn_in(window, async move |this, cx| {
                 let _ = maybe!(async move {
-                    // Only search files if the mode includes files
-                    if show_files {
-                        let is_absolute_path = path.is_absolute();
-                        let did_resolve_abs_path = is_absolute_path
-                            && this
-                                .update_in(cx, |this, window, cx| {
-                                    this.delegate
-                                        .lookup_absolute_path(query.clone(), window, cx)
-                                })?
-                                .await;
-
-                        // Only check for relative paths if no absolute paths were
-                        // found.
-                        if !did_resolve_abs_path {
-                            this.update_in(cx, |this, window, cx| {
-                                this.delegate.spawn_search(query.clone(), window, cx)
+                    let is_absolute_path = path.is_absolute();
+                    let did_resolve_abs_path = is_absolute_path
+                        && this
+                            .update_in(cx, |this, window, cx| {
+                                this.delegate
+                                    .lookup_absolute_path(query.clone(), window, cx)
                             })?
                             .await;
-                        }
-                    }
 
-                    // Thread provider results are integrated inside set_search_matches
-                    // which is called by the file search path. When in ThreadsOnly mode,
-                    // we need to call set_search_matches with empty file matches to
-                    // trigger thread search and scoring.
-                    if show_threads && !show_files {
+                    // Only check for relative paths if no absolute paths were
+                    // found.
+                    if !did_resolve_abs_path {
                         this.update_in(cx, |this, window, cx| {
-                            let search_id = util::post_inc(&mut this.delegate.search_count);
-                            this.delegate.set_search_matches(
-                                search_id,
-                                false,
-                                query,
-                                std::iter::empty(),
-                                cx,
-                            );
-                        })?;
+                            this.delegate.spawn_search(query, window, cx)
+                        })?
+                        .await;
                     }
-
                     anyhow::Ok(())
                 })
                 .await;
@@ -1788,99 +1459,6 @@ impl PickerDelegate for FileFinderDelegate {
         if let Some(m) = self.matches.get(self.selected_index())
             && let Some(workspace) = self.workspace.upgrade()
         {
-            // Handle provider-based matches (Thread, CreateSession, NewSession)
-            // by delegating to the appropriate FinderProvider.
-            match m {
-                Match::Thread(thread_match) => {
-                    // Find the provider that owns this thread and delegate confirm
-                    let pmatch = self.provider_match_for_thread(thread_match);
-                    if let Some((provider, pmatch)) = pmatch {
-                        workspace.update(cx, |workspace, cx| {
-                            provider.confirm(&pmatch, secondary, workspace, window, cx);
-                        });
-                    }
-                    self.file_finder
-                        .update(cx, |_, cx| cx.emit(DismissEvent))
-                        .log_err();
-                    return;
-                }
-                Match::CreateSession(query) => {
-                    // Find a provider that supports CreateSession
-                    for provider in &self.providers {
-                        if let Some(pmatch) = provider.create_from_query(query) {
-                            workspace.update(cx, |workspace, cx| {
-                                provider.confirm(&pmatch, secondary, workspace, window, cx);
-                            });
-                            break;
-                        }
-                    }
-                    self.file_finder
-                        .update(cx, |_, cx| cx.emit(DismissEvent))
-                        .log_err();
-                    return;
-                }
-                Match::NewSession => {
-                    // Find a provider that can handle NewSession by checking
-                    // if it supports the current search mode AND can produce
-                    // a create-new match for an empty query (which is the
-                    // semantic equivalent of "New Session").
-                    //
-                    // We try `create_from_query("")` first; if the provider
-                    // returns None, fall back to dispatching a synthetic
-                    // `ProviderMatchData::NewSession` match directly.
-                    for provider in &self.providers {
-                        if !provider.supports_mode(self.search_mode) {
-                            continue;
-                        }
-                        if let Some(pmatch) = provider.create_from_query("") {
-                            workspace.update(cx, |workspace, cx| {
-                                provider.confirm(&pmatch, secondary, workspace, window, cx);
-                            });
-                        } else {
-                            // Provider doesn't implement create_from_query,
-                            // but does support this mode. Use the synthetic match.
-                            let pmatch = ProviderMatch {
-                                id: 0,
-                                label: "New Agent Session".into(),
-                                secondary_label: None,
-                                icon: Some(IconName::Plus),
-                                icon_color: None,
-                                score: 0.0,
-                                highlight_positions: Vec::new(),
-                                relative_time: None,
-                                worktree_paths: None,
-                                data: ProviderMatchData::NewSession,
-                            };
-                            workspace.update(cx, |workspace, cx| {
-                                provider.confirm(&pmatch, secondary, workspace, window, cx);
-                            });
-                        }
-                        break; // Only dispatch to the first matching provider
-                    }
-                    self.file_finder
-                        .update(cx, |_, cx| cx.emit(DismissEvent))
-                        .log_err();
-                    return;
-                }
-                Match::SectionHeader(_) => {
-                    // Non-selectable — should never be confirmed, but no-op if it happens
-                    return;
-                }
-                Match::NewFile => {
-                    // Dismiss the picker first, then dispatch the NewFile
-                    // action so focus returns to the workspace before the
-                    // action handler runs. Without this, App::dispatch_action
-                    // fails with "window not found" because the picker modal
-                    // holds focus.
-                    self.file_finder
-                        .update(cx, |_, cx| cx.emit(DismissEvent))
-                        .log_err();
-                    window.dispatch_action(NewFile.boxed_clone(), cx);
-                    return;
-                }
-                _ => {} // File matches handled below
-            }
-
             let open_task = workspace.update(cx, |workspace, cx| {
                 let split_or_open =
                     |workspace: &mut Workspace,
@@ -1973,8 +1551,6 @@ impl PickerDelegate for FileFinderDelegate {
                         window,
                         cx,
                     ),
-                    // Thread, CreateSession, NewSession, SectionHeader are handled above
-                    _ => unreachable!(),
                 }
             });
 
@@ -2032,133 +1608,9 @@ impl PickerDelegate for FileFinderDelegate {
         window: &mut Window,
         cx: &mut Context<Picker<Self>>,
     ) -> Option<Self::ListItem> {
-        let path_match = self.matches.get(ix)?;
-
-        // --- NEW: Handle thread-related and section header matches ---
-        match path_match {
-            Match::SectionHeader(label) => {
-                // Non-selectable section header rendered as ListSubHeader.
-                // We return a ListItem that wraps a ListSubHeader visual,
-                // but since ListSubHeader is a separate element type, we
-                // render it as a special case.
-                // Note: This returns a ListItem with `can_select` returning false,
-                // so the picker will never select or confirm it.
-                return Some(
-                    ListItem::new(ix)
-                        .spacing(ListItemSpacing::Sparse)
-                        .inset(true)
-                        .child(
-                            ListSubHeader::new(*label)
-                                .inset(true)
-                                .toggle_state(selected),
-                        ),
-                );
-            }
-            Match::Thread(thread_match) => {
-                // Thread result row with assistant icon, highlighted title,
-                // worktree chips, and relative time.
-                let title_label = HighlightedLabel::new(
-                    thread_match.title.clone(),
-                    thread_match.highlight_positions.clone(),
-                );
-
-                let end_slot = thread_match.relative_time.as_ref().map(|time| {
-                    Label::new(time.clone())
-                        .color(Color::Muted)
-                        .size(LabelSize::Small)
-                        .into_any_element()
-                });
-
-                return Some(
-                    ListItem::new(ix)
-                        .spacing(ListItemSpacing::Sparse)
-                        .start_slot(
-                            Icon::new(IconName::XenomorphicAssistant)
-                                .color(Color::Accent)
-                                .size(IconSize::Small),
-                        )
-                        .end_slot::<AnyElement>(end_slot)
-                        .inset(true)
-                        .toggle_state(selected)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .py_px()
-                                .child(title_label),
-                        ),
-                );
-            }
-            Match::CreateSession(query) => {
-                return Some(
-                    ListItem::new(ix)
-                        .spacing(ListItemSpacing::Sparse)
-                        .start_slot(
-                            Icon::new(IconName::XenomorphicAssistant)
-                                .color(Color::Muted)
-                                .size(IconSize::Small),
-                        )
-                        .inset(true)
-                        .toggle_state(selected)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .py_px()
-                                .child(Label::new(format!(
-                                    "Start agent session: {}",
-                                    query
-                                ))),
-                        ),
-                );
-            }
-            Match::NewSession => {
-                return Some(
-                    ListItem::new(ix)
-                        .spacing(ListItemSpacing::Sparse)
-                        .start_slot(
-                            Icon::new(IconName::Plus)
-                                .color(Color::Accent)
-                                .size(IconSize::Small),
-                        )
-                        .inset(true)
-                        .toggle_state(selected)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .py_px()
-                                .child(
-                                    Label::new("New Agent Session")
-                                        .color(Color::Accent),
-                                ),
-                        ),
-                );
-            }
-            Match::NewFile => {
-                return Some(
-                    ListItem::new(ix)
-                        .spacing(ListItemSpacing::Sparse)
-                        .start_slot(
-                            Icon::new(IconName::Plus)
-                                .color(Color::Accent)
-                                .size(IconSize::Small),
-                        )
-                        .inset(true)
-                        .toggle_state(selected)
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .py_px()
-                                .child(
-                                    Label::new("New File")
-                                        .color(Color::Accent),
-                                ),
-                        ),
-                );
-            }
-            _ => {} // File matches handled below
-        }
-
-        // --- Existing file match rendering ---
         let settings = FileFinderSettings::get_global(cx);
+
+        let path_match = self.matches.get(ix)?;
 
         let end_icon = match path_match {
             Match::History { .. } => Icon::new(IconName::HistoryRerun)
@@ -2172,15 +1624,6 @@ impl PickerDelegate for FileFinderDelegate {
             Match::CreateNew(_) => Icon::new(IconName::Plus)
                 .color(Color::Muted)
                 .size(IconSize::Small)
-                .into_any_element(),
-            Match::NewFile => Icon::new(IconName::Plus)
-                .color(Color::Accent)
-                .size(IconSize::Small)
-                .into_any_element(),
-            // Thread variants are handled above, but include fallback
-            _ => v_flex()
-                .flex_none()
-                .size(IconSize::Small.rems())
                 .into_any_element(),
         };
         let (file_name_label, full_path_label) = self.labels_for_match(path_match, window, cx);

@@ -1,8 +1,10 @@
 mod agent_configuration;
 pub mod agent_connection_store;
 mod agent_diff;
+pub mod agent_session_item;
 mod agent_model_selector;
 mod agent_panel;
+pub mod thread_finder_provider;
 mod buffer_codegen;
 mod completion_provider;
 mod context;
@@ -27,7 +29,6 @@ pub mod test_support;
 mod thread_import;
 pub mod thread_metadata_store;
 pub mod thread_worktree_archive;
-
 pub mod threads_archive_view;
 mod ui;
 
@@ -63,6 +64,7 @@ pub use crate::agent_panel::{
 pub use crate::inline_assistant::InlineAssistant;
 pub use crate::thread_metadata_store::ThreadId;
 pub use agent_diff::{AgentDiffPane, AgentDiffToolbar};
+pub use agent_session_item::AgentSessionItem;
 pub use conversation_view::ConversationView;
 pub use external_source_prompt::ExternalSourcePrompt;
 pub(crate) use model_selector::ModelSelector;
@@ -457,6 +459,23 @@ pub fn init(
     context_server_configuration::init(language_registry.clone(), fs.clone(), cx);
     thread_metadata_store::init(cx);
 
+    // Register the ThreadFinderProvider with the unified file finder
+    // so that cmd-p shows agent thread results alongside file results.
+    file_finder::register_finder_provider(crate::thread_finder_provider::ThreadFinderProvider, cx);
+
+    // Register AgentSessionItem as a serializable workspace item so that
+    // open agent tabs are persisted and restored across sessions.
+    workspace::register_serializable_item::<crate::agent_session_item::AgentSessionItem>(cx);
+
+    // Register "New Agent Thread" in the + button menu on tab bars.
+    workspace::new_item_menu::register_new_item_menu_entry(
+        workspace::new_item_menu::NewItemMenuEntry {
+            label: "New Agent Thread",
+            action: crate::NewThread.boxed_clone(),
+        },
+        cx,
+    );
+
     inline_assistant::init(fs.clone(), prompt_builder.clone(), cx);
     terminal_inline_assistant::init(fs.clone(), prompt_builder, cx);
     cx.observe_new(move |workspace, window, cx| {
@@ -466,6 +485,18 @@ pub fn init(
     cx.observe_new(|_workspace: &mut Workspace, _window, _cx| {
     })
     .detach();
+    // Initialize the global AgentConnectionStore when the first
+    // workspace is created. All AgentSessionItem tabs share this
+    // store so they share the same NativeAgent (and thus the same
+    // session registry). Without this, each tab would create its
+    // own NativeAgent and prompts would fail because the session
+    // wouldn't exist in that agent's session map.
+    cx.observe_new(|workspace: &mut Workspace, _window, cx| {
+        let project = workspace.project().clone();
+        crate::agent_connection_store::AgentConnectionStore::init_global(project, cx);
+    })
+    .detach();
+
     cx.observe_new(ManageProfilesModal::register).detach();
     cx.observe_new(|workspace: &mut Workspace, _window, _cx| {
         workspace.register_action(

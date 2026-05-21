@@ -1,10 +1,12 @@
 pub mod active_file_name;
+pub mod agent_session_indicator;
 pub mod dock;
 pub mod history_manager;
 pub mod invalid_item_view;
 pub mod item;
 mod modal_layer;
 mod multi_workspace;
+pub mod new_item_menu;
 #[cfg(test)]
 mod multi_workspace_tests;
 pub mod notifications;
