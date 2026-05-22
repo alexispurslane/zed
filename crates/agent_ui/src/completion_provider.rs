@@ -35,7 +35,6 @@ use util::rel_path::RelPath;
 use util::truncate_and_remove_front;
 use workspace::Workspace;
 
-use crate::AgentPanel;
 use crate::mention_set::MentionSet;
 
 #[derive(Clone)]
@@ -78,12 +77,6 @@ impl AgentContextSource {
     }
 
     pub(crate) fn from_focused(workspace: &Workspace, window: &Window, cx: &App) -> Option<Self> {
-        if let Some(agent_panel) = workspace.panel::<AgentPanel>(cx)
-            && agent_panel.focus_handle(cx).contains_focused(window, cx)
-        {
-            return None;
-        }
-
         if let Some(active_item) = workspace.active_item(cx) {
             if let Some(editor) = active_item.act_as::<Editor>(cx) {
                 if editor.focus_handle(cx).is_focused(window) {
@@ -999,16 +992,6 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
         let workspace = workspace.read(cx);
         let project = workspace.project().read(cx);
         let include_root_name = workspace.visible_worktrees(cx).count() > 1;
-
-        if let Some(agent_panel) = workspace.panel::<AgentPanel>(cx)
-            && let Some(thread) = agent_panel.read(cx).active_agent_thread(cx)
-            && let Some(title) = thread.read(cx).title()
-        {
-            mentions.insert(MentionUri::Thread {
-                id: thread.read(cx).session_id().clone(),
-                name: title.to_string(),
-            });
-        }
 
         recent.extend(
             workspace

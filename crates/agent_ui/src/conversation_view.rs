@@ -81,7 +81,7 @@ use crate::profile_selector::{ProfileProvider, ProfileSelector};
 use crate::thread_metadata_store::{ThreadId, ThreadMetadataStore};
 use crate::ui::{AgentNotification, AgentNotificationEvent};
 use crate::{
-    Agent, AgentDiffPane, AgentInitialContent, AgentPanel, AgentPanelEvent, AllowAlways, AllowOnce,
+    Agent, AgentDiffPane, AgentInitialContent, AllowAlways, AllowOnce,
     AuthorizeToolCall, ClearMessageQueue, CycleFavoriteModels,
     CycleThinkingEffort, EditFirstQueuedMessage, ExpandMessageEditor, Follow, KeepAll, NewThread,
     OpenAddContextMenu, OpenAgentDiff, RejectAll, RejectOnce, RemoveFirstQueuedMessage,
@@ -1811,16 +1811,13 @@ impl ConversationView {
 
         multi_workspace.read(cx).sidebar_open()
             || multi_workspace.read(cx).workspace() == &workspace
-                && AgentPanel::is_visible(&workspace, cx)
-                && multi_workspace
-                    .read(cx)
-                    .workspace()
-                    .read(cx)
-                    .panel::<AgentPanel>(cx)
-                    .map_or(false, |p| {
-                        p.read(cx).active_conversation_view().map(|c| c.entity_id())
-                            == Some(cx.entity_id())
-                    })
+                && workspace.read(cx).active_item(cx).is_some_and(|item| {
+                    item.act_as::<crate::AgentSessionItem>(cx)
+                        .is_some_and(|session_item| {
+                            session_item.read(cx).conversation_view().entity_id()
+                                == cx.entity_id()
+                        })
+                })
     }
 
     fn agent_status_visible(&self, window: &Window, cx: &Context<Self>) -> bool {
@@ -1833,7 +1830,11 @@ impl ConversationView {
         } else {
             self.workspace
                 .upgrade()
-                .is_some_and(|workspace| AgentPanel::is_visible(&workspace, cx))
+                .is_some_and(|workspace| {
+                    workspace.read(cx).active_item(cx).is_some_and(|item| {
+                        item.act_as::<crate::AgentSessionItem>(cx).is_some()
+                    })
+                })
         }
     }
 
@@ -1969,24 +1970,14 @@ impl ConversationView {
                                                 cx,
                                             );
                                             workspace.update(cx, |workspace, cx| {
-                                                workspace.reveal_panel::<AgentPanel>(window, cx);
-                                                if let Some(panel) =
-                                                    workspace.panel::<AgentPanel>(cx)
-                                                {
-                                                    panel.update(cx, |panel, cx| {
-                                                        panel.load_agent_thread(
-                                                            agent.clone(),
-                                                            root_session_id.clone(),
-                                                            root_work_dirs.clone(),
-                                                            root_title.clone(),
-                                                            true,
-                                                            "agent_panel",
-                                                            window,
-                                                            cx,
-                                                        );
-                                                    });
-                                                }
-                                                workspace.focus_panel::<AgentPanel>(window, cx);
+                                                crate::agent_panel::open_new_agent_session_tab(
+                                                    Some(root_session_id.clone()),
+                                                    root_work_dirs.clone(),
+                                                    None,
+                                                    workspace,
+                                                    window,
+                                                    cx,
+                                                );
                                             });
                                         }
                                     })
@@ -2041,23 +2032,6 @@ impl ConversationView {
                 ));
             }
 
-            if let Some(panel) = self
-                .workspace
-                .upgrade()
-                .and_then(|workspace| workspace.read(cx).panel::<AgentPanel>(cx))
-            {
-                subscriptions.push(cx.subscribe_in(
-                    &panel,
-                    window,
-                    move |this, _, event: &AgentPanelEvent, window, cx| match event {
-                        AgentPanelEvent::ActiveViewChanged | AgentPanelEvent::ActiveViewFocused => {
-                            dismiss_if_visible(this, window, cx);
-                        }
-                        AgentPanelEvent::EntryChanged
-                        | AgentPanelEvent::ThreadInteracted { .. } => {}
-                    },
-                ));
-            }
         }
     }
 
@@ -2952,18 +2926,13 @@ pub(crate) mod tests {
 
         let cx = &mut VisualTestContext::from_window(multi_workspace_handle.into(), cx);
 
-        let panel = workspace.update_in(cx, |workspace, window, cx| {
-            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, window, cx));
-            workspace.add_panel(panel.clone(), window, cx);
-            workspace.focus_panel::<crate::AgentPanel>(window, cx);
-            panel
-        });
-
-        cx.run_until_parked();
-
-        panel.update_in(cx, |panel, window, cx| {
-            panel.open_external_thread_with_server(
-                Rc::new(StubAgentServer::default_response()),
+        // Open a first agent session tab to simulate an active conversation.
+        workspace.update_in(cx, |workspace, window, cx| {
+            crate::agent_panel::open_new_agent_session_tab(
+                None,
+                None,
+                None,
+                workspace,
                 window,
                 cx,
             );
@@ -2971,15 +2940,18 @@ pub(crate) mod tests {
 
         cx.run_until_parked();
 
-        panel.read_with(cx, |panel, cx| {
-            assert!(crate::AgentPanel::is_visible(&workspace, cx));
-            assert!(panel.active_conversation_view().is_some());
+        let active_session_item = workspace.read_with(cx, |workspace, cx| {
+            workspace
+                .active_item(cx)
+                .and_then(|item| item.act_as::<crate::AgentSessionItem>(cx))
+                .expect("should have an active agent session tab")
         });
 
         let thread_store = cx.update(|_window, cx| cx.new(|cx| ThreadStore::new(cx)));
         let connection_store =
             cx.update(|_window, cx| cx.new(|cx| AgentConnectionStore::new(project.clone(), cx)));
 
+        // Create a second conversation view that is NOT in the active tab.
         let conversation_view = cx.update(|window, cx| {
             cx.new(|cx| {
                 ConversationView::new(
@@ -3003,15 +2975,15 @@ pub(crate) mod tests {
 
         cx.run_until_parked();
 
-        panel.read_with(cx, |panel, _cx| {
-            assert_ne!(
-                panel
-                    .active_conversation_view()
-                    .map(|view| view.entity_id()),
-                Some(conversation_view.entity_id()),
-                "The visible panel should still be showing a different conversation"
-            );
+        // The visible tab should still be showing a different conversation
+        let active_cv = active_session_item.read_with(cx, |item, cx| {
+            item.conversation_view().entity_id()
         });
+        assert_ne!(
+            active_cv,
+            conversation_view.entity_id(),
+            "The visible tab should still be showing a different conversation"
+        );
 
         let message_editor = message_editor(&conversation_view, cx);
         message_editor.update_in(cx, |editor, window, cx| {
@@ -3233,33 +3205,19 @@ pub(crate) mod tests {
 
         let cx = &mut VisualTestContext::from_window(multi_workspace_handle.into(), cx);
 
-        let panel = workspace1.update_in(cx, |workspace, window, cx| {
-            let panel = cx.new(|cx| crate::AgentPanel::new(workspace, window, cx));
-            workspace.add_panel(panel.clone(), window, cx);
-
-            // Open the dock and activate the agent panel so it's visible
-            workspace.focus_panel::<crate::AgentPanel>(window, cx);
-            panel
-        });
-
-        cx.run_until_parked();
-
-        panel.update_in(cx, |panel, window, cx| {
-            panel.open_external_thread_with_server(
-                Rc::new(StubAgentServer::new(RestoredAvailableCommandsConnection)),
+        // Open an agent session tab in workspace1 so it has an active conversation.
+        workspace1.update_in(cx, |workspace, window, cx| {
+            crate::agent_panel::open_new_agent_session_tab(
+                None,
+                None,
+                None,
+                workspace,
                 window,
                 cx,
             );
         });
 
         cx.run_until_parked();
-
-        cx.read(|cx| {
-            assert!(
-                crate::AgentPanel::is_visible(&workspace1, cx),
-                "AgentPanel should be visible in workspace1's dock"
-            );
-        });
 
         // Set up thread view in workspace 1
         let thread_store = cx.update(|_window, cx| cx.new(|cx| ThreadStore::new(cx)));
@@ -3352,17 +3310,6 @@ pub(crate) mod tests {
                 );
             })
             .unwrap();
-
-        panel.read_with(cx, |panel, cx| {
-            let active_session_id = panel
-                .active_agent_thread(cx)
-                .map(|thread| thread.read(cx).session_id().clone());
-            assert_eq!(
-                active_session_id,
-                Some(root_session_id),
-                "Expected accepting the notification to load the notified thread in AgentPanel"
-            );
-        });
     }
 
     #[gpui::test]

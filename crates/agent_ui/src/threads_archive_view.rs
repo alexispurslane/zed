@@ -44,7 +44,6 @@ use workspace::{
     WorkspaceDb, WorkspaceId,
 };
 
-use xenomorphic_actions::agents_sidebar::FocusSidebarFilter;
 use xenomorphic_actions::editor::{MoveDown, MoveUp};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -840,8 +839,6 @@ impl ThreadsArchiveView {
         let right_window_controls =
             !cfg!(target_os = "macos") && not_fullscreen && sidebar_on_right;
         let header_height = platform_title_bar_height(window);
-        let show_focus_keybinding =
-            self.selection.is_some() && !self.filter_editor.focus_handle(cx).is_focused(window);
 
         h_flex()
             .h(header_height)
@@ -880,9 +877,7 @@ impl ThreadsArchiveView {
                     )
                     .child(self.filter_editor.clone()),
             )
-            .when(show_focus_keybinding, |this| {
-                this.child(KeyBinding::for_action(&FocusSidebarFilter, cx))
-            })
+
             .when(has_query, |this| {
                 this.child(
                     IconButton::new("clear-filter", IconName::Close)

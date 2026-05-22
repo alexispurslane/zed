@@ -78,10 +78,6 @@ pub struct AgentSettingsContent {
     ///
     /// Default: true
     pub enabled: Option<bool>,
-    /// Whether to show the agent panel button in the status bar.
-    ///
-    /// Default: true
-    pub button: Option<bool>,
     /// Where to dock the agent panel.
     ///
     /// Default: left
@@ -90,10 +86,6 @@ pub struct AgentSettingsContent {
     ///
     /// Default: true
     pub flexible: Option<bool>,
-    /// Where to position the threads sidebar.
-    ///
-    /// Default: left
-    pub sidebar_side: Option<SidebarDockPosition>,
     /// Default width in pixels when the agent panel is docked to the left or right.
     ///
     /// Default: 640
@@ -216,10 +208,6 @@ pub struct AgentSettingsContent {
 impl AgentSettingsContent {
     pub fn set_dock(&mut self, dock: DockPosition) {
         self.dock = Some(dock);
-    }
-
-    pub fn set_sidebar_side(&mut self, position: SidebarDockPosition) {
-        self.sidebar_side = Some(position);
     }
 
     pub fn set_flexible_size(&mut self, flexible: bool) {

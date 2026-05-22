@@ -263,27 +263,16 @@ fn reveal_in_project_panel(
 fn open_thread(
     workspace: &mut Workspace,
     id: schema::SessionId,
-    name: String,
+    _name: String,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) {
-    use crate::AgentPanel;
-
-    let Some(panel) = workspace.panel::<AgentPanel>(cx) else {
-        return;
-    };
-
-    // Right now we only support loading threads in the native agent
-    panel.update(cx, |panel, cx| {
-        panel.load_agent_thread(
-            Agent::NativeAgent,
-            id,
-            None,
-            Some(name.into()),
-            true,
-            "agent_panel",
-            window,
-            cx,
-        )
-    });
+    crate::agent_panel::open_new_agent_session_tab(
+        Some(id),
+        None,
+        None,
+        workspace,
+        window,
+        cx,
+    );
 }

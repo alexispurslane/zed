@@ -231,7 +231,6 @@ impl VsCodeSettings {
         let enabled = self.read_bool("chat.agent.enabled");
         skip_default(AgentSettingsContent {
             enabled: enabled,
-            button: enabled,
             ..Default::default()
         })
     }

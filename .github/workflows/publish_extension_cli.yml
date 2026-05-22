@@ -10,7 +10,6 @@ on:
     - extension-cli
 jobs:
   publish_job:
-    if: (github.repository_owner == 'zed-industries' || github.repository_owner == 'zed-extensions')
     runs-on: namespace-profile-16x32-ubuntu-2204
     steps:
     - name: steps::checkout_repo
@@ -34,15 +33,8 @@ jobs:
   update_sha_in_zed:
     needs:
     - publish_job
-    if: (github.repository_owner == 'zed-industries' || github.repository_owner == 'zed-extensions')
     runs-on: namespace-profile-8x16-ubuntu-2204
     steps:
-    - id: generate-token
-      name: steps::generate_token
-      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859
-      with:
-        app-id: ${{ secrets.ZED_ZIPPY_APP_ID }}
-        private-key: ${{ secrets.ZED_ZIPPY_APP_PRIVATE_KEY }}
     - name: steps::checkout_repo
       uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
       with:
@@ -74,27 +66,16 @@ jobs:
           - N/A
         commit-message: 'extension_ci: Bump extension CLI version to `${{ steps.short-sha.outputs.sha_short }}`'
         branch: update-extension-cli-sha
-        committer: zed-zippy[bot] <234243425+zed-zippy[bot]@users.noreply.github.com>
-        author: zed-zippy[bot] <234243425+zed-zippy[bot]@users.noreply.github.com>
         base: main
         delete-branch: true
-        token: ${{ steps.generate-token.outputs.token }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         sign-commits: true
         assignees: ${{ github.actor }}
   update_sha_in_extensions:
     needs:
     - publish_job
-    if: (github.repository_owner == 'zed-industries' || github.repository_owner == 'zed-extensions')
     runs-on: namespace-profile-2x4-ubuntu-2404
     steps:
-    - id: generate-token
-      name: steps::generate_token
-      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859
-      with:
-        app-id: ${{ secrets.ZED_ZIPPY_APP_ID }}
-        private-key: ${{ secrets.ZED_ZIPPY_APP_PRIVATE_KEY }}
-        owner: zed-industries
-        repositories: extensions
     - id: short-sha
       name: publish_extension_cli::get_short_sha
       run: |
@@ -103,7 +84,7 @@ jobs:
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       with:
         repository: zed-industries/extensions
-        token: ${{ steps.generate-token.outputs.token }}
+        token: ${{ secrets.GITHUB_TOKEN }}
     - name: publish_extension_cli::update_sha_in_extensions::replace_sha
       run: |
         sed -i "s/ZED_EXTENSION_CLI_SHA: [a-f0-9]*/ZED_EXTENSION_CLI_SHA: $GITHUB_SHA/" \
@@ -116,11 +97,9 @@ jobs:
           This PR bumps the extension CLI version to https://github.com/zed-industries/zed/commit/${{ github.sha }}.
         commit-message: Bump extension CLI version to `${{ steps.short-sha.outputs.sha_short }}`
         branch: update-extension-cli-sha
-        committer: zed-zippy[bot] <234243425+zed-zippy[bot]@users.noreply.github.com>
-        author: zed-zippy[bot] <234243425+zed-zippy[bot]@users.noreply.github.com>
         base: main
         delete-branch: true
-        token: ${{ steps.generate-token.outputs.token }}
+        token: ${{ secrets.GITHUB_TOKEN }}
         sign-commits: true
         assignees: ${{ github.actor }}
         labels: allow-no-extension

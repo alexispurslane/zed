@@ -8781,11 +8781,14 @@ pub(crate) fn open_link(
             }
             MentionUri::Selection { abs_path: None, .. } => {}
             MentionUri::Thread { id, name } => {
-                if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                    panel.update(cx, |panel, cx| {
-                        panel.open_thread(id, None, Some(name.into()), window, cx)
-                    });
-                }
+                crate::agent_panel::open_new_agent_session_tab(
+                    Some(id),
+                    None,
+                    None,
+                    workspace,
+                    window,
+                    cx,
+                );
             }
             MentionUri::Fetch { url } => {
                 cx.open_url(url.as_str());

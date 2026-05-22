@@ -9,7 +9,7 @@
 #
 # Auth: GitHub App `ZED_COMMUNITY_BOT_APP_ID` with
 # `Organization Projects: Read and write` permission added. Token is
-# requested with `owner: zed-industries` so it can mutate org-level project
+# requested with `owner:` so it can mutate org-level project
 # items (the default repo-scoped token is insufficient for org projects).
 #
 # This workflow only mutates the triage project (#84). It does not write
@@ -63,8 +63,7 @@ jobs:
     # Run only on the canonical repo (not forks); skip PR comments since this
     # workflow is for issues only.
     if: |
-      github.repository == 'zed-industries/zed' &&
-      (github.event_name != 'issue_comment' || github.event.issue.pull_request == null)
+      github.event_name != 'issue_comment' || github.event.issue.pull_request == null
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -87,10 +86,6 @@ jobs:
         with:
           app-id: ${{ secrets.ZED_COMMUNITY_BOT_APP_ID }}
           private-key: ${{ secrets.ZED_COMMUNITY_BOT_PRIVATE_KEY }}
-          # IMPORTANT: org-scoped token is required for org-level project
-          # mutations. Without `owner:`, the default token is repo-scoped and
-          # cannot write to org projects.
-          owner: zed-industries
           # Scope the token down to the minimum needed for this workflow.
           # Even though the App may have broader permissions for other
           # automations (e.g., Issues:Write for the dupe-bot), this token

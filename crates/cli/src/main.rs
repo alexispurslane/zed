@@ -32,7 +32,7 @@ const URL_PREFIX: [&'static str; 5] = ["xenomorphic://", "http://", "https://", 
 struct Detect;
 
 trait InstalledApp {
-    fn zed_version_string(&self) -> String;
+    fn app_version_string(&self) -> String;
     fn launch(&self, ipc_url: String, user_data_dir: Option<&str>) -> anyhow::Result<()>;
     fn run_foreground(
         &self,
@@ -52,13 +52,13 @@ This CLI is a separate binary that invokes Xenomorphic.
 Examples:
     `xenomorphic`
           Simply opens Xenomorphic
-    `zed --foreground`
+    `xed --foreground`
           Runs in foreground (shows all logs)
-    `zed path-to-your-project`
+    `xed path-to-your-project`
           Open your project in Xenomorphic
-    `zed -n path-to-file `
+    `xed -n path-to-file `
           Open file/folder in a new window",
-    after_help = "To read from stdin, append '-', e.g. 'ps axf | zed -'"
+    after_help = "To read from stdin, append '-', e.g. 'ps axf | xed -'"
 )]
 struct Args {
     /// Wait for all of the given paths to be opened/closed before exiting.
@@ -87,7 +87,7 @@ struct Args {
     #[cfg_attr(target_os = "windows", doc = "`%LOCALAPPDATA%\\Xenomorphic`.")]
     #[cfg_attr(
         not(any(target_os = "windows", target_os = "macos")),
-        doc = "`$XDG_DATA_HOME/zed`."
+        doc = "`$XDG_DATA_HOME/xenomorphic`."
     )]
     #[arg(long, value_name = "DIR")]
     user_data_dir: Option<String>,
@@ -98,13 +98,13 @@ struct Args {
     /// Print Xenomorphic's version and the app path.
     #[arg(short, long)]
     version: bool,
-    /// Run zed in the foreground (useful for debugging)
+    /// Run xed in the foreground (useful for debugging)
     #[arg(long)]
     foreground: bool,
-    /// Custom path to Xenomorphic.app or the zed binary
+    /// Custom path to Xenomorphic.app or the xed binary
     #[arg(long)]
-    zed: Option<PathBuf>,
-    /// Run zed in dev-server mode
+    xed: Option<PathBuf>,
+    /// Run xed in dev-server mode
     #[arg(long)]
     dev_server_token: Option<String>,
     /// The username and WSL distribution to use when opening paths. If not specified,
@@ -119,7 +119,7 @@ struct Args {
     #[cfg(target_os = "windows")]
     #[arg(long, value_name = "USER@DISTRO")]
     wsl: Option<String>,
-    /// Not supported in Xenomorphic CLI, only supported on Zed binary
+    /// Not supported in Xenomorphic CLI, only supported on Xenomorphic binary
     /// Will attempt to give the correct command to run
     #[arg(long)]
     system_specs: bool,
@@ -153,7 +153,7 @@ struct Args {
 /// If a part of path doesn't exist, it will canonicalize the
 /// existing part and append the non-existing part.
 ///
-/// This method must return an absolute path, as many zed
+/// This method must return an absolute path, as many xenomorphic
 /// crates assume absolute paths.
 fn parse_path_with_position(argument_str: &str) -> anyhow::Result<String> {
     match Path::new(argument_str).canonicalize() {
@@ -479,7 +479,7 @@ fn main() -> Result<()> {
     }
     let args = Args::parse();
 
-    // `zed --askpass` Makes zed operate in nc/netcat mode for use with askpass
+    // `xed --askpass` Makes xed operate in nc/netcat mode for use with askpass
     if let Some(socket) = &args.askpass {
         askpass::main(socket);
         return Ok(());
@@ -494,10 +494,10 @@ fn main() -> Result<()> {
     #[cfg(target_os = "linux")]
     let args = flatpak::set_bin_if_no_escape(args);
 
-    let app = Detect::detect(args.zed.as_deref()).context("Bundle detection")?;
+    let app = Detect::detect(args.xed.as_deref()).context("Bundle detection")?;
 
     if args.version {
-        println!("{}", app.zed_version_string());
+        println!("{}", app.app_version_string());
         return Ok(());
     }
 
@@ -640,7 +640,7 @@ fn main() -> Result<()> {
 
     anyhow::ensure!(
         args.dev_server_token.is_none(),
-        "Dev servers were removed in v0.157.x please upgrade to SSH remoting: https://zed.dev/docs/remote-development"
+        "Dev servers were removed in v0.157.x please upgrade to SSH remoting: https://xenomorphic.dev/docs/remote-development"
     );
 
     rayon::ThreadPoolBuilder::new()
@@ -786,7 +786,7 @@ fn anonymous_fd(path: &str) -> Option<fs::File> {
 }
 
 /// Shows an interactive prompt asking the user to choose the default open
-/// behavior for `zed <path>`. Returns `None` if the prompt cannot be shown
+/// behavior for `xed <path>`. Returns `None` if the prompt cannot be shown
 /// (e.g. stdin is not a terminal) or the user cancels.
 fn prompt_open_behavior() -> Option<cli::CliBehaviorSetting> {
     if !std::io::stdin().is_terminal() {
@@ -797,14 +797,14 @@ fn prompt_open_behavior() -> Option<cli::CliBehaviorSetting> {
     let items = [
         format!(
             "Add to existing Xenomorphic window ({})",
-            blue.apply_to("zed --existing")
+            blue.apply_to("xed --existing")
         ),
-        format!("Open a new window ({})", blue.apply_to("zed --classic")),
+        format!("Open a new window ({})", blue.apply_to("xed --classic")),
     ];
 
     let prompt = format!(
         "Configure default behavior for {}\n{}",
-        blue.apply_to("zed <path>"),
+        blue.apply_to("xed <path>"),
         console::style("You can change this later in Xenomorphic settings"),
     );
 
@@ -851,10 +851,10 @@ mod linux {
                 let cli = env::current_exe()?;
                 let dir = cli.parent().context("no parent path for cli")?;
 
-                // libexec is the standard, lib/zed is for Arch (and other non-libexec distros),
-                // ./zed is for the target directory in development builds.
+                // libexec is the standard, lib/xenomorphic is for Arch (and other non-libexec distros),
+                // ./xed is for the target directory in development builds.
                 let possible_locations =
-                    ["../libexec/xenomorphic-editor", "../lib/zed/xenomorphic-editor", "./zed"];
+                    ["../libexec/xenomorphic-editor", "../lib/xenomorphic/xenomorphic-editor", "./xed"];
                 possible_locations
                     .iter()
                     .find_map(|p| dir.join(p).canonicalize().ok().filter(|path| path != &cli))
@@ -868,7 +868,7 @@ mod linux {
     }
 
     impl InstalledApp for App {
-        fn zed_version_string(&self) -> String {
+        fn app_version_string(&self) -> String {
             format!(
                 "Xenomorphic {}{}{} – {}",
                 if *release_channel::RELEASE_CHANNEL_NAME == "stable" {
@@ -1001,7 +1001,7 @@ mod flatpak {
         if let Some(flatpak_dir) = get_flatpak_dir() {
             let mut args = vec!["/usr/bin/flatpak-spawn".into(), "--host".into()];
             args.append(&mut get_xdg_env_args());
-            args.push("--env=XENOMORPHIC_UPDATE_EXPLANATION=Please use flatpak to update zed".into());
+            args.push("--env=XENOMORPHIC_UPDATE_EXPLANATION=Please use flatpak to update xenomorphic".into());
             args.push(
                 format!(
                     "--env={EXTRA_LIB_ENV_NAME}={}",
@@ -1014,11 +1014,11 @@ mod flatpak {
             let mut is_app_location_set = false;
             for arg in &env::args_os().collect::<Vec<_>>()[1..] {
                 args.push(arg.clone());
-                is_app_location_set |= arg == "--zed";
+                is_app_location_set |= arg == "--xed";
             }
 
             if !is_app_location_set {
-                args.push("--zed".into());
+                args.push("--xed".into());
                 args.push(flatpak_dir.join("libexec").join("xenomorphic-editor").into());
             }
 
@@ -1031,10 +1031,10 @@ mod flatpak {
     pub fn set_bin_if_no_escape(mut args: super::Args) -> super::Args {
         if env::var(NO_ESCAPE_ENV_NAME).is_ok()
             && env::var("FLATPAK_ID").is_ok_and(|id| id.starts_with("dev.xenomorphic.Xenomorphic"))
-            && args.zed.is_none()
+            && args.xed.is_none()
         {
-            args.zed = Some("/app/libexec/xenomorphic-editor".into());
-            unsafe { env::set_var("XENOMORPHIC_UPDATE_EXPLANATION", "Please use flatpak to update zed") };
+            args.xed = Some("/app/libexec/xenomorphic-editor".into());
+            unsafe { env::set_var("XENOMORPHIC_UPDATE_EXPLANATION", "Please use flatpak to update xenomorphic") };
         }
         args
     }
@@ -1115,7 +1115,7 @@ mod windows {
     struct App(PathBuf);
 
     impl InstalledApp for App {
-        fn zed_version_string(&self) -> String {
+        fn app_version_string(&self) -> String {
             format!(
                 "Xenomorphic {}{}{} – {}",
                 if *release_channel::RELEASE_CHANNEL_NAME == "stable" {
@@ -1189,9 +1189,9 @@ mod windows {
                 let cli = std::env::current_exe()?;
                 let dir = cli.parent().context("no parent path for cli")?;
 
-                // ../Xenomorphic.exe is the standard, lib/zed is for MSYS2, ./zed.exe is for the target
+                // ../Xenomorphic.exe is the standard, lib/xenomorphic is for MSYS2, ./xed.exe is for the target
                 // directory in development builds.
-                let possible_locations = ["../Xenomorphic.exe", "../lib/zed/xenomorphic-editor.exe", "./zed.exe"];
+                let possible_locations = ["../Xenomorphic.exe", "../lib/xenomorphic/xenomorphic-editor.exe", "./xed.exe"];
                 possible_locations
                     .iter()
                     .find_map(|p| dir.join(p).canonicalize().ok().filter(|path| path != &cli))
@@ -1289,7 +1289,7 @@ mod mac_os {
     }
 
     impl InstalledApp for Bundle {
-        fn zed_version_string(&self) -> String {
+        fn app_version_string(&self) -> String {
             format!("Xenomorphic {} – {}", self.version(), self.path().display(),)
         }
 
@@ -1326,7 +1326,7 @@ mod mac_os {
                     anyhow::ensure!(
                         status == 0,
                         "cannot start app bundle {}",
-                        self.zed_version_string()
+                        self.app_version_string()
                     );
                 }
 
@@ -1335,7 +1335,7 @@ mod mac_os {
                         .parent()
                         .with_context(|| format!("Executable {executable:?} path has no parent"))?;
                     let subprocess_stdout_file = fs::File::create(
-                        executable_parent.join("zed_dev.log"),
+                        executable_parent.join("xenomorphic_dev.log"),
                     )
                     .with_context(|| format!("Log file creation in {executable_parent:?}"))?;
                     let subprocess_stdin_file =
@@ -1367,7 +1367,7 @@ mod mac_os {
             user_data_dir: Option<&str>,
         ) -> io::Result<ExitStatus> {
             let path = match self {
-                Bundle::App { app_bundle, .. } => app_bundle.join("Contents/MacOS/zed"),
+                Bundle::App { app_bundle, .. } => app_bundle.join("Contents/MacOS/xenomorphic"),
                 Bundle::LocalPath { executable, .. } => executable.clone(),
             };
 
@@ -1381,7 +1381,7 @@ mod mac_os {
 
         fn path(&self) -> PathBuf {
             match self {
-                Bundle::App { app_bundle, .. } => app_bundle.join("Contents/MacOS/zed"),
+                Bundle::App { app_bundle, .. } => app_bundle.join("Contents/MacOS/xenomorphic"),
                 Bundle::LocalPath { executable, .. } => executable.clone(),
             }
         }

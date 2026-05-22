@@ -4,8 +4,8 @@ use std::sync::Arc;
 use agent_thread::{AgentThread, AgentThreadEntry, ThreadStatus};
 use anyhow::Result;
 use gpui::{
-    Action, App, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Render,
-    SharedString, Task, WeakEntity, Window,
+    Action, App, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
+    KeyContext, Render, SharedString, Task, WeakEntity, Window,
 };
 use project::Project;
 use ui::{Color, Icon, IconName, IntoElement, prelude::*};
@@ -442,7 +442,12 @@ impl Render for AgentSessionItem {
         // Without size_full() on the parent, the flex_1 message list
         // collapses to zero height while the editor (which has intrinsic
         // height from its text content) still shows.
-        div().size_full().child(self.conversation_view.clone())
+        let mut key_context = KeyContext::new_with_defaults();
+        key_context.add("AgentSession");
+        div()
+            .size_full()
+            .key_context(key_context)
+            .child(self.conversation_view.clone())
     }
 }
 

@@ -19,21 +19,21 @@ pub enum OpenBehavior {
     #[default]
     Default,
     /// Always create a new window. No matching against existing worktrees.
-    /// Corresponds to `zed -n`.
+    /// Corresponds to `xed -n`.
     AlwaysNew,
     /// Match broadly including subdirectories, and fall back to any existing
-    /// window if no worktree matched. Corresponds to `zed -a`.
+    /// window if no worktree matched. Corresponds to `xed -a`.
     Add,
     /// Open directories as a new workspace in the current Xenomorphic window's sidebar.
     /// Reuse existing windows for files in open worktrees.
-    /// Corresponds to `zed -e`.
+    /// Corresponds to `xed -e`.
     ExistingWindow,
     /// New window for directories, reuse existing window for files in open
     /// worktrees. The classic pre-sidebar behavior.
-    /// Corresponds to `zed --classic`.
+    /// Corresponds to `xed --classic`.
     Classic,
     /// Replace the content of an existing window with a new workspace.
-    /// Corresponds to `zed -r`.
+    /// Corresponds to `xed -r`.
     Reuse,
 }
 
@@ -83,7 +83,7 @@ pub enum CliResponse {
 /// When Xenomorphic started not as an *.app but as a binary (e.g. local development),
 /// there's a possibility to tell it to behave "regularly".
 ///
-/// Note that in the main zed binary, this variable is unset after it's read for the first time,
+/// Note that in the main xenomorphic binary, this variable is unset after it's read for the first time,
 /// therefore it should always be accessed through the `FORCE_CLI_MODE` static.
 pub const FORCE_CLI_MODE_ENV_VAR_NAME: &str = "XENOMORPHIC_FORCE_CLI_MODE";
 

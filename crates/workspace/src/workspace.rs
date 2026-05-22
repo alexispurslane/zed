@@ -1,5 +1,4 @@
 pub mod active_file_name;
-pub mod agent_session_indicator;
 pub mod dock;
 pub mod history_manager;
 pub mod invalid_item_view;
@@ -28,20 +27,22 @@ mod toolbar;
 pub mod welcome;
 mod workspace_settings;
 
+pub mod workspace_sidebar;
+
 pub use crate::notifications::NotificationFrame;
 pub use dock::Panel;
 pub use multi_workspace::{
     CloseWorkspaceSidebar, DraggedSidebar, FocusWorkspaceSidebar, MoveProjectToNewWindow,
-    MultiWorkspace, MultiWorkspaceEvent, NewThread, NextProject, NextThread, PreviousProject,
-    PreviousThread, ProjectGroup, ProjectGroupKey, SerializedProjectGroupState, Sidebar,
+    MultiWorkspace, MultiWorkspaceEvent, NextProject, PreviousProject,
+    ProjectGroup, ProjectGroupKey, SerializedProjectGroupState, Sidebar,
     SidebarEvent, SidebarHandle, SidebarRenderState, SidebarSide, ToggleWorkspaceSidebar,
-    sidebar_side_context_menu,
 };
 pub use path_list::{PathList, SerializedPathList};
 pub use remote::{
     RemoteConnectionIdentity, remote_connection_identity, same_remote_connection_identity,
 };
 pub use toast_layer::{ToastAction, ToastLayer, ToastView};
+pub use workspace_sidebar::WorkspaceSidebar;
 
 use anyhow::{Context as _, Result, anyhow};
 use client::{
@@ -4777,7 +4778,7 @@ impl Workspace {
             self.auto_watch = AutoWatch::Active { watched_peer };
 
             if let Some(peer_id) = watched_peer {
-                
+
             }
         }
 
@@ -4830,7 +4831,7 @@ impl Workspace {
         self.auto_watch = AutoWatch::Active { watched_peer };
 
         if let Some(peer_id) = watched_peer {
-            
+
         }
     }
 

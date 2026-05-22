@@ -1,20 +1,20 @@
 #!/usr/bin/env sh
 set -eu
 
-# Downloads a tarball from https://zed.dev/releases and unpacks it
+# Downloads a tarball from https://xenomorphic.dev/releases and unpacks it
 # into ~/.local/. If you'd prefer to do this manually, instructions are at
-# https://zed.dev/docs/linux.
+# https://xenomorphic.dev/docs/linux.
 
 main() {
     platform="$(uname -s)"
     arch="$(uname -m)"
-    channel="${ZED_CHANNEL:-stable}"
-    ZED_VERSION="${ZED_VERSION:-latest}"
+    channel="${XENOMORPHIC_CHANNEL:-stable}"
+    XENOMORPHIC_VERSION="${XENOMORPHIC_VERSION:-latest}"
     # Use TMPDIR if available (for environments with non-standard temp directories)
     if [ -n "${TMPDIR:-}" ] && [ -d "${TMPDIR}" ]; then
-        temp="$(mktemp -d "$TMPDIR/zed-XXXXXX")"
+        temp="$(mktemp -d "$TMPDIR/xenomorphic-XXXXXX")"
     else
-        temp="$(mktemp -d "/tmp/zed-XXXXXX")"
+        temp="$(mktemp -d "/tmp/xenomorphic-XXXXXX")"
     fi
 
     if [ "$platform" = "Darwin" ]; then
@@ -54,10 +54,10 @@ main() {
 
     "$platform" "$@"
 
-    if [ "$(command -v zed)" = "$HOME/.local/bin/zed" ]; then
-        echo "Zed has been installed. Run with 'zed'"
+    if [ "$(command -v xed)" = "$HOME/.local/bin/xed" ]; then
+        echo "Xenomorphic has been installed. Run with 'xed'"
     else
-        echo "To run Zed from your terminal, you must add ~/.local/bin to your PATH"
+        echo "To run Xenomorphic from your terminal, you must add ~/.local/bin to your PATH"
         echo "Run:"
 
         case "$SHELL" in
@@ -74,16 +74,16 @@ main() {
                 ;;
         esac
 
-        echo "To run Zed now, '~/.local/bin/zed'"
+        echo "To run Xenomorphic now, '~/.local/bin/xed'"
     fi
 }
 
 linux() {
-    if [ -n "${ZED_BUNDLE_PATH:-}" ]; then
-        cp "$ZED_BUNDLE_PATH" "$temp/zed-linux-$arch.tar.gz"
+    if [ -n "${XENOMORPHIC_BUNDLE_PATH:-}" ]; then
+        cp "$XENOMORPHIC_BUNDLE_PATH" "$temp/xenomorphic-linux-$arch.tar.gz"
     else
-        echo "Downloading Zed version: $ZED_VERSION"
-        curl "https://cloud.zed.dev/releases/$channel/$ZED_VERSION/download?asset=zed&arch=$arch&os=linux&source=install.sh" > "$temp/zed-linux-$arch.tar.gz"
+        echo "Downloading Xenomorphic version: $XENOMORPHIC_VERSION"
+        curl "https://cloud.xenomorphic.dev/releases/$channel/$XENOMORPHIC_VERSION/download?asset=xenomorphic&arch=$arch&os=linux&source=install.sh" > "$temp/xenomorphic-linux-$arch.tar.gz"
     fi
 
     suffix=""
@@ -94,56 +94,52 @@ linux() {
     appid=""
     case "$channel" in
       stable)
-        appid="dev.zed.Zed"
+        appid="dev.xenomorphic.Xenomorphic"
         ;;
       nightly)
-        appid="dev.zed.Zed-Nightly"
+        appid="dev.xenomorphic.Xenomorphic-Nightly"
         ;;
       preview)
-        appid="dev.zed.Zed-Preview"
+        appid="dev.xenomorphic.Xenomorphic-Preview"
         ;;
       dev)
-        appid="dev.zed.Zed-Dev"
+        appid="dev.xenomorphic.Xenomorphic-Dev"
         ;;
       *)
         echo "Unknown release channel: ${channel}. Using stable app ID."
-        appid="dev.zed.Zed"
+        appid="dev.xenomorphic.Xenomorphic"
         ;;
     esac
 
     # Unpack
-    rm -rf "$HOME/.local/zed$suffix.app"
-    mkdir -p "$HOME/.local/zed$suffix.app"
-    tar -xzf "$temp/zed-linux-$arch.tar.gz" -C "$HOME/.local/"
+    rm -rf "$HOME/.local/xenomorphic$suffix.app"
+    mkdir -p "$HOME/.local/xenomorphic$suffix.app"
+    tar -xzf "$temp/xenomorphic-linux-$arch.tar.gz" -C "$HOME/.local/"
 
     # Setup ~/.local directories
     mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
 
     # Link the binary
-    if [ -f "$HOME/.local/zed$suffix.app/bin/zed" ]; then
-        ln -sf "$HOME/.local/zed$suffix.app/bin/zed" "$HOME/.local/bin/zed"
-    else
-        # support for versions before 0.139.x.
-        ln -sf "$HOME/.local/zed$suffix.app/bin/cli" "$HOME/.local/bin/zed"
-    fi
+    ln -sf "$HOME/.local/xenomorphic$suffix.app/bin/cli" "$HOME/.local/bin/xed"
 
     # Copy .desktop file
     desktop_file_path="$HOME/.local/share/applications/${appid}.desktop"
-    src_dir="$HOME/.local/zed$suffix.app/share/applications"
+    src_dir="$HOME/.local/xenomorphic$suffix.app/share/applications"
     if [ -f "$src_dir/${appid}.desktop" ]; then
         cp "$src_dir/${appid}.desktop" "${desktop_file_path}"
     else
         # Fallback for older tarballs
-        cp "$src_dir/zed$suffix.desktop" "${desktop_file_path}"
+        cp "$src_dir/xenomorphic$suffix.desktop" "${desktop_file_path}"
     fi
-    sed -i "s|Icon=zed|Icon=$HOME/.local/zed$suffix.app/share/icons/hicolor/512x512/apps/zed.png|g" "${desktop_file_path}"
-    sed -i "s|Exec=zed|Exec=$HOME/.local/zed$suffix.app/bin/zed|g" "${desktop_file_path}"
+    sed -i "s|Icon=xenomorphic|Icon=$HOME/.local/xenomorphic$suffix.app/share/icons/hicolor/512x512/apps/xenomorphic.png|g" "${desktop_file_path}"
+    sed -i "s|TryExec=xed|TryExec=$HOME/.local/xenomorphic$suffix.app/bin/cli|g" "${desktop_file_path}"
+    sed -i "s|Exec=xed|Exec=$HOME/.local/xenomorphic$suffix.app/bin/cli|g" "${desktop_file_path}"
 }
 
 macos() {
-    echo "Downloading Zed version: $ZED_VERSION"
-    curl "https://cloud.zed.dev/releases/$channel/$ZED_VERSION/download?asset=zed&os=macos&arch=$arch&source=install.sh" > "$temp/Zed-$arch.dmg"
-    hdiutil attach -quiet "$temp/Zed-$arch.dmg" -mountpoint "$temp/mount"
+    echo "Downloading Xenomorphic version: $XENOMORPHIC_VERSION"
+    curl "https://cloud.xenomorphic.dev/releases/$channel/$XENOMORPHIC_VERSION/download?asset=xenomorphic&os=macos&arch=$arch&source=install.sh" > "$temp/Xenomorphic-$arch.dmg"
+    hdiutil attach -quiet "$temp/Xenomorphic-$arch.dmg" -mountpoint "$temp/mount"
     app="$(cd "$temp/mount/"; echo *.app)"
     echo "Installing $app"
     if [ -d "/Applications/$app" ]; then
@@ -155,7 +151,7 @@ macos() {
 
     mkdir -p "$HOME/.local/bin"
     # Link the binary
-    ln -sf "/Applications/$app/Contents/MacOS/cli" "$HOME/.local/bin/zed"
+    ln -sf "/Applications/$app/Contents/MacOS/cli" "$HOME/.local/bin/xed"
 }
 
 main "$@"

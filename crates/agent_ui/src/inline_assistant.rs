@@ -9,7 +9,6 @@ use uuid::Uuid;
 use crate::context::load_context;
 use crate::mention_set::MentionSet;
 use crate::{
-    AgentPanel,
     buffer_codegen::{BufferCodegen, CodegenAlternative, CodegenEvent},
     inline_prompt_editor::{CodegenStatus, InlineAssistId, PromptEditor, PromptEditorEvent},
     terminal_inline_assistant::TerminalInlineAssistant,
@@ -223,12 +222,7 @@ impl InlineAssistant {
             model_registry.configuration_error(model_registry.inline_assistant_model(), cx)
         };
 
-        let Some(agent_panel) = workspace.panel::<AgentPanel>(cx) else {
-            return;
-        };
-        let agent_panel = agent_panel.read(cx);
-
-        let thread_store = agent_panel.thread_store().clone();
+        let thread_store = agent::ThreadStore::global(cx);
 
         let handle_assist =
             |window: &mut Window, cx: &mut Context<Workspace>| match inline_assist_target {

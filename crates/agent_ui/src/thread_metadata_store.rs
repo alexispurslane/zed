@@ -1774,17 +1774,36 @@ mod tests {
     fn setup_panel_with_project(
         project: Entity<Project>,
         cx: &mut TestAppContext,
-    ) -> (Entity<crate::AgentPanel>, VisualTestContext) {
+    ) -> (Entity<workspace::Workspace>, VisualTestContext) {
         let multi_workspace =
             cx.add_window(|window, cx| MultiWorkspace::test_new(project.clone(), window, cx));
         let workspace_entity = multi_workspace
             .read_with(cx, |mw, _cx| mw.workspace().clone())
             .unwrap();
         let mut vcx = VisualTestContext::from_window(multi_workspace.into(), cx);
-        let panel = workspace_entity.update_in(&mut vcx, |workspace, window, cx| {
-            cx.new(|cx| crate::AgentPanel::new(workspace, window, cx))
-        });
-        (panel, vcx)
+        (workspace_entity, vcx)
+    }
+
+    fn open_agent_thread_in_workspace(
+        workspace: &Entity<workspace::Workspace>,
+        connection: StubAgentConnection,
+        cx: &mut VisualTestContext,
+    ) -> Entity<crate::ConversationView> {
+        workspace.update_in(cx, |workspace, window, cx| {
+            crate::agent_panel::open_new_agent_session_tab(
+                None,
+                None,
+                None,
+                workspace,
+                window,
+                cx,
+            );
+            let item = workspace
+                .active_item(cx)
+                .and_then(|item| item.act_as::<crate::AgentSessionItem>(cx))
+                .expect("should have an active agent session item");
+            item.read(cx).conversation_view().clone()
+        })
     }
 
     fn clear_thread_metadata_remote_connection_backfill(cx: &mut TestAppContext) {

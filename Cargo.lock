@@ -13381,56 +13381,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "sidebar"
-version = "0.1.0"
-dependencies = [
- "action_log",
- "agent",
- "agent_settings",
- "agent_thread",
- "agent_ui",
- "anyhow",
- "async-channel 2.5.0",
- "chrono",
- "client",
- "clock",
- "db",
- "editor",
- "extension",
- "feature_flags",
- "fs",
- "git",
- "gpui",
- "http_client",
- "itertools 0.14.0",
- "language",
- "language_model",
- "log",
- "menu",
- "node_runtime",
- "platform_title_bar",
- "pretty_assertions",
- "project",
- "prompt_store",
- "recent_projects",
- "release_channel",
- "remote",
- "remote_connection",
- "remote_server",
- "semver",
- "serde",
- "serde_json",
- "settings",
- "telemetry",
- "theme",
- "theme_settings",
- "ui",
- "util",
- "workspace",
- "xenomorphic_actions",
-]
-
-[[package]]
 name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18358,7 +18308,6 @@ dependencies = [
  "settings_profile_selector",
  "settings_ui",
  "shellexpand",
- "sidebar",
  "smol",
  "snippet_provider",
  "snippets_ui",

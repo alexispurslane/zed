@@ -20,7 +20,7 @@ use workspace::{ModalView, Workspace};
 use crate::agent_configuration::manage_profiles_modal::profile_modal_header::ProfileModalHeader;
 use crate::agent_configuration::tool_picker::{ToolPicker, ToolPickerDelegate};
 use crate::language_model_selector::{LanguageModelSelector, language_model_selector};
-use crate::{AgentPanel, ManageProfiles};
+use crate::{AgentSessionItem, ManageProfiles};
 
 enum Mode {
     ChooseProfile(ChooseProfileMode),
@@ -121,24 +121,29 @@ impl ManageProfilesModal {
         _cx: &mut Context<Workspace>,
     ) {
         workspace.register_action(|workspace, action: &ManageProfiles, window, cx| {
-            if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
-                let fs = workspace.app_state().fs.clone();
-                let active_model = panel
-                    .read(cx)
-                    .active_native_agent_thread(cx)
-                    .and_then(|thread| thread.read(cx).model().cloned());
+            let fs = workspace.app_state().fs.clone();
 
-                let context_server_registry = panel.read(cx).context_server_registry().clone();
-                workspace.toggle_modal(window, cx, |window, cx| {
-                    let mut this = Self::new(fs, active_model, context_server_registry, window, cx);
-
-                    if let Some(profile_id) = action.customize_tools.clone() {
-                        this.configure_builtin_tools(profile_id, window, cx);
-                    }
-
-                    this
+            let active_model = workspace
+                .active_item(cx)
+                .and_then(|item| item.act_as::<AgentSessionItem>(cx))
+                .and_then(|item| {
+                    item.read(cx).conversation_view().read(cx).as_native_thread(cx)
                 })
-            }
+                .and_then(|thread| thread.read(cx).model().cloned());
+
+            let context_server_registry = cx.new(|cx| {
+                ContextServerRegistry::new(workspace.project().read(cx).context_server_store(), cx)
+            });
+
+            workspace.toggle_modal(window, cx, |window, cx| {
+                let mut this = Self::new(fs, active_model, context_server_registry, window, cx);
+
+                if let Some(profile_id) = action.customize_tools.clone() {
+                    this.configure_builtin_tools(profile_id, window, cx);
+                }
+
+                this
+            })
         });
     }
 

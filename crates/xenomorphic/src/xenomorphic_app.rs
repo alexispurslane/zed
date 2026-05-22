@@ -16,7 +16,6 @@ pub(crate) mod windows_only_instance;
 
 use agent_ui::AgentDiffToolbar;
 use agent_ui::thread_metadata_store::ThreadMetadataStore;
-use workspace::agent_session_indicator::AgentSessionIndicator;
 use anyhow::Context as _;
 pub use app_menus::*;
 use assets::Assets;
@@ -68,7 +67,6 @@ use settings::{
     initial_local_debug_tasks_content, initial_project_settings_content, initial_tasks_content,
     update_settings_file,
 };
-use sidebar::Sidebar;
 
 use std::{
     borrow::Cow,
@@ -89,7 +87,7 @@ use workspace::notifications::{NotificationId, dismiss_app_notification, show_ap
 
 use workspace::{
     AppState, MultiWorkspace, NewFile, NewWindow, OpenLog, Panel, Toast, Workspace,
-    WorkspaceSettings, create_and_open_local_file,
+    WorkspaceSettings, WorkspaceSidebar, create_and_open_local_file,
     notifications::simple_message_notification::MessageNotification, open_new,
 };
 use workspace::{
@@ -440,29 +438,19 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
                 let active_workspace = this.workspace().clone();
                 let source_workspace = source_workspace.clone();
                 active_workspace.update(cx, |workspace, cx| {
-                    if let Some(ref source) = source_workspace {
-                        if let Some(panel) = workspace.panel::<agent_ui::AgentPanel>(cx) {
-                            panel.update(cx, |panel, cx| {
-                                panel.initialize_from_source_workspace_if_needed(
-                                    source.clone(),
-                                    window,
-                                    cx,
-                                );
-                            });
-                        }
-                    }
-
-                    ensure_agent_panel_for_workspace(workspace, source_workspace, window, cx)
-                        .detach_and_log_err(cx);
+                    let _ = (workspace, source_workspace, window, cx);
                 });
             },
         )
         .detach();
 
-        // The agent thread sidebar is no longer registered per the
-        // "Agent Sessions as Tabs" design. Threads are discovered via
-        // cmd-p (#) instead of a sidebar. The Sidebar import is kept for
-        // potential future use but the sidebar is not shown.
+        let multi_workspace_handle = cx.entity().downgrade();
+        let fs = _multi_workspace.workspace().read(cx).app_state().fs.clone();
+        let sidebar = cx.new(|cx| {
+            WorkspaceSidebar::new(multi_workspace_handle, fs, window, cx)
+        });
+        _multi_workspace.register_sidebar(sidebar, cx);
+
     })
     .detach();
 
@@ -551,24 +539,7 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
         let merge_conflict_indicator =
             cx.new(|cx| git_ui::MergeConflictIndicator::new(workspace, cx));
 
-        // Agent session indicator: shows thread count, opens file finder with `#` prefix
-        let thread_count_provider = Arc::new(|cx: &gpui::App| {
-            ThreadMetadataStore::try_global(cx)
-                .map(|store| store.read(cx).entries().filter(|t| !t.archived).count())
-                .unwrap_or(0)
-        });
-        let thread_finder_opener = Arc::new(|window: &mut Window, cx: &mut gpui::App| {
-            window.dispatch_action(
-                workspace::ToggleFileFinder::default().boxed_clone(),
-                cx,
-            );
-            // TODO: After the file finder opens, set the query to "#" to filter to threads only.
-            // This requires a mechanism to pre-fill the finder query, which will be added
-            // as part of the file finder provider integration (Phase 3, step 4).
-        });
-        let agent_session_indicator = cx.new(|_| {
-            AgentSessionIndicator::new(thread_count_provider, thread_finder_opener)
-        });
+
 
         workspace.status_bar().update(cx, |status_bar, cx| {
             status_bar.add_left_item(search_button, window, cx);
@@ -585,7 +556,7 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
             status_bar.add_right_item(vim_mode_indicator, window, cx);
             status_bar.add_right_item(cursor_position, window, cx);
             status_bar.add_right_item(image_info, window, cx);
-            status_bar.add_right_item(agent_session_indicator, window, cx);
+
         });
 
         let panels_task = initialize_panels(window, cx);
@@ -786,51 +757,7 @@ fn setup_or_teardown_ai_panel<P: Panel>(
     }
 }
 
-fn ensure_agent_panel_for_workspace(
-    _workspace: &mut Workspace,
-    _source_workspace: Option<WeakEntity<Workspace>>,
-    _window: &mut Window,
-    _cx: &mut Context<Workspace>,
-) -> Task<anyhow::Result<()>> {
-    // No-op: AgentPanel is no longer added as a dock panel.
-    // Agent sessions are opened as workspace tabs instead.
-    Task::ready(Ok(()))
-}
 
-#[allow(dead_code)]
-async fn initialize_agent_panel(
-    workspace_handle: WeakEntity<Workspace>,
-    mut cx: AsyncWindowContext,
-) -> anyhow::Result<()> {
-    workspace_handle
-        .update_in(&mut cx, |workspace, window, cx| {
-            ensure_agent_panel_for_workspace(workspace, None, window, cx)
-        })?
-        .await?;
-
-    workspace_handle.update_in(&mut cx, |workspace, window, cx| {
-        // The agent panel is no longer shown as a dock panel, so we don't
-        // observe settings changes to add/remove it. The toggle_focus/focus/toggle
-        // actions are redirected to open agent session tabs instead.
-        if !cfg!(test) {
-            workspace
-                .register_action(|workspace: &mut Workspace, _: &xenomorphic_actions::assistant::ToggleFocus, window, cx| {
-                    // Toggle focus: open a new agent session tab, or focus
-                    // the existing one if one is active.
-                    open_agent_session_or_focus(workspace, window, cx);
-                })
-                .register_action(|workspace: &mut Workspace, _: &xenomorphic_actions::assistant::FocusAgent, window, cx| {
-                    open_agent_session_or_focus(workspace, window, cx);
-                })
-                .register_action(|workspace: &mut Workspace, _: &xenomorphic_actions::assistant::Toggle, window, cx| {
-                    open_agent_session_or_focus(workspace, window, cx);
-                })
-                .register_action(agent_ui::InlineAssistant::inline_assist);
-        }
-    })?;
-
-    anyhow::Ok(())
-}
 
 /// Opens a new agent session tab or focuses an existing one.
 ///
@@ -1297,7 +1224,6 @@ fn register_actions(
         });
     }
 
-    workspace.register_action(sidebar::dump_workspace_info);
 }
 
 fn initialize_pane(
@@ -5154,7 +5080,6 @@ mod tests {
                 "action",
                 "activity_indicator",
                 "agent",
-                "agents_sidebar",
                 "app_menu",
                 "assistant",
                 "assistant2",

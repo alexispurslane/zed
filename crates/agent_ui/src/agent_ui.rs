@@ -58,9 +58,6 @@ use workspace::Workspace;
 
 use crate::agent_configuration::{ConfigureContextServerModal, ManageProfilesModal};
 pub use crate::agent_connection_store::{ActiveAgentConnection, AgentConnectionStore};
-pub use crate::agent_panel::{
-    AgentPanel, AgentPanelEvent, AgentPanelTerminalInfo, MaxIdleRetainedThreads, TerminalId,
-};
 pub use crate::inline_assistant::InlineAssistant;
 pub use crate::thread_metadata_store::ThreadId;
 pub use agent_diff::{AgentDiffPane, AgentDiffToolbar};
@@ -187,8 +184,6 @@ actions!(
     [
         /// Shows metadata for the currently active thread.
         ShowThreadMetadata,
-        /// Shows metadata for all threads in the sidebar.
-        ShowAllSidebarThreadMetadata,
     ]
 );
 
