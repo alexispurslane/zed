@@ -117,11 +117,12 @@ pub struct MultiWorkspaceState {
 }
 
 /// The serialized state of a single MultiWorkspace window from a previous session:
-/// the active workspace to restore plus window-level state (project group keys,
-/// sidebar).
+/// the active workspace to restore, any additional workspaces from the same
+/// window, and window-level state (project group keys, sidebar).
 #[derive(Debug, Clone)]
 pub struct SerializedMultiWorkspace {
     pub active_workspace: SessionWorkspace,
+    pub other_workspaces: Vec<SessionWorkspace>,
     pub state: MultiWorkspaceState,
 }
 

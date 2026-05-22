@@ -1582,7 +1582,17 @@ fn quit(_: &Quit, cx: &mut App) {
         for window in &workspace_windows {
             window
                 .update(cx, |multi_workspace, window, cx| {
+                    let workspace_count = multi_workspace.workspaces().count();
+                    log::info!(
+                        "quit: flushing serialization for window with {} workspaces",
+                        workspace_count,
+                    );
                     for workspace in multi_workspace.workspaces() {
+                        let db_id = workspace.read(cx).database_id();
+                        log::info!(
+                            "quit: flushing workspace db_id={:?}",
+                            db_id,
+                        );
                         flush_tasks.push(workspace.update(cx, |workspace, cx| {
                             workspace.flush_serialization(window, cx)
                         }));
@@ -1592,7 +1602,9 @@ fn quit(_: &Quit, cx: &mut App) {
                 })
                 .log_err();
         }
+        log::info!("quit: awaiting {} flush tasks", flush_tasks.len());
         futures::future::join_all(flush_tasks).await;
+        log::info!("quit: flush tasks complete, calling cx.quit()");
 
         cx.update(|cx| cx.quit());
         anyhow::Ok(())
@@ -5158,11 +5170,11 @@ mod tests {
                 "vim",
                 "window",
                 "workspace",
+                "workspace_sidebar",
                 "worktree_picker",
                 "zed",
                 "xenomorphic_actions",
                 "xeta",
-                "zed_predict_onboarding",
             ];
             assert_eq!(
                 all_namespaces,
@@ -5197,7 +5209,7 @@ mod tests {
         for theme_name in themes.list().into_iter().map(|meta| meta.name) {
             let theme = themes.get(&theme_name).unwrap();
             assert_eq!(theme.name, theme_name);
-            if theme.name.as_ref() == "One Dark" {
+            if theme.name.as_ref() == "Xenomorph" {
                 has_default_theme = true;
             }
         }
@@ -6301,9 +6313,9 @@ mod tests {
             )
         };
 
-        // Window A (dir1+dir2): 1 workspace restored, but 2 project group keys.
+        // Window A (dir1+dir2): both workspaces and both project group keys restored.
         restored_a
-            .read_with(cx, |mw, _| {
+            .read_with(cx, |mw, cx| {
                 assert_eq!(
                     mw.project_group_keys(),
                     vec![
@@ -6311,7 +6323,39 @@ mod tests {
                         ProjectGroupKey::new(None, PathList::new(&[dir1])),
                     ]
                 );
-                assert_eq!(mw.workspaces().count(), 1);
+                assert_eq!(mw.workspaces().count(), 2);
+
+                // The active workspace should be dir1 (restored as active_workspace).
+                let active_paths: Vec<_> = mw
+                    .workspace()
+                    .read(cx)
+                    .root_paths(cx)
+                    .into_iter()
+                    .map(|p| p.to_path_buf())
+                    .collect();
+                assert_eq!(
+                    active_paths,
+                    vec![PathBuf::from(dir1)],
+                    "active workspace should be dir1"
+                );
+
+                // The other workspace (dir2) should also be present with correct root paths.
+                let mut workspace_paths: Vec<Vec<PathBuf>> = mw
+                    .workspaces()
+                    .map(|ws| {
+                        ws.read(cx)
+                            .root_paths(cx)
+                            .into_iter()
+                            .map(|p| p.to_path_buf())
+                            .collect()
+                    })
+                    .collect();
+                workspace_paths.sort();
+                assert_eq!(
+                    workspace_paths,
+                    vec![vec![PathBuf::from(dir1)], vec![PathBuf::from(dir2)]],
+                    "both dir1 and dir2 workspaces should be restored"
+                );
             })
             .unwrap();
 

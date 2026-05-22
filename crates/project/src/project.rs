@@ -4843,12 +4843,20 @@ impl Project {
             let entry = worktree.read(cx).entry_for_path(&project_path.path)?;
             Some(entry.id)
         });
-        if new_active_entry != self.active_entry {
-            self.active_entry = new_active_entry;
+        self.set_active_entry(new_active_entry, cx);
+    }
+
+    pub fn set_active_entry(
+        &mut self,
+        entry: Option<ProjectEntryId>,
+        cx: &mut Context<Self>,
+    ) {
+        if entry != self.active_entry {
+            self.active_entry = entry;
             self.lsp_store.update(cx, |lsp_store, _| {
-                lsp_store.set_active_entry(new_active_entry);
+                lsp_store.set_active_entry(entry);
             });
-            cx.emit(Event::ActiveEntryChanged(new_active_entry));
+            cx.emit(Event::ActiveEntryChanged(entry));
         }
     }
 

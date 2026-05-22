@@ -66,6 +66,7 @@ use std::{
 };
 use theme::{ActiveTheme, GlobalTheme, ThemeRegistry};
 use theme_settings::load_user_theme;
+use title_bar;
 use util::ResultExt;
 use uuid::Uuid;
 use workspace::{
@@ -685,6 +686,7 @@ fn main() {
         diagnostics::init(cx);
 
         workspace::init(app_state.clone(), cx);
+        title_bar::init(cx);
         ui_prompt::init(cx);
 
         go_to_line::init(cx);
@@ -1327,7 +1329,19 @@ pub(crate) async fn restore_or_create_workspace(
 ) -> Result<()> {
     let kvp = cx.update(|cx| KeyValueStore::global(cx));
     if let Some(multi_workspaces) = restorable_workspaces(cx, &app_state).await {
+        log::info!(
+            "restore_or_create_workspace: restoring {} multi_workspaces",
+            multi_workspaces.len(),
+        );
         let mut error_count = 0;
+        for multi_workspace in &multi_workspaces {
+            log::info!(
+                "restore_or_create_workspace: active_workspace_id={:?}, active_paths={:?}, other_count={}",
+                multi_workspace.active_workspace.workspace_id,
+                multi_workspace.active_workspace.paths.paths(),
+                multi_workspace.other_workspaces.len(),
+            );
+        }
         for multi_workspace in multi_workspaces {
             let result = match &multi_workspace.active_workspace.location {
                 SerializedWorkspaceLocation::Local => {
@@ -1485,7 +1499,19 @@ async fn restorable_workspaces(
     app_state: &Arc<AppState>,
 ) -> Option<Vec<workspace::SerializedMultiWorkspace>> {
     let locations = restorable_workspace_locations(cx, app_state).await?;
-    Some(cx.update(|cx| workspace::read_serialized_multi_workspaces(locations, cx)))
+    log::info!(
+        "restorable_workspaces: got {} locations, building SerializedMultiWorkspace list",
+        locations.len(),
+    );
+    let result =
+        Some(cx.update(|cx| workspace::read_serialized_multi_workspaces(locations, cx)));
+    if let Some(ref workspaces) = result {
+        log::info!(
+            "restorable_workspaces: returning {} SerializedMultiWorkspace entries",
+            workspaces.len(),
+        );
+    }
+    result
 }
 
 pub(crate) async fn restorable_workspace_locations(
@@ -1509,27 +1535,43 @@ pub(crate) async fn restorable_workspace_locations(
         )
     });
 
+    log::info!(
+        "restorable_workspace_locations: restore_behavior={:?}, last_session_id={:?}",
+        restore_behavior,
+        last_session_id,
+    );
+
     if last_session_id.is_none()
         && matches!(
             restore_behavior,
             workspace::RestoreOnStartupBehavior::LastSession
         )
     {
+        log::info!("restorable_workspace_locations: no last_session_id, falling back to LastWorkspace");
         restore_behavior = workspace::RestoreOnStartupBehavior::LastWorkspace;
     }
 
     match restore_behavior {
         workspace::RestoreOnStartupBehavior::LastWorkspace => {
-            workspace::last_opened_workspace_location(&db, app_state.fs.as_ref())
+            let result = workspace::last_opened_workspace_location(&db, app_state.fs.as_ref())
                 .await
                 .map(|(workspace_id, location, paths)| {
+                    log::info!(
+                        "restorable_workspace_locations (LastWorkspace): workspace_id={:?}, paths={:?}",
+                        workspace_id,
+                        paths.paths(),
+                    );
                     vec![SessionWorkspace {
                         workspace_id,
                         location,
                         paths,
                         window_id: None,
                     }]
-                })
+                });
+            if result.is_none() {
+                log::info!("restorable_workspace_locations (LastWorkspace): no workspace found");
+            }
+            result
         }
         workspace::RestoreOnStartupBehavior::LastSession => {
             if let Some(last_session_id) = last_session_id {
@@ -1544,6 +1586,12 @@ pub(crate) async fn restorable_workspace_locations(
                 .await
                 .filter(|locations| !locations.is_empty());
 
+                log::info!(
+                    "restorable_workspace_locations (LastSession): last_session_id={}, locations_count={}",
+                    last_session_id,
+                    locations.as_ref().map(|l| l.len()).unwrap_or(0),
+                );
+
                 // Since last_session_window_order returns the windows ordered front-to-back
                 // we need to open the window that was frontmost last.
                 if ordered && let Some(locations) = locations.as_mut() {
@@ -1552,10 +1600,14 @@ pub(crate) async fn restorable_workspace_locations(
 
                 locations
             } else {
+                log::info!("restorable_workspace_locations (LastSession): no last_session_id available");
                 None
             }
         }
-        _ => None,
+        _ => {
+            log::info!("restorable_workspace_locations: restore_behavior={:?}, returning None", restore_behavior);
+            None
+        },
     }
 }
 

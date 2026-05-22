@@ -353,13 +353,23 @@ pub fn read_serialized_multi_workspaces(
             let state = window_id
                 .map(|wid| read_multi_workspace_state(wid, cx))
                 .unwrap_or_default();
-            let active_workspace = state
+            let active_index = state
                 .active_workspace_id
                 .and_then(|id| group.iter().position(|ws| ws.workspace_id == id))
-                .or(Some(0))
-                .and_then(|index| group.into_iter().nth(index))?;
+                .unwrap_or(0);
+            let mut other_workspaces = Vec::new();
+            let mut active_workspace = None;
+            for (i, ws) in group.into_iter().enumerate() {
+                if i == active_index {
+                    active_workspace = Some(ws);
+                } else {
+                    other_workspaces.push(ws);
+                }
+            }
+            let active_workspace = active_workspace?;
             Some(model::SerializedMultiWorkspace {
                 active_workspace,
+                other_workspaces,
                 state,
             })
         })
@@ -1540,7 +1550,13 @@ impl WorkspaceDb {
                     }
                 }
 
-                // Clear out old workspaces with the same paths.
+                // Clear out stale workspace rows with the same paths that
+                // aren't bound to any session. Rows with a session_id are
+                // preserved because they belong to an active editor instance —
+                // either the current session, a parallel instance, or the last
+                // session that hasn't been GC'd yet. Deleting those would
+                // silently destroy workspaces from other running instances.
+                //
                 // Skip this for empty workspaces - they are identified by workspace_id, not paths.
                 // Multiple empty workspaces with different content should coexist.
                 if !paths.paths.is_empty() {
@@ -1550,7 +1566,8 @@ impl WorkspaceDb {
                         WHERE
                             workspace_id != ?1 AND
                             paths IS ?2 AND
-                            remote_connection_id IS ?3
+                            remote_connection_id IS ?3 AND
+                            session_id IS NULL
                     ))?((
                         workspace.id,
                         paths.paths.clone(),
@@ -1869,6 +1886,43 @@ impl WorkspaceDb {
     }
 
     query! {
+        fn window_workspaces_for_id(window_id: u64) -> Result<Vec<(i64, String, String, Option<u64>, Option<u64>)>> {
+            SELECT workspace_id, paths, paths_order, window_id, remote_connection_id
+            FROM workspaces
+            WHERE window_id = ?1
+            ORDER BY timestamp DESC
+        }
+    }
+
+    /// Finds workspaces that were bound to any of the given window IDs.
+    /// This is a fallback when the session-id query returns no results
+    /// (e.g. because two instances share the same DB and clobbered the
+    /// KVP session_id key).
+    fn window_workspaces(
+        &self,
+        window_ids: &[WindowId],
+    ) -> Result<Vec<(WorkspaceId, PathList, Option<u64>, Option<RemoteConnectionId>)>> {
+        let mut results = Vec::new();
+        for &window_id in window_ids {
+            if let Ok(rows) = self.window_workspaces_for_id(window_id.as_u64()) {
+                for (workspace_id, paths, order, wid, remote_connection_id) in rows {
+                    let already_seen = results.iter().any(|(existing_wid, _, _, _)| *existing_wid == WorkspaceId(workspace_id));
+                    if already_seen {
+                        continue;
+                    }
+                    results.push((
+                        WorkspaceId(workspace_id),
+                        PathList::deserialize(&SerializedPathList { paths, order }),
+                        wid,
+                        remote_connection_id.map(RemoteConnectionId),
+                    ));
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    query! {
         pub fn breakpoints_for_file(workspace_id: WorkspaceId, file_path: &Path) -> Result<Vec<Breakpoint>> {
             SELECT breakpoint_location
             FROM breakpoints
@@ -2167,9 +2221,27 @@ impl WorkspaceDb {
     ) -> Result<Vec<SessionWorkspace>> {
         let mut workspaces = Vec::new();
 
-        for (workspace_id, paths, window_id, remote_connection_id) in
-            self.session_workspaces(last_session_id.to_owned())?
-        {
+        // First, try the session-id query which is the fast path when
+        // the previous session's workspaces are properly bound.
+        let session_rows = self.session_workspaces(last_session_id.to_owned())?;
+
+        // If the session query found nothing and we have window IDs from
+        // the last session (e.g. because two instances share the same DB
+        // and clobbered the session_id KVP key), fall back to looking up
+        // workspaces by the window IDs that were recorded in the stack.
+        // This recovers "which workspaces were open in those windows?"
+        // without depending on the session_id.
+        let rows = if session_rows.is_empty() {
+            if let Some(ref stack) = last_session_window_stack {
+                self.window_workspaces(stack)?
+            } else {
+                session_rows
+            }
+        } else {
+            session_rows
+        };
+
+        for (workspace_id, paths, window_id, remote_connection_id) in rows {
             let window_id = window_id.map(WindowId::from);
 
             if let Some(remote_connection_id) = remote_connection_id {
@@ -4790,9 +4862,14 @@ mod tests {
             "Workspace2 should exist in DB before removal"
         );
 
-        // Remove workspace at index 1 (the second workspace).
+        // Remove workspace2 (the added workspace, which is retained and
+        // comes first in the iterator).
         multi_workspace.update_in(cx, |mw, window, cx| {
-            let ws = mw.workspaces().nth(1).unwrap().clone();
+            let ws = mw
+                .workspaces()
+                .find(|ws| ws.read(cx).database_id() == Some(workspace2_db_id))
+                .unwrap()
+                .clone();
             mw.remove([ws], |_, _, _| unreachable!(), window, cx)
                 .detach_and_log_err(cx);
         });
@@ -4900,9 +4977,14 @@ mod tests {
         })
         .await;
 
-        // Remove workspace2 (index 1).
+        // Remove workspace2 (the added workspace, which is retained and
+        // comes first in the iterator).
         multi_workspace.update_in(cx, |mw, window, cx| {
-            let ws = mw.workspaces().nth(1).unwrap().clone();
+            let ws = mw
+                .workspaces()
+                .find(|ws| ws.read(cx).database_id() == Some(ws2_id))
+                .unwrap()
+                .clone();
             mw.remove([ws], |_, _, _| unreachable!(), window, cx)
                 .detach_and_log_err(cx);
         });
@@ -4982,8 +5064,13 @@ mod tests {
         cx.run_until_parked();
 
         // Remove workspace2 — this pushes a task to pending_removal_tasks.
+        // The added workspace is retained and comes first in the iterator.
         multi_workspace.update_in(cx, |mw, window, cx| {
-            let ws = mw.workspaces().nth(1).unwrap().clone();
+            let ws = mw
+                .workspaces()
+                .find(|ws| ws.read(cx).database_id() == Some(workspace2_db_id))
+                .unwrap()
+                .clone();
             mw.remove([ws], |_, _, _| unreachable!(), window, cx)
                 .detach_and_log_err(cx);
         });

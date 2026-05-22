@@ -1396,6 +1396,7 @@ pub struct Workspace {
     _panels_task: Option<Task<Result<()>>>,
     sidebar_focus_handle: Option<FocusHandle>,
     multi_workspace: Option<WeakEntity<MultiWorkspace>>,
+    active_entry: Option<ProjectEntryId>,
     active_worktree_creation: ActiveWorktreeCreation,
     deferred_save_items: Vec<Box<dyn WeakItemHandle>>,
 }
@@ -1840,6 +1841,7 @@ impl Workspace {
             removing: false,
             sidebar_focus_handle: None,
             multi_workspace,
+            active_entry: None,
             active_worktree_creation: ActiveWorktreeCreation::default(),
             open_in_dev_container: false,
             _dev_container_task: None,
@@ -3825,6 +3827,23 @@ impl Workspace {
     pub fn active_item_as<I: 'static>(&self, cx: &App) -> Option<Entity<I>> {
         let item = self.active_item(cx)?;
         item.to_any_view().downcast::<I>().ok()
+    }
+
+    pub fn active_entry(&self) -> Option<ProjectEntryId> {
+        self.active_entry
+    }
+
+    pub fn set_active_entry(
+        &mut self,
+        entry: Option<ProjectEntryId>,
+        cx: &mut Context<Self>,
+    ) {
+        if entry != self.active_entry {
+            self.active_entry = entry;
+            self.project.update(cx, |project, cx| {
+                project.set_active_entry(entry, cx);
+            });
+        }
     }
 
     fn active_project_path(&self, cx: &App) -> Option<ProjectPath> {
@@ -5868,12 +5887,16 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         cx.emit(Event::ActiveItemChanged);
-        let active_entry = self.active_project_path(cx);
+        let active_path = self.active_project_path(cx);
+        let active_entry = active_path.as_ref().and_then(|project_path| {
+            self.project.read(cx).entry_for_path(project_path, cx).map(|e| e.id)
+        });
+        self.active_entry = active_entry;
         self.project.update(cx, |project, cx| {
-            project.set_active_path(active_entry.clone(), cx)
+            project.set_active_path(active_path.clone(), cx)
         });
 
-        if focus_changed && let Some(project_path) = &active_entry {
+        if focus_changed && let Some(project_path) = &active_path {
             let git_store_entity = self.project.read(cx).git_store().clone();
             git_store_entity.update(cx, |git_store, cx| {
                 git_store.set_active_repo_for_path(project_path, cx);
@@ -6628,6 +6651,22 @@ impl Workspace {
     /// the DB immediately. Returns a task the caller can await to ensure the
     /// write completes. Used by the quit handler so the most recent state
     /// isn't lost to a pending throttle timer when the process exits.
+    /// Returns the in-flight workspace serialization tasks (throttle timer
+    /// and DB write) so the caller can await them. Used by the
+    /// MultiWorkspace quit handler to ensure workspace state is written
+    /// to the database before the process exits, even when the window
+    /// reference is not available (e.g. in an on_app_quit callback).
+    pub fn take_serialization_tasks(&mut self) -> Vec<Task<()>> {
+        let mut tasks = Vec::new();
+        if let Some(task) = self._schedule_serialize_workspace.take() {
+            tasks.push(task);
+        }
+        if let Some(task) = self._serialize_workspace_task.take() {
+            tasks.push(task);
+        }
+        tasks
+    }
+
     pub fn flush_serialization(&mut self, window: &mut Window, cx: &mut App) -> Task<()> {
         self._schedule_serialize_workspace.take();
         self._serialize_workspace_task.take();
@@ -8908,29 +8947,21 @@ pub async fn restore_multiworkspace(
 ) -> anyhow::Result<WindowHandle<MultiWorkspace>> {
     let SerializedMultiWorkspace {
         active_workspace,
+        other_workspaces,
         state,
     } = multi_workspace;
 
-    let workspace_result = if active_workspace.paths.is_empty() {
-        cx.update(|cx| {
-            open_workspace_by_id(active_workspace.workspace_id, app_state.clone(), None, cx)
-        })
-        .await
-    } else {
-        cx.update(|cx| {
-            Workspace::new_local(
-                active_workspace.paths.paths().to_vec(),
+    let workspace_result = cx
+        .update(|cx| {
+            open_workspace_by_id(
+                active_workspace.workspace_id,
                 app_state.clone(),
                 None,
                 None,
-                None,
-                OpenMode::Activate,
                 cx,
             )
         })
-        .await
-        .map(|result| result.window)
-    };
+        .await;
 
     let window_handle = match workspace_result {
         Ok(handle) => handle,
@@ -8970,6 +9001,63 @@ pub async fn restore_multiworkspace(
     };
 
     apply_restored_multiworkspace_state(window_handle, &state, app_state.fs.clone(), cx).await;
+
+    // Restore other workspaces from the same window into this MultiWorkspace.
+    // We always use open_workspace_by_id (which looks up by workspace_id) rather
+    // than Workspace::new_local (which looks up by paths), because multiple
+    // workspaces in the same MultiWorkspace can share the same project paths
+    // (e.g. layout tabs). A paths-based lookup would return the wrong row in
+    // that case, causing one workspace's serialized state to overwrite another's.
+    //
+    // When an "other" workspace shares the same project paths as an already-
+    // restored workspace we reuse that workspace's Project entity. This
+    // preserves the layout-workspace invariant (both workspaces react to the
+    // same worktree changes, collaborator events, etc.) and ensures the
+    // sidebar shows the correct disambiguation like "project (2)".
+    for other_workspace in other_workspaces {
+        let existing_project = window_handle
+            .update(cx, |mw, _window, cx| {
+                let other_paths = other_workspace.paths.paths();
+                mw.workspaces()
+                    .find(|ws| {
+                        let ws_root_paths = ws.read(cx).root_paths(cx);
+                        let ws_paths: Vec<&std::path::Path> =
+                            ws_root_paths.iter().map(|p| p.as_ref()).collect();
+                        let other_paths_ref: Vec<&std::path::Path> =
+                            other_paths.iter().map(|p| p.as_ref()).collect();
+                        ws_paths == other_paths_ref
+                    })
+                    .map(|ws| ws.read(cx).project().clone())
+            })
+            .ok()
+            .flatten();
+
+        let open_result = cx
+            .update(|cx| {
+                open_workspace_by_id(
+                    other_workspace.workspace_id,
+                    app_state.clone(),
+                    Some(window_handle),
+                    existing_project,
+                    cx,
+                )
+            })
+            .await
+            .map(|_| ());
+
+        if let Err(err) = open_result {
+            log::error!("Failed to restore other workspace: {err:#}");
+        }
+    }
+
+    // Re-activate the original active workspace in case restoring
+    // other workspaces changed which one is active.
+    window_handle
+        .update(cx, |multi_workspace, window, cx| {
+            let active_workspace = multi_workspace.workspace().clone();
+            multi_workspace.activate(active_workspace, None, window, cx);
+        })
+        .ok();
 
     window_handle
         .update(cx, |_, window, _cx| {
@@ -9571,25 +9659,32 @@ pub struct OpenResult {
     pub opened_items: Vec<Option<anyhow::Result<Box<dyn ItemHandle>>>>,
 }
 
-/// Opens a workspace by its database ID, used for restoring empty workspaces with unsaved content.
+/// Opens a workspace by its database ID, used for restoring workspaces from a
+/// previous session. When `existing_project` is provided the new workspace
+/// shares that [`Project`] entity instead of creating its own, which is
+/// important for layout workspaces that were created via
+/// [`MultiWorkspace::add_layout_workspace`].
 pub fn open_workspace_by_id(
     workspace_id: WorkspaceId,
     app_state: Arc<AppState>,
     requesting_window: Option<WindowHandle<MultiWorkspace>>,
+    existing_project: Option<Entity<Project>>,
     cx: &mut App,
 ) -> Task<anyhow::Result<WindowHandle<MultiWorkspace>>> {
-    let project_handle = Project::local(
-        app_state.client.clone(),
-        app_state.node_runtime.clone(),
-        app_state.languages.clone(),
-        app_state.fs.clone(),
-        None,
-        project::LocalProjectFlags {
-            init_worktree_trust: true,
-            ..project::LocalProjectFlags::default()
-        },
-        cx,
-    );
+    let project_handle = existing_project.unwrap_or_else(|| {
+        Project::local(
+            app_state.client.clone(),
+            app_state.node_runtime.clone(),
+            app_state.languages.clone(),
+            app_state.fs.clone(),
+            None,
+            project::LocalProjectFlags {
+                init_worktree_trust: true,
+                ..project::LocalProjectFlags::default()
+            },
+            cx,
+        )
+    });
 
     let db = WorkspaceDb::global(cx);
     let kvp = db::kvp::KeyValueStore::global(cx);
@@ -9666,11 +9761,37 @@ pub fn open_workspace_by_id(
 
         notify_if_database_failed(window, cx);
 
+        // Create worktrees from the serialized workspace's paths so that
+        // the project has the right root directories for project_path_for_path
+        // lookups (needed by item deserialization) and for root_paths().
+        let paths_to_open: Vec<PathBuf> = serialized_workspace.paths.ordered_paths().cloned().collect();
+        let mut project_path_tasks = Vec::new();
+        for path in &paths_to_open {
+            let task = cx.update(|cx| {
+                Workspace::project_path_for_path(
+                    project_handle.clone(),
+                    path,
+                    true,
+                    cx,
+                )
+            });
+            project_path_tasks.push(async move {
+                let result = task.log_err().await;
+                result.map(|(_, project_path)| project_path)
+            });
+        }
+        let project_path_results = futures::future::join_all(project_path_tasks).await;
+        let project_paths: Vec<(PathBuf, Option<ProjectPath>)> = paths_to_open
+            .into_iter()
+            .zip(project_path_results.into_iter())
+            .map(|(path, project_path)| (path, project_path))
+            .collect();
+
         // Restore items from the serialized workspace
         window
             .update(cx, |_, window, cx| {
                 workspace.update(cx, |_workspace, cx| {
-                    open_items(Some(serialized_workspace), vec![], window, cx)
+                    open_items(Some(serialized_workspace), project_paths, window, cx)
                 })
             })?
             .await?;
@@ -9762,11 +9883,7 @@ pub fn open_paths(
                         .and_then(|window| window.downcast::<MultiWorkspace>())
                         .filter(|window| windows.contains(window))
                         .or_else(|| windows.into_iter().next());
-                    window.filter(|window| {
-                        window
-                            .read(cx)
-                            .is_ok_and(|mw| mw.multi_workspace_enabled(cx))
-                    })
+                    window
                 });
 
                 if let Some(window) = target_window {

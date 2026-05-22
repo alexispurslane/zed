@@ -853,12 +853,15 @@ impl App {
         self.quitting = true;
 
         let futures = futures::future::join_all(futures);
+        log::warn!("shutdown: awaiting on_app_quit futures with {}ms timeout", SHUTDOWN_TIMEOUT.as_millis());
         if self
             .foreground_executor
             .block_with_timeout(SHUTDOWN_TIMEOUT, futures)
             .is_err()
         {
-            log::error!("timed out waiting on app_will_quit");
+            log::error!("shutdown: TIMED OUT waiting for app_will_quit");
+        } else {
+            log::warn!("shutdown: all on_app_quit futures completed within timeout");
         }
 
         self.quitting = false;

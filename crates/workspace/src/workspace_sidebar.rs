@@ -1,8 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use fs::Fs;
 use gpui::{
-    App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable, Pixels, Render,
+    App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Pixels, Render,
     SharedString, Window, actions, px,
 };
 use project::ProjectGroupKey;
@@ -167,7 +168,7 @@ impl Focusable for WorkspaceSidebar {
 }
 
 impl Render for WorkspaceSidebar {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let groups = self
             .multi_workspace(cx)
             .map(|mw| mw.read(cx).project_groups(cx))
@@ -266,7 +267,22 @@ impl Render for WorkspaceSidebar {
 
             let mut entry_elements = vec![group_header];
             if is_expanded {
-                for workspace in &workspaces {
+                let mut same_project_count: HashMap<EntityId, usize> = HashMap::default();
+                for (index, workspace) in workspaces.iter().enumerate() {
+                    let project = workspace.read(cx).project().clone();
+                    let entry = same_project_count.entry(project.entity_id()).or_insert(0);
+                    *entry += 1;
+                    // Only assign a disambiguation index if this project
+                    // appears more than once in this group.
+                    let disambiguation_index = if workspaces.iter().any(|ws| {
+                        ws.read(cx).project().entity_id() == project.entity_id()
+                            && ws != workspace
+                    }) {
+                        Some(index + 1)
+                    } else {
+                        None
+                    };
+
                     let is_active_workspace = self
                         .multi_workspace(cx)
                         .is_some_and(|mw| mw.read(cx).workspace() == workspace);
@@ -274,7 +290,7 @@ impl Render for WorkspaceSidebar {
                     let workspace_for_click = workspace.clone();
 
                     let root_paths = workspace.read(cx).root_paths(cx);
-                    let display_name: SharedString = if root_paths.is_empty() {
+                    let base_name: SharedString = if root_paths.is_empty() {
                         "Empty".into()
                     } else {
                         root_paths
@@ -283,6 +299,10 @@ impl Render for WorkspaceSidebar {
                             .collect::<Vec<_>>()
                             .join(", ")
                             .into()
+                    };
+                    let display_name: SharedString = match disambiguation_index {
+                        Some(idx) if idx > 1 => format!("{} ({})", base_name, idx).into(),
+                        _ => base_name,
                     };
 
                     let text_color = if is_active_workspace {
@@ -326,6 +346,66 @@ impl Render for WorkspaceSidebar {
 
                     entry_elements.push(entry);
                 }
+
+                let new_workspace_group_key = group_key.clone();
+                let new_workspace_button = ListItem::new(SharedString::from(format!(
+                    "new-workspace-{}",
+                    group_key
+                        .path_list()
+                        .paths()
+                        .first()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default()
+                )))
+                .spacing(ui::ListItemSpacing::Dense)
+                .child(
+                    h_flex()
+                        .gap_1()
+                        .items_center()
+                        .pl_3()
+                        .child(Icon::new(IconName::Plus).size(IconSize::Small).color(Color::Muted))
+                        .child(
+                            Label::new("New Workspace")
+                                .size(LabelSize::Small)
+                                .single_line()
+                                .color(Color::Muted),
+                        ),
+                )
+                .on_click(cx.listener(
+                    move |this, _event: &ClickEvent, window, cx| {
+                        let Some(multi_workspace) = this.multi_workspace(cx) else {
+                            return;
+                        };
+                        let group_key = new_workspace_group_key.clone();
+                        multi_workspace.update(cx, |multi_workspace, inner_cx| {
+                            if let Some(workspace) =
+                                multi_workspace.last_active_workspace_for_group(&group_key, inner_cx)
+                            {
+                                // The project is already open — activate it and
+                                // add a new layout tab sharing the same Project.
+                                multi_workspace.activate(workspace, None, window, inner_cx);
+                                multi_workspace
+                                    .add_layout_workspace(window, inner_cx)
+                                    .detach_and_log_err(inner_cx);
+                            } else {
+                                // No workspace for this project group is loaded
+                                // — open the project (creating a new Project
+                                // entity) like the recent-projects flow does.
+                                multi_workspace
+                                    .open_project(
+                                        group_key.path_list().paths().to_vec(),
+                                        crate::OpenMode::Activate,
+                                        window,
+                                        inner_cx,
+                                    )
+                                    .detach_and_log_err(inner_cx);
+                            }
+                        });
+                    },
+                ))
+                .into_any_element();
+
+                entry_elements.push(new_workspace_button);
             }
 
             group_elements.push(
