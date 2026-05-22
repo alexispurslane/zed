@@ -15,7 +15,7 @@ use crate::{
 pub fn zed_default_themes() -> ThemeFamily {
     ThemeFamily {
         id: "zed-default".to_string(),
-        name: "Xenomorphic Default".into(),
+        name: "Xenomorphic".into(),
         author: "".into(),
         themes: vec![xenomorph_dark(), zed_default_dark()],
         scales: default_color_scales(),
@@ -23,48 +23,66 @@ pub fn zed_default_themes() -> ThemeFamily {
 }
 
 pub(crate) fn xenomorph_dark() -> Theme {
-    let bg = hsla(120. / 360., 2. / 100., 6. / 100., 1.);
-    let editor = hsla(120. / 360., 3. / 100., 3. / 100., 1.);
-    let elevated_surface = hsla(120. / 360., 5. / 100., 9. / 100., 1.);
-    let hover = hsla(120. / 360., 6. / 100., 11. / 100., 1.);
+    let bg = hsla(0. / 360., 0. / 100., 0.4 / 100., 1.); // Singularity #010101
+    let editor = hsla(0. / 360., 0. / 100., 0.4 / 100., 1.); // Singularity #010101
+    let elevated_surface = hsla(0. / 360., 0. / 100., 3.9 / 100., 1.); // Hibernation #0A0A0A
+    let hover = hsla(0. / 360., 0. / 100., 3.1 / 100., 1.); // Dark Matter #080808
 
-    let accent = hsla(108. / 360., 47. / 100., 52. / 100., 1.0); // #6bbf4e
-    let red = hsla(0. / 360., 44. / 100., 50. / 100., 1.0); // #b84a4a
-    let yellow = hsla(42. / 360., 35. / 100., 52. / 100., 1.0); // #b8a050
-    let teal = hsla(162. / 360., 34. / 100., 46. / 100., 1.0); // #58a8a0
-    let purple = hsla(264. / 360., 33. / 100., 62. / 100., 1.0); // #9e8ec2
-    let bright_green = hsla(108. / 360., 56. / 100., 65. / 100., 1.0); // #85e06c
-    let bright_red = hsla(0. / 360., 52. / 100., 65. / 100., 1.0); // #d87373
-    let gold = hsla(42. / 360., 52. / 100., 54. / 100., 1.0); // #c4a34f
+    let accent = hsla(92.7 / 360., 84.9 / 100., 49.2 / 100., 1.0); // Molecular Acid #74E813
+    let red = hsla(0. / 360., 57.9 / 100., 48.4 / 100., 1.0); // Self-Destruct #C33434
+    let yellow = hsla(32.4 / 360., 64.0 / 100., 58.6 / 100., 1.0); // Warning Beacon #D99B52
+    let teal = hsla(180.0 / 360., 24.9 / 100., 41.8 / 100., 1.0); // Oxidation #508585
+    let purple = hsla(268.8 / 360., 34.6 / 100., 58.6 / 100., 1.0); // Neural Parasite #9471BA
+    let bright_green = hsla(100.6 / 360., 35.3 / 100., 60.6 / 100., 1.0); // Hive Moss #8EBE77
+    let bright_red = hsla(0. / 360., 69.6 / 100., 60.0 / 100., 1.0); // Flamethrower #E05252
+    let gold = hsla(34.9 / 360., 76.0 / 100., 57.5 / 100., 1.0); // Plasma Burn #E5A040
+    let blue = hsla(207.4 / 360., 31.8 / 100., 64.9 / 100., 1.0); // Cryo Interface #89A8C2
+    let green = hsla(142.9 / 360., 25.5 / 100., 51.6 / 100., 1.0); // Atmospheric #64A37C
+    let navy = hsla(208.9 / 360., 22.3 / 100., 47.5 / 100., 1.0); // Weyland Blue #5E7A94
+    let navigation = hsla(204.2 / 360., 24.3 / 100., 53.9 / 100., 1.0); // Navigation #6D8FA6
+    let chitin = hsla(160.0 / 360., 17.9 / 100., 67.1 / 100., 1.0); // Chitin #9CBAB0
+    let carapace = hsla(29.8 / 360., 57.4 / 100., 48.8 / 100., 1.0); // Carapace #C47C35
+    let coolant = hsla(198.0 / 360., 28.8 / 100., 59.2 / 100., 1.0); // Coolant #79A3B5
+    let _fossilized = hsla(37.7 / 360., 43.5 / 100., 57.6 / 100., 1.0); // Fossilized #C29F64
+    let _vegetation = hsla(137.5 / 360., 20.7 / 100., 54.5 / 100., 1.0); // Vegetation #73A381
+    let biofilm = hsla(146.9 / 360., 16.2 / 100., 35.1 / 100., 1.0); // Biofilm #4B6858
+    let pig_iron = hsla(180.0 / 360., 7.5 / 100., 31.4 / 100., 1.0); // Pig Iron #4A5656
+    let sensor_reading = hsla(202.7 / 360., 24.8 / 100., 70.8 / 100., 1.0); // Sensor Reading #A2B9C7
+    let telemetry = hsla(203.8 / 360., 25.3 / 100., 48.8 / 100., 1.0); // Telemetry #5D839C
+    let _derelict = hsla(36.0 / 360., 41.0 / 100., 35.9 / 100., 1.0); // Derelict #816336
+    let dormant = hsla(164.6 / 360., 37.9 / 100., 20.2 / 100., 1.0); // Dormant #20473D
+    let hyperdream = hsla(274.6 / 360., 35.3 / 100., 67.3 / 100., 1.0); // Hyperdream #B08EC9
+    let acid_spray = hsla(91.8 / 360., 100.0 / 100., 64.5 / 100., 1.0); // Acid Spray #9FFF4A
+    let rebreather = hsla(180.0 / 360., 27.4 / 100., 54.1 / 100., 1.0); // Rebreather #6AAAAA
 
     const ADDED_COLOR: Hsla = Hsla {
-        h: 108. / 360.,
-        s: 0.47,
-        l: 0.48,
+        h: 92.7 / 360.,
+        s: 0.85,
+        l: 0.49,
         a: 1.0,
-    };
+    }; // Molecular Acid #74E813
     const WORD_ADDED_COLOR: Hsla = Hsla {
-        h: 108. / 360.,
-        s: 0.47,
-        l: 0.48,
+        h: 92.7 / 360.,
+        s: 0.85,
+        l: 0.49,
         a: 0.35,
     };
     const MODIFIED_COLOR: Hsla = Hsla {
-        h: 42. / 360.,
-        s: 0.52,
-        l: 0.54,
+        h: 207.4 / 360.,
+        s: 0.25,
+        l: 0.65,
         a: 1.0,
-    };
+    }; // Cryo Interface #89A8C2
     const REMOVED_COLOR: Hsla = Hsla {
         h: 0. / 360.,
-        s: 0.44,
-        l: 0.50,
+        s: 0.58,
+        l: 0.48,
         a: 1.0,
-    };
+    }; // Self-Destruct #C33434
     const WORD_DELETED_COLOR: Hsla = Hsla {
         h: 0. / 360.,
-        s: 0.44,
-        l: 0.50,
+        s: 0.58,
+        l: 0.48,
         a: 0.80,
     };
 
@@ -80,65 +98,65 @@ pub(crate) fn xenomorph_dark() -> Theme {
                 accent, bright_red, yellow, purple, teal, gold, bright_green,
             ])),
             colors: ThemeColors {
-                border: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
-                border_variant: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
-                border_focused: hsla(120. / 360., 28. / 100., 20. / 100., 1.),
-                border_selected: hsla(120. / 360., 26. / 100., 15. / 100., 1.),
+                border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam #111111
+                border_variant: hsla(0. / 360., 0. / 100., 3.9 / 100., 1.), // Hibernation #0A0A0A
+                border_focused: hsla(92.7 / 360., 84.9 / 100., 49.2 / 100., 1.), // Molecular Acid #74E813
+                border_selected: hsla(98.0 / 360., 87.7 / 100., 15.9 / 100., 1.), // Biolume #1F4C05
                 border_transparent: SystemColors::default().transparent,
-                border_disabled: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
+                border_disabled: hsla(0. / 360., 0. / 100., 20.0 / 100., 1.), // Cast Iron #333333
                 elevated_surface_background: elevated_surface,
                 surface_background: bg,
-                background: hsla(120. / 360., 1. / 100., 6. / 100., 1.),
-                element_background: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
+                background: bg,
+                element_background: elevated_surface,
                 element_hover: hover,
-                element_active: hsla(120. / 360., 7. / 100., 12. / 100., 1.),
-                element_selected: hsla(120. / 360., 7. / 100., 12. / 100., 1.),
-                element_disabled: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
+                element_active: hsla(0. / 360., 0. / 100., 14.1 / 100., 1.), // Raw Steel #242424
+                element_selected: hsla(0. / 360., 0. / 100., 10.2 / 100., 1.), // Sinter #1A1A1A
+                element_disabled: bg,
                 element_selection_background: player.local().selection.alpha(0.24),
                 drop_target_background: accent.alpha(0.5),
-                drop_target_border: hsla(228. / 360., 8. / 100., 25. / 100., 1.0),
+                drop_target_border: hsla(98.0 / 360., 87.7 / 100., 15.9 / 100., 1.0), // Biolume
                 ghost_element_background: SystemColors::default().transparent,
                 ghost_element_hover: hover,
-                ghost_element_active: hsla(120. / 360., 7. / 100., 12. / 100., 1.),
-                ghost_element_selected: hsla(120. / 360., 7. / 100., 12. / 100., 1.),
-                ghost_element_disabled: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
-                text: hsla(120. / 360., 11. / 100., 87. / 100., 1.),
-                text_muted: hsla(120. / 360., 7. / 100., 51. / 100., 1.),
-                text_placeholder: hsla(120. / 360., 6. / 100., 31. / 100., 1.),
-                text_disabled: hsla(120. / 360., 6. / 100., 24. / 100., 1.),
+                ghost_element_active: hsla(0. / 360., 0. / 100., 14.1 / 100., 1.), // Raw Steel
+                ghost_element_selected: hsla(0. / 360., 0. / 100., 10.2 / 100., 1.), // Sinter
+                ghost_element_disabled: bg,
+                text: hsla(144.0 / 360., 3.4 / 100., 71.6 / 100., 1.), // Titanium Alloy #B4B9B6
+                text_muted: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 1.), // Sensor Array #8C9190
+                text_placeholder: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 0.5), // Sensor Array 50%
+                text_disabled: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal #6E7372
                 text_accent: accent,
-                icon: hsla(120. / 360., 11. / 100., 87. / 100., 1.),
-                icon_muted: hsla(120. / 360., 7. / 100., 51. / 100., 1.),
-                icon_disabled: hsla(120. / 360., 6. / 100., 24. / 100., 1.),
-                icon_placeholder: hsla(120. / 360., 6. / 100., 44. / 100., 1.),
+                icon: hsla(144.0 / 360., 3.4 / 100., 71.6 / 100., 1.), // Titanium Alloy
+                icon_muted: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 1.), // Sensor Array
+                icon_disabled: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal
+                icon_placeholder: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 0.5), // Sensor Array 50%
                 icon_accent: accent,
                 debugger_accent: red,
-                status_bar_background: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
-                title_bar_background: hsla(120. / 360., 1. / 100., 6. / 100., 1.),
-                title_bar_inactive_background: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
-                toolbar_background: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
+                status_bar_background: bg,
+                title_bar_background: bg,
+                title_bar_inactive_background: bg,
+                toolbar_background: bg,
                 tab_bar_background: bg,
                 tab_inactive_background: bg,
-                tab_active_background: editor,
-                search_match_background: accent.alpha(0.3),
-                search_active_match_background: yellow.alpha(0.3),
+                tab_active_background: bg,
+                search_match_background: hsla(0. / 360., 0. / 100., 9.4 / 100., 0.5), // Drill Core #181818
+                search_active_match_background: hsla(0. / 360., 0. / 100., 14.1 / 100., 0.5), // Raw Steel #242424
                 editor_background: editor,
                 editor_gutter_background: editor,
-                editor_subheader_background: hsla(120. / 360., 0. / 100., 4. / 100., 1.),
-                editor_active_line_background: bg.alpha(0.75),
-                editor_highlighted_line_background: bg,
+                editor_subheader_background: elevated_surface,
+                editor_active_line_background: hover.alpha(0.75),
+                editor_highlighted_line_background: hover,
                 editor_debugger_active_line_background: accent.alpha(0.2),
-                editor_line_number: hsla(120. / 360., 10. / 100., 20. / 100., 1.),
-                editor_active_line_number: bright_green,
-                editor_hover_line_number: accent,
-                editor_invisible: hsla(120. / 360., 10. / 100., 20. / 100., 1.),
-                editor_wrap_guide: hsla(120. / 360., 11. / 100., 87. / 100., 0.05),
-                editor_active_wrap_guide: hsla(120. / 360., 11. / 100., 87. / 100., 0.1),
-                editor_indent_guide: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
-                editor_indent_guide_active: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
+                editor_line_number: hsla(0. / 360., 0. / 100., 11.0 / 100., 1.), // Inactive line #1C1C1C
+                editor_active_line_number: accent,
+                editor_hover_line_number: accent.alpha(0.5),
+                editor_invisible: hsla(0. / 360., 0. / 100., 16.5 / 100., 0.5), // Slag 50%
+                editor_wrap_guide: hsla(0. / 360., 0. / 100., 6.7 / 100., 0.05), // Ore Seam
+                editor_active_wrap_guide: hsla(0. / 360., 0. / 100., 6.7 / 100., 0.1), // Ore Seam
+                editor_indent_guide: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam #111111
+                editor_indent_guide_active: hsla(0. / 360., 0. / 100., 16.5 / 100., 1.), // Slag #2A2A2A
                 editor_document_highlight_read_background: accent.alpha(0.1),
                 editor_document_highlight_write_background: accent.alpha(0.2),
-                editor_document_highlight_bracket_background: gpui::green(),
+                editor_document_highlight_bracket_background: accent.alpha(0.3),
                 editor_diff_hunk_added_background: ADDED_COLOR.opacity(0.1),
                 editor_diff_hunk_added_hollow_background: ADDED_COLOR.opacity(0.05),
                 editor_diff_hunk_added_hollow_border: ADDED_COLOR.opacity(0.35),
@@ -147,64 +165,64 @@ pub(crate) fn xenomorph_dark() -> Theme {
                 editor_diff_hunk_deleted_hollow_border: REMOVED_COLOR.opacity(0.35),
                 terminal_background: editor,
                 terminal_ansi_background: crate::black().dark().step_12(),
-                terminal_foreground: hsla(120. / 360., 10. / 100., 80. / 100., 1.),
-                terminal_bright_foreground: hsla(120. / 360., 11. / 100., 87. / 100., 1.),
-                terminal_dim_foreground: hsla(120. / 360., 9. / 100., 27. / 100., 1.),
+                terminal_foreground: hsla(144.0 / 360., 3.4 / 100., 71.6 / 100., 1.), // Titanium Alloy #B4B9B6
+                terminal_bright_foreground: hsla(132.0 / 360., 6.8 / 100., 85.7 / 100., 1.), // Polished Titanium #D8DDD9
+                terminal_dim_foreground: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal #6E7372
                 terminal_ansi_black: editor,
                 terminal_ansi_red: red,
-                terminal_ansi_green: hsla(108. / 360., 40. / 100., 48. / 100., 1.),
+                terminal_ansi_green: accent,
                 terminal_ansi_yellow: yellow,
-                terminal_ansi_blue: hsla(204. / 360., 34. / 100., 54. / 100., 1.),
+                terminal_ansi_blue: navy,
                 terminal_ansi_magenta: purple,
-                terminal_ansi_cyan: hsla(162. / 360., 34. / 100., 46. / 100., 1.),
-                terminal_ansi_white: hsla(120. / 360., 4. / 100., 65. / 100., 1.),
-                terminal_ansi_bright_black: hsla(120. / 360., 3. / 100., 32. / 100., 1.),
+                terminal_ansi_cyan: teal,
+                terminal_ansi_white: hsla(144.0 / 360., 3.4 / 100., 71.6 / 100., 1.), // Titanium Alloy
+                terminal_ansi_bright_black: hsla(0. / 360., 0. / 100., 16.5 / 100., 1.), // Slag #2A2A2A
                 terminal_ansi_bright_red: bright_red,
-                terminal_ansi_bright_green: bright_green,
-                terminal_ansi_bright_yellow: hsla(42. / 360., 46. / 100., 65. / 100., 1.),
-                terminal_ansi_bright_blue: hsla(204. / 360., 46. / 100., 65. / 100., 1.),
-                terminal_ansi_bright_magenta: hsla(264. / 360., 38. / 100., 71. / 100., 1.),
-                terminal_ansi_bright_cyan: hsla(162. / 360., 42. / 100., 59. / 100., 1.),
-                terminal_ansi_bright_white: hsla(120. / 360., 11. / 100., 87. / 100., 1.),
+                terminal_ansi_bright_green: acid_spray,
+                terminal_ansi_bright_yellow: gold,
+                terminal_ansi_bright_blue: blue,
+                terminal_ansi_bright_magenta: hyperdream,
+                terminal_ansi_bright_cyan: rebreather,
+                terminal_ansi_bright_white: hsla(132.0 / 360., 6.8 / 100., 85.7 / 100., 1.), // Polished Titanium
                 terminal_ansi_dim_black: bg,
-                terminal_ansi_dim_red: hsla(0. / 360., 30. / 100., 31. / 100., 1.),
-                terminal_ansi_dim_green: hsla(108. / 360., 32. / 100., 30. / 100., 1.),
-                terminal_ansi_dim_yellow: hsla(42. / 360., 30. / 100., 33. / 100., 1.),
-                terminal_ansi_dim_blue: hsla(204. / 360., 24. / 100., 35. / 100., 1.),
-                terminal_ansi_dim_magenta: hsla(264. / 360., 24. / 100., 35. / 100., 1.),
-                terminal_ansi_dim_cyan: hsla(162. / 360., 24. / 100., 27. / 100., 1.),
-                terminal_ansi_dim_white: hsla(120. / 360., 4. / 100., 43. / 100., 1.),
-                panel_background: bg,
+                terminal_ansi_dim_red: hsla(0. / 360., 40.0 / 100., 22.0 / 100., 1.),
+                terminal_ansi_dim_green: hsla(92.7 / 360., 50.0 / 100., 25.0 / 100., 1.),
+                terminal_ansi_dim_yellow: hsla(32.4 / 360., 40.0 / 100., 30.0 / 100., 1.),
+                terminal_ansi_dim_blue: hsla(208.9 / 360., 20.0 / 100., 30.0 / 100., 1.),
+                terminal_ansi_dim_magenta: hsla(268.8 / 360., 25.0 / 100., 30.0 / 100., 1.),
+                terminal_ansi_dim_cyan: hsla(180.0 / 360., 20.0 / 100., 25.0 / 100., 1.),
+                terminal_ansi_dim_white: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal
+                panel_background: elevated_surface,
                 panel_focused_border: accent,
-                panel_indent_guide: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
-                panel_indent_guide_hover: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
-                panel_indent_guide_active: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
-                panel_overlay_background: bg,
+                panel_indent_guide: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam #111111
+                panel_indent_guide_hover: hsla(0. / 360., 0. / 100., 16.5 / 100., 1.), // Slag #2A2A2A
+                panel_indent_guide_active: hsla(0. / 360., 0. / 100., 16.5 / 100., 1.), // Slag #2A2A2A
+                panel_overlay_background: elevated_surface,
                 panel_overlay_hover: hover,
                 pane_focused_border: accent,
-                pane_group_border: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
-                scrollbar_thumb_background: hsla(120. / 360., 3. / 100., 20. / 100., 0.5),
-                scrollbar_thumb_hover_background: hsla(120. / 360., 4. / 100., 24. / 100., 1.),
+                pane_group_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
+                scrollbar_thumb_background: hsla(0. / 360., 0. / 100., 7.8 / 100., 0.5), // Ore Vein #141414
+                scrollbar_thumb_hover_background: hsla(0. / 360., 0. / 100., 20.0 / 100., 0.5), // Cast Iron #333333
                 scrollbar_thumb_active_background: hover,
-                scrollbar_thumb_border: hsla(120. / 360., 5. / 100., 12. / 100., 1.),
+                scrollbar_thumb_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
                 scrollbar_track_background: gpui::transparent_black(),
-                scrollbar_track_border: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
+                scrollbar_track_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
                 minimap_thumb_background: hover.alpha(0.7),
                 minimap_thumb_hover_background: hover.alpha(0.7),
                 minimap_thumb_active_background: hover.alpha(0.7),
-                minimap_thumb_border: hsla(120. / 360., 5. / 100., 12. / 100., 1.),
-                editor_foreground: hsla(120. / 360., 12. / 100., 80. / 100., 1.),
-                link_text_hover: accent,
+                minimap_thumb_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
+                editor_foreground: hsla(144.0 / 360., 3.4 / 100., 71.6 / 100., 1.), // Titanium Alloy #B4B9B6
+                link_text_hover: navy,
                 version_control_added: ADDED_COLOR,
                 version_control_deleted: REMOVED_COLOR,
                 version_control_modified: MODIFIED_COLOR,
-                version_control_renamed: MODIFIED_COLOR,
-                version_control_conflict: gold,
-                version_control_ignored: hsla(120. / 360., 4. / 100., 32. / 100., 1.),
+                version_control_renamed: navigation,
+                version_control_conflict: yellow,
+                version_control_ignored: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal
                 version_control_word_added: WORD_ADDED_COLOR,
                 version_control_word_deleted: WORD_DELETED_COLOR,
                 version_control_conflict_marker_ours: accent.alpha(0.1),
-                version_control_conflict_marker_theirs: hsla(204. / 360., 34. / 100., 54. / 100., 0.1),
+                version_control_conflict_marker_theirs: blue.alpha(0.1),
                 vim_normal_background: SystemColors::default().transparent,
                 vim_insert_background: SystemColors::default().transparent,
                 vim_replace_background: SystemColors::default().transparent,
@@ -225,61 +243,67 @@ pub(crate) fn xenomorph_dark() -> Theme {
                 vim_helix_select_foreground: SystemColors::default().transparent,
             },
             status: StatusColors {
-                conflict: gold,
-                conflict_background: gold,
-                conflict_border: gold,
+                conflict: yellow,
+                conflict_background: yellow,
+                conflict_border: yellow,
                 created: accent,
                 created_background: accent,
                 created_border: accent,
                 deleted: red,
                 deleted_background: red,
                 deleted_border: red,
-                error: hsla(0. / 360., 50. / 100., 58. / 100., 1.),
+                error: red,
                 error_background: red,
                 error_border: red,
-                hidden: hsla(120. / 360., 5. / 100., 40. / 100., 1.),
-                hidden_background: hsla(120. / 360., 5. / 100., 40. / 100., 1.),
-                hidden_border: hsla(120. / 360., 5. / 100., 40. / 100., 1.),
-                hint: teal,
-                hint_background: teal,
-                hint_border: teal,
-                ignored: hsla(120. / 360., 4. / 100., 32. / 100., 1.),
-                ignored_background: hsla(120. / 360., 4. / 100., 32. / 100., 1.),
-                ignored_border: hsla(120. / 360., 0. / 100., 6. / 100., 1.),
-                info: hsla(204. / 360., 34. / 100., 54. / 100., 1.),
-                info_background: hsla(204. / 360., 34. / 100., 54. / 100., 1.),
-                info_border: hsla(204. / 360., 34. / 100., 54. / 100., 1.),
-                modified: gold,
-                modified_background: gold,
-                modified_border: gold,
-                predictive: hsla(120. / 360., 6. / 100., 33. / 100., 1.),
-                predictive_background: hsla(120. / 360., 6. / 100., 33. / 100., 1.),
-                predictive_border: hsla(120. / 360., 6. / 100., 33. / 100., 1.),
-                renamed: hsla(204. / 360., 30. / 100., 54. / 100., 1.),
-                renamed_background: hsla(204. / 360., 30. / 100., 54. / 100., 1.),
-                renamed_border: hsla(204. / 360., 30. / 100., 54. / 100., 1.),
+                hidden: dormant,
+                hidden_background: dormant,
+                hidden_border: dormant,
+                hint: telemetry,
+                hint_background: telemetry,
+                hint_border: telemetry,
+                ignored: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.), // Scrap Metal
+                ignored_background: hsla(168.0 / 360., 2.2 / 100., 44.1 / 100., 1.),
+                ignored_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
+                info: navy,
+                info_background: navy,
+                info_border: navy,
+                modified: yellow,
+                modified_background: yellow,
+                modified_border: yellow,
+                predictive: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 1.), // Sensor Array
+                predictive_background: hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 1.),
+                predictive_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
+                renamed: navigation,
+                renamed_background: navigation,
+                renamed_border: navigation,
                 success: accent,
                 success_background: accent,
                 success_border: accent,
-                unreachable: hsla(120. / 360., 5. / 100., 40. / 100., 1.),
-                unreachable_background: hsla(120. / 360., 5. / 100., 40. / 100., 1.),
-                unreachable_border: hsla(120. / 360., 8. / 100., 9. / 100., 1.),
-                warning: hsla(42. / 360., 52. / 100., 63. / 100., 1.),
-                warning_background: hsla(42. / 360., 52. / 100., 63. / 100., 1.),
+                unreachable: dormant,
+                unreachable_background: dormant,
+                unreachable_border: hsla(0. / 360., 0. / 100., 6.7 / 100., 1.), // Ore Seam
+                warning: gold,
+                warning_background: gold,
                 warning_border: gold,
             },
             player,
             syntax: Arc::new(SyntaxTheme::new(vec![
-                ("attribute".into(), accent.into()),
-                ("boolean".into(), yellow.into()),
-                ("comment".into(), hsla(120. / 360., 9. / 100., 27. / 100., 1.).into()),
-                ("comment.doc".into(), hsla(120. / 360., 9. / 100., 33. / 100., 1.).into()),
-                ("constant".into(), gold.into()),
-                ("constructor".into(), accent.into()),
+                ("attribute".into(), carapace.into()), // Carapace #C47C35
+                (
+                    "boolean".into(),
+                    gold.into(), // Plasma Burn #E5A040
+                ),
+                ("comment".into(), biofilm.into()), // Biofilm #4B6858
+                ("comment.doc".into(), biofilm.into()), // Biofilm #4B6858
+                ("constant".into(), gold.into()), // Plasma Burn #E5A040
+                ("constructor".into(), bright_green.into()), // Hive Moss #8EBE77
                 ("embedded".into(), HighlightStyle::default()),
                 (
                     "emphasis".into(),
-                    accent.into(),
+                    HighlightStyle {
+                        font_style: Some(FontStyle::Italic),
+                        ..HighlightStyle::default()
+                    },
                 ),
                 (
                     "emphasis.strong".into(),
@@ -288,54 +312,58 @@ pub(crate) fn xenomorph_dark() -> Theme {
                         ..HighlightStyle::default()
                     },
                 ),
-                ("enum".into(), teal.into()),
-                ("function".into(), bright_green.into()),
+                ("enum".into(), yellow.into()), // Amber Resin #D99B52
+                ("function".into(), bright_green.into()), // Hive Moss #8EBE77
                 ("function.method".into(), bright_green.into()),
                 ("function.definition".into(), bright_green.into()),
-                ("hint".into(), teal.into()),
-                ("keyword".into(), purple.into()),
-                ("label".into(), accent.into()),
-                ("link_text".into(), bright_green.into()),
+                ("hint".into(), telemetry.into()), // Telemetry #5D839C
+                ("keyword".into(), blue.into()), // Cryo Interface #89A8C2
+                ("label".into(), bright_green.into()), // Hive Moss #8EBE77
+                ("link_text".into(), navy.into()), // Weyland Blue #5E7A94
                 (
                     "link_uri".into(),
                     HighlightStyle {
-                        color: Some(teal),
+                        color: Some(navigation),
                         font_style: Some(FontStyle::Italic),
                         ..HighlightStyle::default()
                     },
                 ),
-                ("number".into(), yellow.into()),
-                ("operator".into(), teal.into()),
-                ("predictive".into(), HighlightStyle::default()),
-                ("preproc".into(), purple.into()),
+                ("number".into(), sensor_reading.into()), // Sensor Reading #A2B9C7
+                ("operator".into(), teal.into()), // Oxidation #508585
+                ("predictive".into(), HighlightStyle {
+                    color: Some(hsla(168.0 / 360., 2.2 / 100., 55.9 / 100., 0.5)), // Sensor Array 50%
+                    font_style: Some(FontStyle::Italic),
+                    ..HighlightStyle::default()
+                }),
+                ("preproc".into(), blue.into()), // Cryo Interface #89A8C2
                 ("primary".into(), HighlightStyle::default()),
-                ("property".into(), bright_red.into()),
-                ("punctuation".into(), hsla(120. / 360., 7. / 100., 51. / 100., 1.).into()),
-                ("punctuation.bracket".into(), hsla(120. / 360., 7. / 100., 51. / 100., 1.).into()),
-                ("punctuation.delimiter".into(), hsla(120. / 360., 7. / 100., 51. / 100., 1.).into()),
-                ("punctuation.list_marker".into(), bright_red.into()),
-                ("punctuation.special".into(), red.into()),
-                ("string".into(), bright_green.into()),
-                ("string.escape".into(), hsla(120. / 360., 5. / 100., 41. / 100., 1.).into()),
-                ("string.regex".into(), gold.into()),
-                ("string.special".into(), gold.into()),
-                ("string.special.symbol".into(), gold.into()),
-                ("tag".into(), accent.into()),
-                ("text.literal".into(), bright_green.into()),
+                ("property".into(), chitin.into()), // Chitin #9CBAB0
+                ("punctuation".into(), pig_iron.into()), // Pig Iron #4A5656
+                ("punctuation.bracket".into(), pig_iron.into()),
+                ("punctuation.delimiter".into(), pig_iron.into()),
+                ("punctuation.list_marker".into(), pig_iron.into()),
+                ("punctuation.special".into(), red.into()), // Self-Destruct #C33434
+                ("string".into(), green.into()), // Atmospheric #64A37C
+                ("string.escape".into(), purple.into()), // Neural Parasite #9471BA
+                ("string.regex".into(), green.into()), // Atmospheric #64A37C
+                ("string.special".into(), green.into()), // Atmospheric #64A37C
+                ("string.special.symbol".into(), gold.into()), // Plasma Burn #E5A040
+                ("tag".into(), coolant.into()), // Coolant #79A3B5
+                ("text.literal".into(), green.into()), // Atmospheric #64A37C
                 (
                     "title".into(),
                     HighlightStyle {
-                        color: Some(bright_red),
+                        color: Some(blue), // Cryo Interface #89A8C2
                         font_weight: Some(FontWeight::NORMAL),
                         ..HighlightStyle::default()
                     },
                 ),
-                ("type".into(), teal.into()),
-                ("variable".into(), HighlightStyle::default()),
-                ("variable.special".into(), yellow.into()),
-                ("variant".into(), bright_green.into()),
-                ("diff.plus".into(), accent.into()),
-                ("diff.minus".into(), red.into()),
+                ("type".into(), yellow.into()), // Amber Resin #D99B52
+                ("variable".into(), chitin.into()), // Chitin #9CBAB0
+                ("variable.special".into(), gold.into()), // Plasma Burn #E5A040
+                ("variant".into(), gold.into()), // Plasma Burn #E5A040
+                ("diff.plus".into(), accent.into()), // Molecular Acid #74E813
+                ("diff.minus".into(), red.into()), // Self-Destruct #C33434
             ])),
         },
     }

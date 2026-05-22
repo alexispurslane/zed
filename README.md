@@ -66,7 +66,19 @@ Zed's built-in agent moves too slowly — with ACP removed, the focus is squarel
 
 - [Building for macOS](./docs/src/development/macos.md)
 - [Building for Linux](./docs/src/development/linux.md)
-- [Building for Windows](./docs/src/development/windows.md)
+
+## Special Thanks
+
+Thanks to [Kat Suricata](https://katsuricata.com/),
+[Amolith](https://secluded.site/), and [Diogenes of
+Toronto](https://www.dio.computer/) for encouraging me to work on this project
+and being part of our little community, which has provided me a space for
+support and to show off my ideas and projects.
+
+Special thanks to Kat Suricata for creating the color scheme of my dreams
+("Xenomorphic") that acts as the branding color scheme of this editor. You can
+find more of her excellent color theming work
+[here](https://digitalrust.katsuricata.com/).
 
 ## Licensing
 
