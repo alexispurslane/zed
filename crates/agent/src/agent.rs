@@ -247,15 +247,11 @@ impl LanguageModels {
 }
 
 pub struct NativeAgent {
-    /// Session ID -> Session mapping
     sessions: HashMap<schema::SessionId, Session>,
     pending_sessions: HashMap<schema::SessionId, PendingSession>,
     thread_store: Entity<ThreadStore>,
-    /// Project-specific state keyed by project EntityId
     projects: HashMap<EntityId, ProjectState>,
-    /// Shared templates for all threads
     templates: Arc<Templates>,
-    /// Cached model information
     models: LanguageModels,
     fs: Arc<dyn Fs>,
     _subscriptions: Vec<Subscription>,
@@ -287,6 +283,14 @@ impl NativeAgent {
                 _subscriptions: subscriptions,
             }
         })
+    }
+
+    fn reinitialize_session(
+        &mut self,
+        project: Entity<Project>,
+        cx: &mut Context<Self>,
+    ) -> Entity<AgentThread> {
+        self.new_session(project, cx)
     }
 
     fn new_session(
@@ -382,7 +386,7 @@ impl NativeAgent {
         ];
 
         self.sessions.insert(
-            session_id,
+            session_id.clone(),
             Session {
                 thread: thread_handle,
                 agent_thread: agent_thread.clone(),
@@ -392,7 +396,6 @@ impl NativeAgent {
                 ref_count,
             },
         );
-
         self.update_available_commands_for_project(project_id, cx);
 
         agent_thread
@@ -897,15 +900,19 @@ impl NativeAgent {
         let shared_task = cx
             .spawn({
                 let id = id.clone();
+                let project = project.clone();
                 async move |this, cx| {
                     let thread = match task.await {
                         Ok(thread) => thread,
                         Err(err) => {
-                            this.update(cx, |this, _cx| {
-                                this.pending_sessions.remove(&id);
-                            })
-                            .ok();
-                            return Err(Arc::new(err));
+                            log::info!("Re-initializing session {} after load failure: {:#}", id, err);
+                            let agent_thread = this
+                                .update(cx, |this, cx| {
+                                    this.pending_sessions.remove(&id);
+                                    this.reinitialize_session(project, cx)
+                                })
+                                .map_err(Arc::new)?;
+                            return Ok(agent_thread);
                         }
                     };
                     let agent_thread = this
@@ -3355,6 +3362,78 @@ mod internal_tests {
             cx.set_global(settings_store);
 
             LanguageModelRegistry::test(cx);
+        });
+    }
+
+    #[gpui::test]
+    async fn test_open_thread_reinitializes_missing_session(cx: &mut TestAppContext) {
+        init_test(cx);
+        let fs = FakeFs::new(cx.executor());
+        fs.insert_tree(
+            "/",
+            json!({
+                "a": {}
+            }),
+        )
+        .await;
+        let project = Project::test(fs.clone(), [], cx).await;
+        let thread_store = cx.new(|cx| ThreadStore::new(cx));
+        let agent =
+            cx.update(|cx| NativeAgent::new(thread_store, Templates::new(), fs.clone(), cx));
+
+        let connection = NativeAgentConnection(agent.clone());
+
+        // Create a new session
+        let agent_thread = cx
+            .update(|cx| {
+                Rc::new(connection.clone()).new_session(
+                    project.clone(),
+                    PathList::new(&[Path::new("/")]),
+                    cx,
+                )
+            })
+            .await
+            .unwrap();
+        let original_session_id = agent_thread.read_with(cx, |thread, _cx| {
+            thread.session_id().clone()
+        });
+
+        // Close the session. Blank sessions are not saved to the database,
+        // so the session ID becomes permanently unavailable.
+        agent.update(cx, |agent, cx| {
+            agent.close_session(&original_session_id, cx)
+        }).await.unwrap();
+        cx.run_until_parked();
+
+        // Verify the session is removed
+        agent.read_with(cx, |agent, _cx| {
+            assert!(!agent.sessions.contains_key(&original_session_id));
+        });
+
+        // Opening the missing session should re-initialize with a new session
+        // instead of returning an error.
+        let reopened_thread = cx
+            .update(|cx| {
+                Rc::new(connection).load_session(
+                    original_session_id.clone(),
+                    project.clone(),
+                    PathList::new(&[Path::new("/")]),
+                    None,
+                    cx,
+                )
+            })
+            .await
+            .unwrap();
+
+        // The new thread should have a different session ID
+        let new_session_id = reopened_thread.read_with(cx, |thread, _cx| {
+            thread.session_id().clone()
+        });
+        assert_ne!(original_session_id, new_session_id);
+
+        // The new session should be registered
+        agent.read_with(cx, |agent, _cx| {
+            assert!(agent.sessions.contains_key(&new_session_id));
         });
     }
 }
