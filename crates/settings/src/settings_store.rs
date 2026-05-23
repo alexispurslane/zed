@@ -1662,7 +1662,7 @@ mod tests {
         fn from_settings(content: &SettingsContent) -> Self {
             let content = content.tabs.clone().unwrap();
             ItemSettings {
-                close_position: content.close_position.unwrap(),
+                close_position: content.close_position.unwrap_or_default(),
                 git_status: content.git_status.unwrap(),
             }
         }
@@ -1823,7 +1823,7 @@ mod tests {
         );
         assert_eq!(
             store.get::<ItemSettings>(None).close_position,
-            ClosePosition::Right
+            ClosePosition::default()
         );
 
         store

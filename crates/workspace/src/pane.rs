@@ -3536,7 +3536,7 @@ impl Pane {
     ) -> AnyElement {
         let tab_bar = self
             .configure_tab_bar_start(
-                TabBar::new("tab_bar"),
+                TabBar::new("tab_bar").track_scroll(&self.tab_bar_scroll_handle),
                 navigate_backward,
                 navigate_forward,
                 window,
@@ -3574,7 +3574,7 @@ impl Pane {
     ) -> AnyElement {
         let pinned_tab_bar = self
             .configure_tab_bar_start(
-                TabBar::new("pinned_tab_bar"),
+                TabBar::new("pinned_tab_bar").track_scroll(&self.tab_bar_scroll_handle),
                 navigate_backward,
                 navigate_forward,
                 window,
@@ -3594,7 +3594,7 @@ impl Pane {
             .flex_none()
             .child(pinned_tab_bar)
             .child(
-                TabBar::new("unpinned_tab_bar").child(self.render_unpinned_tabs_container(
+                TabBar::new("unpinned_tab_bar").track_scroll(&self.tab_bar_scroll_handle).child(self.render_unpinned_tabs_container(
                     unpinned_tabs,
                     tab_count,
                     cx,
@@ -3612,7 +3612,6 @@ impl Pane {
         h_flex()
             .id("unpinned tabs")
             .overflow_x_scroll()
-            .w_full()
             .track_scroll(&self.tab_bar_scroll_handle)
             .on_scroll_wheel(cx.listener(|this, _, _, _| {
                 this.suppress_scroll = true;

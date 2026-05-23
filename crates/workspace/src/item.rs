@@ -86,7 +86,7 @@ impl Settings for ItemSettings {
                     .enabled
                     .unwrap()
                     .is_git_status_enabled(),
-            close_position: tabs.close_position.unwrap(),
+            close_position: tabs.close_position.unwrap_or_default(),
             activate_on_close: tabs.activate_on_close.unwrap(),
             file_icons: tabs.file_icons.unwrap(),
             show_diagnostics: tabs.show_diagnostics.unwrap(),

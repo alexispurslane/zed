@@ -91,6 +91,115 @@ impl ParentElement for TabBar {
 
 impl RenderOnce for TabBar {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Check if the tab content overflows and requires scrolling.
+        // We render end_children in one of two ways:
+        //   - Inline: inside #tabs as a sibling after the tab content, right next to the last tab
+        //   - Overlay: absolutely positioned on the right with a background (when scrollable)
+        // Only one is rendered at a time based on the scroll handle state.
+        let is_scrollable = self
+            .scroll_handle
+            .as_ref()
+            .map_or(false, |handle| handle.max_offset().x > px(2.0));
+
+        let has_end_children = !self.end_children.is_empty();
+
+        let tabs = h_flex()
+            .id("tabs")
+            .flex_grow()
+            .overflow_x_scroll();
+
+        // Build the tabs container, placing end_children either inline (inside #tabs)
+        // or as an overlay (absolute right). Can't use two .when() closures because
+        // both would move self.end_children, so we branch once.
+        let tabs_container = if !has_end_children {
+            // No end_children at all — just the tabs.
+            div()
+                .relative()
+                .flex_1()
+                .h_full()
+                .overflow_x_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .border_b_1()
+                        .border_color(cx.theme().colors().border),
+                )
+                .child(tabs.children(self.children))
+        } else if is_scrollable {
+            // Scrollable — overlay end_children on the right with opaque background.
+            div()
+                .relative()
+                .flex_1()
+                .h_full()
+                .overflow_x_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .border_b_1()
+                        .border_color(cx.theme().colors().border),
+                )
+                .child(
+                    tabs.children(self.children)
+                        // Spacer: invisible element at the end of the scrollable
+                        // tabs area that matches the overlay's width, so that when
+                        // scrolled all the way right, the last tab isn't hidden
+                        // under the overlay.
+                        .child(
+                            h_flex()
+                                .flex_none()
+                                .gap(DynamicSpacing::Base04.rems(cx))
+                                .px(DynamicSpacing::Base06.rems(cx)),
+                        ),
+                )
+                .child(
+                    h_flex()
+                        .absolute()
+                        .right_0()
+                        .top_0()
+                        .h_full()
+                        .flex_none()
+                        .gap(DynamicSpacing::Base04.rems(cx))
+                        .px(DynamicSpacing::Base06.rems(cx))
+                        .bg(cx.theme().colors().tab_bar_background)
+                        .border_color(cx.theme().colors().border)
+                        .border_b_1()
+                        .border_l_1()
+                        .children(self.end_children),
+                )
+        } else {
+            // Not scrollable — inline end_children inside #tabs,
+            // right next to the last tab.
+            div()
+                .relative()
+                .flex_1()
+                .h_full()
+                .overflow_x_hidden()
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .border_b_1()
+                        .border_color(cx.theme().colors().border),
+                )
+                .child(
+                    tabs.children(self.children)
+                        .child(
+                            h_flex()
+                                .flex_none()
+                                .gap(DynamicSpacing::Base04.rems(cx))
+                                .children(self.end_children),
+                        ),
+                )
+        };
+
         div()
             .id(self.id)
             .group("tab_bar")
@@ -111,44 +220,7 @@ impl RenderOnce for TabBar {
                         .children(self.start_children),
                 )
             })
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .h_full()
-                    .overflow_x_hidden()
-                    .child(
-                        div()
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full()
-                            .border_b_1()
-                            .border_color(cx.theme().colors().border),
-                    )
-                    .child(
-                        h_flex()
-                            .id("tabs")
-                            .flex_grow()
-                            .overflow_x_scroll()
-                            .when_some(self.scroll_handle, |cx, scroll_handle| {
-                                cx.track_scroll(&scroll_handle)
-                            })
-                            .children(self.children),
-                    ),
-            )
-            .when(!self.end_children.is_empty(), |this| {
-                this.child(
-                    h_flex()
-                        .flex_none()
-                        .gap(DynamicSpacing::Base04.rems(cx))
-                        .px(DynamicSpacing::Base06.rems(cx))
-                        .border_color(cx.theme().colors().border)
-                        .border_b_1()
-                        .border_l_1()
-                        .children(self.end_children),
-                )
-            })
+            .child(tabs_container)
     }
 }
 

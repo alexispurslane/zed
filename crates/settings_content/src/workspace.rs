@@ -202,7 +202,6 @@ pub struct PreviewTabsSettingsContent {
     Clone,
     Debug,
     PartialEq,
-    Default,
     Serialize,
     Deserialize,
     JsonSchema,
@@ -213,8 +212,17 @@ pub struct PreviewTabsSettingsContent {
 #[serde(rename_all = "lowercase")]
 pub enum ClosePosition {
     Left,
-    #[default]
     Right,
+}
+
+impl Default for ClosePosition {
+    fn default() -> Self {
+        if cfg!(target_os = "macos") {
+            ClosePosition::Left
+        } else {
+            ClosePosition::Right
+        }
+    }
 }
 
 #[derive(

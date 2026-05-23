@@ -1275,7 +1275,7 @@
     "git_status": false,
     // Position of the close button on the editor tabs.
     // One of: ["right", "left"]
-    "close_position": "right",
+    // Default: left on macOS, right on Linux/Windows
     // Whether to show the file icon for a tab.
     "file_icons": false,
     // Controls the appearance behavior of the tab's close button.
