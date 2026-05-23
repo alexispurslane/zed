@@ -114,6 +114,9 @@ pub struct MultiWorkspaceState {
     pub project_groups: Vec<SerializedProjectGroup>,
     #[serde(default)]
     pub sidebar_state: Option<String>,
+    /// Custom workspace names, keyed by entity_id as u64.
+    #[serde(default)]
+    pub workspace_names: std::collections::HashMap<u64, String>,
 }
 
 /// The serialized state of a single MultiWorkspace window from a previous session:

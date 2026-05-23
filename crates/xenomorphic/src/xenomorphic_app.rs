@@ -34,8 +34,8 @@ use git_ui::git_panel::GitPanel;
 use git_ui::project_diff::{BranchDiffToolbar, ProjectDiffToolbar};
 use gpui::{
     Action, App, AppContext as _, AsyncWindowContext, ClipboardItem, Context, DismissEvent,
-    Element, Entity, FocusHandle, Focusable, Image, ImageFormat, KeyBinding, ParentElement,
-    PathPromptOptions, PromptLevel, ReadGlobal, SharedString, Size, Task, TaskExt, TitlebarOptions,
+    Element, Entity, EventEmitter, FocusHandle, Focusable, Image, ImageFormat, KeyBinding, ParentElement,
+    PathPromptOptions, PromptLevel, ReadGlobal, Render, SharedString, Size, Task, TaskExt, TitlebarOptions,
     UpdateGlobal, WeakEntity, Window, WindowBounds, WindowHandle, WindowKind, WindowOptions,
     actions, image_cache, img, point, px, retain_all,
 };
@@ -86,7 +86,7 @@ use vim_mode_setting::VimModeSetting;
 use workspace::notifications::{NotificationId, dismiss_app_notification, show_app_notification};
 
 use workspace::{
-    AppState, MultiWorkspace, NewFile, NewWindow, OpenLog, Panel, Toast, Workspace,
+    AppState, ModalView, MultiWorkspace, NewFile, NewWindow, OpenLog, Panel, Toast, Workspace,
     WorkspaceSettings, WorkspaceSidebar, create_and_open_local_file,
     notifications::simple_message_notification::MessageNotification, open_new,
 };
@@ -450,7 +450,6 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
             WorkspaceSidebar::new(multi_workspace_handle, fs, window, cx)
         });
         _multi_workspace.register_sidebar(sidebar, cx);
-
     })
     .detach();
 
@@ -503,6 +502,44 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
                 edit_prediction_menu_handle.toggle(window, cx);
             }
         });
+
+        // Register the RenameWorkspace action handler.
+        // This shows a rename modal using the Editor component,
+        // which isn't available in the workspace crate.
+        {
+            let mw_weak = workspace.multi_workspace().cloned();
+            workspace.register_action(move |workspace, action: &workspace::RenameWorkspace, window, cx| {
+                let Some(mw_weak) = &mw_weak else { return; };
+                let Some(mw) = mw_weak.upgrade() else { return; };
+                let entity_id = gpui::EntityId::from(action.workspace_entity_id);
+
+                // Get current display name
+                let custom_name = mw.read(cx).workspace_name(entity_id);
+                let root_paths = workspace.root_paths(cx);
+                let base_name: SharedString = if root_paths.is_empty() {
+                    "Empty".into()
+                } else {
+                    root_paths
+                        .iter()
+                        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                        .into()
+                };
+                let current_name = custom_name.unwrap_or(base_name);
+
+                let mw_for_modal = mw_weak.clone();
+                workspace.toggle_modal(window, cx, |window, cx| {
+                    RenameWorkspaceModal::new(
+                        current_name,
+                        entity_id,
+                        mw_for_modal.clone(),
+                        window,
+                        cx,
+                    )
+                });
+            });
+        }
 
         let search_button = cx.new(|_| search::search_status_button::SearchButton::new());
         let diagnostic_summary =
@@ -2423,6 +2460,88 @@ pub(crate) fn eager_load_active_theme_and_icon_theme(fs: Arc<dyn Fs>, cx: &mut A
             ReloadTarget::Theme => theme_settings::reload_theme(cx),
             ReloadTarget::IconTheme => theme_settings::reload_icon_theme(cx),
         };
+    }
+}
+
+// Rename Workspace Modal
+// This is defined here instead of the workspace crate because the modal
+// requires the Editor component, which creates a circular dependency.
+
+struct RenameWorkspaceModal {
+    workspace_entity_id: gpui::EntityId,
+    editor: Entity<Editor>,
+    multi_workspace: WeakEntity<MultiWorkspace>,
+}
+
+impl RenameWorkspaceModal {
+    fn new(
+        current_name: SharedString,
+        workspace_entity_id: gpui::EntityId,
+        multi_workspace: WeakEntity<MultiWorkspace>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let editor = cx.new(|cx| {
+            let mut editor = Editor::single_line(window, cx);
+            editor.set_text(current_name.to_string(), window, cx);
+            editor.select_all(&editor::actions::SelectAll, window, cx);
+            editor
+        });
+        Self {
+            workspace_entity_id,
+            editor,
+            multi_workspace,
+        }
+    }
+
+    fn cancel(&mut self, _: &menu::Cancel, _window: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(DismissEvent);
+    }
+
+    fn confirm(&mut self, _: &menu::Confirm, _window: &mut Window, cx: &mut Context<Self>) {
+        let new_name: SharedString = self.editor.read(cx).text(cx).into();
+        if new_name.is_empty() {
+            cx.emit(DismissEvent);
+            return;
+        }
+        let workspace_id = self.workspace_entity_id;
+        if let Some(mw) = self.multi_workspace.upgrade() {
+            mw.update(cx, |mw, cx| {
+                mw.set_workspace_name(workspace_id, new_name, cx);
+            });
+        }
+        cx.emit(DismissEvent);
+    }
+}
+
+impl ModalView for RenameWorkspaceModal {}
+impl EventEmitter<DismissEvent> for RenameWorkspaceModal {}
+
+impl Focusable for RenameWorkspaceModal {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        self.editor.focus_handle(cx)
+    }
+}
+
+impl Render for RenameWorkspaceModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .key_context("RenameWorkspaceModal")
+            .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(Self::confirm))
+            .elevation_2(cx)
+            .w(rems(34.))
+            .child(
+                h_flex()
+                    .px_3()
+                    .pt_2()
+                    .pb_1()
+                    .w_full()
+                    .gap_1p5()
+                    .child(ui::Icon::new(ui::IconName::Pencil).size(ui::IconSize::XSmall))
+                    .child(ui::Headline::new("Rename Workspace").size(ui::HeadlineSize::XSmall)),
+            )
+            .child(div().px_3().pb_3().w_full().child(self.editor.clone()))
     }
 }
 

@@ -3,12 +3,17 @@ use std::sync::Arc;
 
 use fs::Fs;
 use gpui::{
-    App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Pixels, Render,
-    SharedString, Window, actions, px,
+    App, ClickEvent, Context, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Pixels,
+    Render, SharedString, Window, actions, px,
 };
+use schemars::JsonSchema;
+use serde::Deserialize;
 use project::ProjectGroupKey;
 use settings::SidebarSide;
-use ui::{Icon, IconName, Label, LabelSize, ListItem, Tooltip, prelude::*, v_flex};
+use ui::{
+    ContextMenu, Icon, IconName, Label, LabelSize, ListItem, ListItemSpacing,
+    prelude::*, right_click_menu, utils::TRAFFIC_LIGHT_PADDING, v_flex,
+};
 use util::path_list::PathList;
 
 use crate::{MultiWorkspace, Sidebar, SidebarEvent};
@@ -22,6 +27,14 @@ actions!(
         ExpandProjectGroup,
     ]
 );
+
+/// Rename the selected workspace.
+#[derive(Clone, PartialEq, Deserialize, Default, JsonSchema, gpui::Action)]
+#[action(namespace = workspace)]
+pub struct RenameWorkspace {
+    /// The entity ID of the workspace to rename.
+    pub workspace_entity_id: u64,
+}
 
 const DEFAULT_WORKSPACE_SIDEBAR_WIDTH: Pixels = px(240.);
 const MIN_WORKSPACE_SIDEBAR_WIDTH: Pixels = px(192.);
@@ -176,46 +189,31 @@ impl Render for WorkspaceSidebar {
 
         let has_groups = !groups.is_empty();
 
+        // Header — with macOS traffic light padding when sidebar is on the left
         let header = h_flex()
             .w_full()
-            .px_2()
             .py_1()
-            .justify_between()
-            .items_center()
+            // On macOS, the traffic light buttons occupy the top-left corner.
+            // Add extra left padding so the "Workspaces" label doesn't overlap them.
+            .when(cfg!(target_os = "macos"), |el| {
+                el.pl(px(TRAFFIC_LIGHT_PADDING))
+            })
+            .when(!cfg!(target_os = "macos"), |el| el.pl_2())
+            .pr_2()
             .child(
                 Label::new("Workspaces")
                     .size(LabelSize::Small)
                     .weight(gpui::FontWeight::SEMIBOLD),
-            )
-            .child(
-                IconButton::new("close-sidebar", IconName::ThreadsSidebarLeftOpen)
-                    .icon_size(IconSize::Small)
-                    .tooltip(move |_, cx| {
-                        Tooltip::for_action(
-                            "Close Workspace Sidebar",
-                            &crate::CloseWorkspaceSidebar,
-                            cx,
-                        )
-                    })
-                    .on_click(|_, window, cx| {
-                        if let Some(multi_workspace) = window.root::<MultiWorkspace>().flatten() {
-                            multi_workspace.update(cx, |multi_workspace, cx| {
-                                multi_workspace.close_sidebar_action(window, cx);
-                            });
-                        }
-                    }),
             );
 
-        let mut group_elements: Vec<AnyElement> = Vec::new();
-        for group in &groups {
+        let mut list_elements: Vec<AnyElement> = Vec::new();
+        for (group_index, group) in groups.iter().enumerate() {
             let group_key = group.key.clone();
             let is_expanded = group.expanded;
             let workspaces: Vec<_> = group.workspaces.clone();
+            let workspace_count = workspaces.len();
 
             let name = Self::project_name(group_key.path_list());
-            let is_active = self
-                .multi_workspace(cx)
-                .is_some_and(|mw| mw.read(cx).workspace().read(cx).project_group_key(cx) == group_key);
 
             let chevron_icon = if is_expanded {
                 IconName::ChevronDown
@@ -225,8 +223,7 @@ impl Render for WorkspaceSidebar {
 
             let toggle_key = group_key.clone();
             let click_key = group_key.clone();
-
-            let group_header = ListItem::new(SharedString::from(format!(
+            let group_id = SharedString::from(format!(
                 "project-group-{}",
                 group_key
                     .path_list()
@@ -234,46 +231,175 @@ impl Render for WorkspaceSidebar {
                     .first()
                     .map(|p| p.display().to_string())
                     .unwrap_or_default()
-            )))
-            .spacing(ui::ListItemSpacing::Dense)
-            .toggle_state(is_active)
-            .child(
-                h_flex()
-                    .gap_1()
-                    .items_center()
-                    .child(
-                        div()
-                            .id("expand-toggle")
-                            .on_click(cx.listener(move |this, _event: &ClickEvent, _window, cx| {
-                                this.toggle_project_group(&toggle_key, cx);
-                            }))
-                            .cursor_pointer()
-                            .child(Icon::new(chevron_icon).size(IconSize::Small)),
-                    )
-                    .child(Icon::new(IconName::Folder).size(IconSize::Small))
-                    .child(
-                        Label::new(name)
-                            .size(LabelSize::Small)
-                            .single_line()
-                            .truncate(),
-                    ),
-            )
-            .on_click(cx.listener(
-                move |this, _event: &ClickEvent, _window, cx| {
-                    this.toggle_project_group(&click_key, cx);
-                },
-            ))
-            .into_any_element();
+            ));
 
-            let mut entry_elements = vec![group_header];
+            // Plus button (right side of header) — needs its own key clone
+            let plus_group_key = group_key.clone();
+            // Context menu clones
+            let menu_group_key = group_key.clone();
+            let menu_mw = self.multi_workspace.clone();
+
+            // Clones for click handlers inside trigger closure (can't use cx.listener there)
+            let toggle_mw = self.multi_workspace.clone();
+            let toggle_click_key = click_key.clone();
+            let toggle_toggle_key = toggle_key.clone();
+            let plus_mw = self.multi_workspace.clone();
+
+            let group_header = right_click_menu::<ContextMenu>(group_id.clone())
+                .trigger(move |_is_active, _window, _cx| {
+                    let mw_for_click = toggle_mw.clone();
+                    let click_key_inner = toggle_click_key.clone();
+                    let mw_for_chevron = toggle_mw.clone();
+                    let chevron_key_inner = toggle_toggle_key.clone();
+                    let mw_for_plus = plus_mw.clone();
+                    let plus_key_inner = plus_group_key.clone();
+
+                    div()
+                        .id(group_id.clone())
+                        .w_full()
+                        .px_1p5()
+                        .py_0p5()
+                        .bg(_cx.theme().colors().ghost_element_hover)
+                        .when(group_index > 0, |el| {
+                            el.border_t_1()
+                                .border_color(_cx.theme().colors().border)
+                        })
+                        .cursor_pointer()
+                        .on_click(move |_event: &ClickEvent, _window, cx| {
+                            if let Some(multi_workspace) = mw_for_click.as_ref().and_then(|w| w.upgrade()) {
+                                multi_workspace.update(cx, |mw, cx| {
+                                    if let Some(group) = mw.group_state_by_key_mut(&click_key_inner) {
+                                        group.expanded = !group.expanded;
+                                    }
+                                    mw.serialize(cx);
+                                    cx.notify();
+                                });
+                            }
+                        })
+                        .child(
+                            h_flex()
+                                .w_full()
+                                .items_center()
+                                .child(
+                                    h_flex()
+                                        .gap_0p5()
+                                        .items_center()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .id(SharedString::from(format!("expand-toggle-{}", group_index)))
+                                                .on_click(move |_event: &ClickEvent, _window, cx| {
+                                                    cx.stop_propagation();
+                                                    if let Some(multi_workspace) = mw_for_chevron.as_ref().and_then(|w| w.upgrade()) {
+                                                        multi_workspace.update(cx, |mw, cx| {
+                                                            if let Some(group) = mw.group_state_by_key_mut(&chevron_key_inner) {
+                                                                group.expanded = !group.expanded;
+                                                            }
+                                                            mw.serialize(cx);
+                                                            cx.notify();
+                                                        });
+                                                    }
+                                                })
+                                                .cursor_pointer()
+                                                .child(
+                                                    Icon::new(chevron_icon)
+                                                        .size(IconSize::XSmall)
+                                                        .color(Color::Muted),
+                                                ),
+                                        )
+                                        .child(
+                                            Icon::new(IconName::Folder)
+                                                .size(IconSize::XSmall)
+                                                .color(Color::Muted),
+                                        )
+                                        .child(
+                                            Label::new(name.clone())
+                                                .size(LabelSize::XSmall)
+                                                .color(Color::Muted)
+                                                .single_line()
+                                                .truncate(),
+                                        )
+                                        // Workspace count badge when collapsed
+                                        .when(!is_expanded, |el| {
+                                            el.child(
+                                                Label::new(format!("{}", workspace_count))
+                                                    .size(LabelSize::XSmall)
+                                                    .color(Color::Muted),
+                                            )
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("new-ws-{}", group_index)))
+                                        .h_full()
+                                        .w(px(20.))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .on_click(move |_event: &ClickEvent, window, cx| {
+                                            cx.stop_propagation();
+                                            if let Some(multi_workspace) = mw_for_plus.as_ref().and_then(|w| w.upgrade()) {
+                                                let group_key = plus_key_inner.clone();
+                                                multi_workspace.update(cx, |multi_workspace, inner_cx| {
+                                                    if let Some(workspace) =
+                                                        multi_workspace.last_active_workspace_for_group(&group_key, inner_cx)
+                                                    {
+                                                        multi_workspace.activate(workspace, None, window, inner_cx);
+                                                        multi_workspace
+                                                            .add_layout_workspace(window, inner_cx)
+                                                            .detach_and_log_err(inner_cx);
+                                                    } else {
+                                                        multi_workspace
+                                                            .open_project(
+                                                                group_key.path_list().paths().to_vec(),
+                                                                crate::OpenMode::Activate,
+                                                                window,
+                                                                inner_cx,
+                                                            )
+                                                            .detach_and_log_err(inner_cx);
+                                                    }
+                                                });
+                                            }
+                                        })
+                                        .cursor_pointer()
+                                        .child(
+                                            Icon::new(IconName::Plus)
+                                                .size(IconSize::XSmall)
+                                                .color(Color::Muted),
+                                        ),
+                                ),
+                        )
+                        .into_any_element()
+                })
+                .menu(move |window, cx| {
+                    let gk = menu_group_key.clone();
+                    let mw = menu_mw.clone();
+                    let focus_handle = cx.focus_handle();
+
+                    ContextMenu::build(window, cx, move |mut menu, _window, _cx| {
+                        menu = menu.entry("Close Project", None, move |window, cx| {
+                            if let Some(multi_workspace) = mw.as_ref().and_then(|w| w.upgrade()) {
+                                let gk = gk.clone();
+                                multi_workspace.update(cx, |mw, cx| {
+                                    mw.remove_project_group(&gk, window, cx)
+                                        .detach_and_log_err(cx);
+                                });
+                            }
+                        });
+                        menu.context(focus_handle.clone())
+                    })
+                })
+                .into_any_element();
+
+            list_elements.push(group_header);
+
             if is_expanded {
                 let mut same_project_count: HashMap<EntityId, usize> = HashMap::default();
                 for (index, workspace) in workspaces.iter().enumerate() {
                     let project = workspace.read(cx).project().clone();
                     let entry = same_project_count.entry(project.entity_id()).or_insert(0);
                     *entry += 1;
-                    // Only assign a disambiguation index if this project
-                    // appears more than once in this group.
                     let disambiguation_index = if workspaces.iter().any(|ws| {
                         ws.read(cx).project().entity_id() == project.entity_id()
                             && ws != workspace
@@ -287,22 +413,42 @@ impl Render for WorkspaceSidebar {
                         .multi_workspace(cx)
                         .is_some_and(|mw| mw.read(cx).workspace() == workspace);
 
-                    let workspace_for_click = workspace.clone();
+                    // Check for custom workspace name
+                    let custom_name = self
+                        .multi_workspace(cx)
+                        .and_then(|mw| mw.read(cx).workspace_name(workspace.entity_id()));
+
+                    // Auto-name: use the active tab's title if available
+                    let active_item_title = workspace.read(cx).active_item(cx).map(|item| {
+                        item.tab_content_text(0, cx)
+                    });
 
                     let root_paths = workspace.read(cx).root_paths(cx);
-                    let base_name: SharedString = if root_paths.is_empty() {
+                    let project_name: SharedString = if root_paths.is_empty() {
                         "Empty".into()
                     } else {
                         root_paths
                             .iter()
-                            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                            .filter_map(|p| {
+                                p.file_name().map(|n| n.to_string_lossy().to_string())
+                            })
                             .collect::<Vec<_>>()
                             .join(", ")
                             .into()
                     };
-                    let display_name: SharedString = match disambiguation_index {
-                        Some(idx) if idx > 1 => format!("{} ({})", base_name, idx).into(),
-                        _ => base_name,
+
+                    // Priority: custom name > active tab title > project folder name
+                    let auto_name: SharedString = active_item_title.unwrap_or(project_name);
+
+                    let display_name: SharedString = match (&custom_name, disambiguation_index) {
+                        (Some(name), Some(idx)) if idx > 1 => {
+                            format!("{} ({})", name, idx).into()
+                        }
+                        (Some(name), _) => name.clone(),
+                        (None, Some(idx)) if idx > 1 => {
+                            format!("{} ({})", auto_name, idx).into()
+                        }
+                        (None, _) => auto_name,
                     };
 
                     let text_color = if is_active_workspace {
@@ -311,113 +457,189 @@ impl Render for WorkspaceSidebar {
                         Color::Muted
                     };
 
-                    let entry = ListItem::new(SharedString::from(format!(
+                    let ws_id = SharedString::from(format!(
                         "workspace-{}",
                         workspace.entity_id().as_u64()
-                    )))
-                    .spacing(ui::ListItemSpacing::Dense)
-                    .toggle_state(is_active_workspace)
-                    .child(
-                        h_flex()
-                            .gap_1()
-                            .items_center()
-                            .pl_3()
-                            .child(Icon::new(IconName::File).size(IconSize::Small).color(text_color))
-                            .child(
-                                Label::new(display_name)
-                                    .size(LabelSize::Small)
-                                    .single_line()
-                                    .truncate()
-                                    .color(text_color),
-                            ),
-                    )
-                    .on_click(cx.listener(
-                        move |this, _event: &ClickEvent, window, cx| {
-                            let Some(multi_workspace) = this.multi_workspace(cx) else {
-                                return;
-                            };
-                            let workspace = workspace_for_click.clone();
-                            multi_workspace.update(cx, |multi_workspace, inner_cx| {
-                                multi_workspace.activate(workspace, None, window, inner_cx);
-                            });
-                        },
-                    ))
-                    .into_any_element();
+                    ));
 
-                    entry_elements.push(entry);
-                }
+                    // Data captured for both the click handler and context menu
+                    let workspace_for_click = workspace.clone();
+                    let workspace_for_context = workspace.clone();
+                    let mw_for_click = self.multi_workspace(cx);
+                    let mw_for_context = self.multi_workspace(cx);
+                    let group_key_for_move = group_key.clone();
+                    let rename_id = workspace.entity_id().as_u64();
 
-                let new_workspace_group_key = group_key.clone();
-                let new_workspace_button = ListItem::new(SharedString::from(format!(
-                    "new-workspace-{}",
-                    group_key
-                        .path_list()
-                        .paths()
-                        .first()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                )))
-                .spacing(ui::ListItemSpacing::Dense)
-                .child(
-                    h_flex()
-                        .gap_1()
-                        .items_center()
-                        .pl_3()
-                        .child(Icon::new(IconName::Plus).size(IconSize::Small).color(Color::Muted))
-                        .child(
-                            Label::new("New Workspace")
-                                .size(LabelSize::Small)
-                                .single_line()
-                                .color(Color::Muted),
-                        ),
-                )
-                .on_click(cx.listener(
-                    move |this, _event: &ClickEvent, window, cx| {
-                        let Some(multi_workspace) = this.multi_workspace(cx) else {
-                            return;
-                        };
-                        let group_key = new_workspace_group_key.clone();
-                        multi_workspace.update(cx, |multi_workspace, inner_cx| {
-                            if let Some(workspace) =
-                                multi_workspace.last_active_workspace_for_group(&group_key, inner_cx)
-                            {
-                                // The project is already open — activate it and
-                                // add a new layout tab sharing the same Project.
-                                multi_workspace.activate(workspace, None, window, inner_cx);
-                                multi_workspace
-                                    .add_layout_workspace(window, inner_cx)
-                                    .detach_and_log_err(inner_cx);
-                            } else {
-                                // No workspace for this project group is loaded
-                                // — open the project (creating a new Project
-                                // entity) like the recent-projects flow does.
-                                multi_workspace
-                                    .open_project(
-                                        group_key.path_list().paths().to_vec(),
-                                        crate::OpenMode::Activate,
-                                        window,
-                                        inner_cx,
-                                    )
-                                    .detach_and_log_err(inner_cx);
-                            }
+                    // Compute pane & tab counts for the status text (needs cx, not available in trigger closure)
+                    let pane_count = workspace.read(cx).panes().len();
+                    let tab_count: usize = workspace.read(cx).panes().iter().map(|p| p.read(cx).items_len()).sum();
+                    let status_text: SharedString = format!("{} pane{}, {} tab{}",
+                        pane_count, if pane_count != 1 { "s" } else { "" },
+                        tab_count, if tab_count != 1 { "s" } else { "" }
+                    ).into();
+
+                    // Check if any item in any pane is dirty (unsaved changes)
+                    let is_dirty = workspace.read(cx).panes().iter().any(|pane| {
+                        pane.read(cx).items().any(|item| item.is_dirty(cx))
+                    });
+
+                    // Clone for double-click rename handler
+                    let rename_ws_id_for_dblclick = rename_id;
+
+                    // Close button needs its own clone of the multi_workspace entity
+                    let mw_for_close = self.multi_workspace(cx);
+
+                    let entry = right_click_menu::<ContextMenu>(ws_id.clone())
+                        .trigger(move |_is_active, _window, _cx| {
+                            let ws = workspace_for_click.clone();
+                            let mw = mw_for_click.clone();
+                            let ws_close = workspace_for_click.clone();
+                            let mw_close_btn = mw_for_close.clone();
+                            let rename_id_for_click = rename_ws_id_for_dblclick;
+
+                            ListItem::new(ws_id.clone())
+                                .spacing(ListItemSpacing::Sparse)
+                                .toggle_state(is_active_workspace)
+                                .on_click(move |event, window, cx| {
+                                    // Double-click to rename
+                                    if event.click_count() == 2 {
+                                        window.dispatch_action(
+                                            Box::new(RenameWorkspace {
+                                                workspace_entity_id: rename_id_for_click,
+                                            }),
+                                            cx,
+                                        );
+                                        return;
+                                    }
+                                    // Single click to activate
+                                    if let Some(multi_workspace) = mw.clone() {
+                                        let ws = ws.clone();
+                                        multi_workspace.update(cx, |mw, cx| {
+                                            mw.activate(ws, None, window, cx);
+                                        });
+                                    }
+                                })
+                                .start_slot(
+                                    h_flex()
+                                        .gap_1()
+                                        .items_center()
+                                        .child(
+                                            Icon::new(IconName::Screen)
+                                                .size(IconSize::Small)
+                                                .color(text_color),
+                                        )
+                                        .when(is_dirty, |el| {
+                                            el.child(
+                                                div()
+                                                    .size_1()
+                                                    .rounded_full()
+                                                    .bg(_cx.theme().colors().editor_foreground),
+                                            )
+                                        }),
+                                )
+                                .child(
+                                    v_flex()
+                                        .flex_grow()
+                                        .overflow_x_hidden()
+                                        .min_w_0()
+                                        .child(
+                                            Label::new(display_name.clone())
+                                                .size(LabelSize::Default)
+                                                .single_line()
+                                                .truncate()
+                                                .color(text_color),
+                                        )
+                                        .child(
+                                            Label::new(status_text.clone())
+                                                .size(LabelSize::XSmall)
+                                                .single_line()
+                                                .color(Color::Muted),
+                                        ),
+                                )
+                                .show_end_slot_on_hover()
+                                .end_slot(
+                                    div()
+                                        .id(SharedString::from(format!("close-ws-{}",
+                                            workspace_for_click.entity_id().as_u64())))
+                                        .flex_none()
+                                        .cursor_pointer()
+                                        .child(
+                                            Icon::new(IconName::Close)
+                                                .size(IconSize::XSmall)
+                                                .color(Color::Muted),
+                                        )
+                                        .on_click(move |_event: &ClickEvent, window, cx| {
+                                            cx.stop_propagation();
+                                            if let Some(multi_workspace) = mw_close_btn.clone() {
+                                                let ws = ws_close.clone();
+                                                multi_workspace.update(cx, |mw, cx| {
+                                                    mw.close_workspace(&ws, window, cx)
+                                                        .detach_and_log_err(cx);
+                                                });
+                                            }
+                                        }),
+                                )
+                                .into_any_element()
+                        })
+                        .menu(move |window, cx| {
+                            let ws = workspace_for_context.clone();
+                            let mw = mw_for_context.clone();
+                            let gk = group_key_for_move.clone();
+                            let rename_ws_id = rename_id;
+
+                            let focus_handle = cx.focus_handle();
+
+                            ContextMenu::build(window, cx, move |mut menu, _window, _cx| {
+                                // "Close Workspace"
+                                let ws_close = ws.clone();
+                                let mw_close = mw.clone();
+                                menu = menu.entry("Close Workspace", None, move |window, cx| {
+                                    if let Some(multi_workspace) = mw_close.clone() {
+                                        let ws = ws_close.clone();
+                                        multi_workspace.update(cx, |mw, cx| {
+                                            mw.close_workspace(&ws, window, cx)
+                                                .detach_and_log_err(cx);
+                                        });
+                                    }
+                                });
+
+                                // "Rename Workspace"
+                                let id_for_rename = rename_ws_id;
+                                menu = menu.entry("Rename Workspace", None, move |window, cx| {
+                                    window.dispatch_action(
+                                        Box::new(RenameWorkspace {
+                                            workspace_entity_id: id_for_rename,
+                                        }),
+                                        cx,
+                                    );
+                                });
+
+                                menu = menu.separator();
+
+                                // "Move to New Window"
+                                let mw_move = mw.clone();
+                                let gk_move = gk.clone();
+                                menu = menu.entry("Move to New Window", None, move |window, cx| {
+                                    if let Some(multi_workspace) = mw_move.clone() {
+                                        multi_workspace.update(cx, |mw, cx| {
+                                            mw.open_project_group_in_new_window(&gk_move, window, cx)
+                                                .detach_and_log_err(cx);
+                                        });
+                                    }
+                                });
+
+                                menu.context(focus_handle.clone())
+                            })
                         });
-                    },
-                ))
-                .into_any_element();
 
-                entry_elements.push(new_workspace_button);
+                    list_elements.push(entry.into_any_element());
+                }
             }
-
-            group_elements.push(
-                v_flex()
-                    .w_full()
-                    .children(entry_elements)
-                    .into_any_element(),
-            );
         }
 
         v_flex()
             .size_full()
+            .bg(cx.theme().colors().panel_background)
             .track_focus(&self.focus_handle(cx))
             .child(header)
             .child(ui::Divider::horizontal())
@@ -438,7 +660,7 @@ impl Render for WorkspaceSidebar {
             .when(has_groups, |el| {
                 el.child(
                     div().id("workspace-sidebar-list").flex_1().overflow_y_scroll().child(
-                        v_flex().w_full().children(group_elements),
+                        v_flex().w_full().children(list_elements),
                     ),
                 )
             })

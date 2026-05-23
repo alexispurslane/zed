@@ -37,13 +37,15 @@ use std::sync::Arc;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
-    Avatar, ButtonLike, ContextMenu, ContextMenuEntry, IconWithIndicator, Indicator, PopoverMenu,
-    TintColor, Tooltip, prelude::*, utils::platform_title_bar_height,
+    Avatar, ButtonLike, ContextMenu, ContextMenuEntry, IconButton, IconSize,
+    IconWithIndicator, Indicator, PopoverMenu, TintColor, Tooltip, prelude::*,
+    utils::platform_title_bar_height,
 };
 use update_version::UpdateVersion;
 use util::ResultExt;
 use workspace::{
-    MultiWorkspace, ToggleWorktreeSecurity, Workspace, notifications::NotifyResultExt,
+    MultiWorkspace, SidebarRenderState, SidebarSide, ToggleWorkspaceSidebar,
+    ToggleWorktreeSecurity, Workspace, notifications::NotifyResultExt,
 };
 
 use xenomorphic_actions::OpenRemote;
@@ -161,6 +163,14 @@ impl Render for TitleBar {
 
         let show_menus = show_menus(cx);
 
+        // Determine sidebar state for the toggle button
+        let sidebar_state = self
+            .multi_workspace
+            .as_ref()
+            .and_then(|mw| mw.upgrade())
+            .map(|mw| mw.read(cx).sidebar_render_state(cx))
+            .unwrap_or_default();
+
         let mut children = <ArrayVec<_, 4>>::new();
 
         let mut project_name = None;
@@ -223,6 +233,15 @@ impl Render for TitleBar {
                     let mut render_project_items = title_bar_settings.show_branch_name
                         || title_bar_settings.show_project_items;
                     title_bar
+                        // Sidebar toggle button (left side)
+                        .when(
+                            sidebar_state.has_sidebar && sidebar_state.side == SidebarSide::Left,
+                            |title_bar| {
+                                title_bar.child(
+                                    self.render_sidebar_toggle(&sidebar_state, cx)
+                                )
+                            },
+                        )
                         .when_some(
                             self.application_menu.clone().filter(|_| !show_menus),
                             |title_bar, menu| {
@@ -279,6 +298,13 @@ impl Render for TitleBar {
                 .when(TitleBarSettings::get_global(cx).show_user_menu, |this| {
                     this.child(self.render_user_menu_button(cx))
                 })
+                // Sidebar toggle button (right side)
+                .when(
+                    sidebar_state.has_sidebar && sidebar_state.side == SidebarSide::Right,
+                    |this| {
+                        this.child(self.render_sidebar_toggle(&sidebar_state, cx))
+                    },
+                )
                 .into_any_element(),
         );
 
@@ -973,6 +999,44 @@ impl TitleBar {
                             .notify_workspace_async_err(workspace, &mut cx);
                     })
                     .detach();
+            })
+    }
+
+    fn render_sidebar_toggle(
+        &self,
+        sidebar: &SidebarRenderState,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let on_right = sidebar.side == SidebarSide::Right;
+        let is_open = sidebar.open;
+
+        let icon = if is_open {
+            if on_right {
+                IconName::ThreadsSidebarRightOpen
+            } else {
+                IconName::ThreadsSidebarLeftOpen
+            }
+        } else if on_right {
+            IconName::ThreadsSidebarRightClosed
+        } else {
+            IconName::ThreadsSidebarLeftClosed
+        };
+
+        let label: SharedString = if is_open {
+            "Close Workspace Sidebar".into()
+        } else {
+            "Open Workspace Sidebar".into()
+        };
+
+        IconButton::new("sidebar-toggle", icon)
+            .icon_size(IconSize::Small)
+            .tooltip(move |_, cx| Tooltip::for_action(label.clone(), &ToggleWorkspaceSidebar, cx))
+            .on_click(move |_, window, cx| {
+                if let Some(multi_workspace) = window.root::<MultiWorkspace>().flatten() {
+                    multi_workspace.update(cx, |multi_workspace, cx| {
+                        multi_workspace.toggle_sidebar(window, cx);
+                    });
+                }
             })
     }
 

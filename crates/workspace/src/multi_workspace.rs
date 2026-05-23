@@ -1,10 +1,11 @@
 use anyhow::Result;
+use collections::HashMap;
 use fs::Fs;
 
 use gpui::{
     AnyView, App, Context, DragMoveEvent, Entity, EntityId, EventEmitter, FocusHandle, Focusable,
-    ManagedView, MouseButton, Pixels, Render, Subscription, Task, TaskExt, Tiling, WeakEntity,
-    Window, WindowId, actions, deferred, px,
+    ManagedView, MouseButton, Pixels, Render, SharedString, Subscription, Task, TaskExt, Tiling,
+    WeakEntity, Window, WindowId, actions, deferred, px,
 };
 pub use project::ProjectGroupKey;
 use project::Project;
@@ -52,6 +53,7 @@ actions!(
 pub struct SidebarRenderState {
     pub open: bool,
     pub side: SidebarSide,
+    pub has_sidebar: bool,
 }
 
 
@@ -198,6 +200,9 @@ pub struct MultiWorkspace {
     sidebar: Option<Box<dyn SidebarHandle>>,
     sidebar_open: bool,
     sidebar_overlay: Option<AnyView>,
+    /// Custom names for workspaces, keyed by their entity ID.
+    /// Falls back to path-derived names when absent.
+    workspace_names: HashMap<EntityId, SharedString>,
     pending_removal_tasks: Vec<Task<()>>,
     _serialize_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
@@ -217,6 +222,7 @@ impl MultiWorkspace {
         SidebarRenderState {
             open: self.sidebar_open() && self.sidebar.is_some(),
             side: self.sidebar_side(cx),
+            has_sidebar: self.sidebar.is_some(),
         }
     }
 
@@ -256,6 +262,7 @@ impl MultiWorkspace {
             sidebar: None,
             sidebar_open: false,
             sidebar_overlay: None,
+            workspace_names: HashMap::default(),
             pending_removal_tasks: Vec::new(),
             _serialize_task: None,
             _subscriptions: vec![
@@ -293,6 +300,27 @@ impl MultiWorkspace {
 
     pub fn has_sidebar(&self) -> bool {
         self.sidebar.is_some()
+    }
+
+    /// Returns the custom name for a workspace, if one has been set.
+    pub fn workspace_name(&self, entity_id: EntityId) -> Option<SharedString> {
+        self.workspace_names.get(&entity_id).cloned()
+    }
+
+    /// Sets (or clears) a custom name for a workspace.
+    pub fn set_workspace_name(
+        &mut self,
+        entity_id: EntityId,
+        name: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if name.is_empty() {
+            self.workspace_names.remove(&entity_id);
+        } else {
+            self.workspace_names.insert(entity_id, name);
+        }
+        self.serialize(cx);
+        cx.notify();
     }
 
     pub fn set_sidebar_overlay(&mut self, overlay: Option<AnyView>, cx: &mut Context<Self>) {
@@ -1577,6 +1605,9 @@ impl MultiWorkspace {
                             .collect::<Vec<_>>(),
                         sidebar_open: this.sidebar_open,
                         sidebar_state: this.sidebar.as_ref().and_then(|s| s.serialized_state(cx)),
+                        workspace_names: this.workspace_names.iter()
+                            .map(|(id, name)| (id.as_u64(), name.to_string()))
+                            .collect(),
                     };
                     log::info!(
                         "MultiWorkspace::serialize: window_id={:?}, active_workspace_id={:?}, project_groups_count={}, retained_count={}",

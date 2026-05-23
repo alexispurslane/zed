@@ -42,7 +42,7 @@ pub use remote::{
     RemoteConnectionIdentity, remote_connection_identity, same_remote_connection_identity,
 };
 pub use toast_layer::{ToastAction, ToastLayer, ToastView};
-pub use workspace_sidebar::WorkspaceSidebar;
+pub use workspace_sidebar::{RenameWorkspace, WorkspaceSidebar};
 
 use anyhow::{Context as _, Result, anyhow};
 use client::{
@@ -9078,6 +9078,7 @@ pub async fn apply_restored_multiworkspace_state(
         sidebar_open,
         project_groups,
         sidebar_state,
+        workspace_names,
         ..
     } = state;
 
@@ -9133,6 +9134,18 @@ pub async fn apply_restored_multiworkspace_state(
                     sidebar.restore_serialized_state(sidebar_state, window, cx);
                 }
                 multi_workspace.serialize(cx);
+            })
+            .ok();
+    }
+
+    // Restore custom workspace names
+    if !workspace_names.is_empty() {
+        window_handle
+            .update(cx, |multi_workspace, _window, cx| {
+                for (id_u64, name) in workspace_names {
+                    let entity_id = gpui::EntityId::from(*id_u64);
+                    multi_workspace.set_workspace_name(entity_id, name.clone().into(), cx);
+                }
             })
             .ok();
     }
