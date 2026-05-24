@@ -244,10 +244,22 @@ impl FollowableItem for Editor {
     }
 
     fn to_follow_event(event: &EditorEvent) -> Option<workspace::item::FollowEvent> {
+        use workspace::item::FollowEvent;
         match event {
             EditorEvent::Edited { .. } => Some(FollowEvent::Unfollow),
-            EditorEvent::SelectionsChanged { local }
-            | EditorEvent::ScrollPositionChanged { local, .. } => {
+            EditorEvent::SelectionsChanged { local } => {
+                // Local selection changes (clicks, cursor moves) should unfollow
+                // peer collaborators but preserve agent thread following — the user
+                // is focusing the buffer, not asserting control over the edit position.
+                if *local {
+                    Some(FollowEvent::UnfollowForPeers)
+                } else {
+                    None
+                }
+            }
+            EditorEvent::ScrollPositionChanged { local, .. } => {
+                // Local scrolling should unfollow everyone — the user is deliberately
+                // navigating away from the followed position.
                 if *local {
                     Some(FollowEvent::Unfollow)
                 } else {

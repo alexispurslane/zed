@@ -826,9 +826,19 @@ impl<T: Item> ItemHandle for Entity<T> {
                         let leader_id = workspace.leader_for_pane(&pane);
 
                         if let Some(leader_id) = leader_id
-                            && let Some(FollowEvent::Unfollow) = item.to_follow_event(event)
+                            && let Some(follow_event) = item.to_follow_event(event)
                         {
-                            workspace.unfollow(leader_id, window, cx);
+                            match follow_event {
+                                FollowEvent::Unfollow => {
+                                    workspace.unfollow(leader_id, window, cx);
+                                }
+                                FollowEvent::UnfollowForPeers => {
+                                    // Only unfollow peer leaders; preserve agent thread following.
+                                    if let CollaboratorId::PeerId(_) = leader_id {
+                                        workspace.unfollow(leader_id, window, cx);
+                                    }
+                                }
+                            }
                         }
 
                         if item.item_focus_handle(cx).contains_focused(window, cx) {
@@ -1232,7 +1242,14 @@ pub trait ProjectItem: Item {
 
 #[derive(Debug)]
 pub enum FollowEvent {
+    /// Unfollow all leaders (both peers and agents).
+    /// Emitted on user edits and explicit scroll.
     Unfollow,
+    /// Unfollow peer leaders only, preserving agent thread following.
+    /// Emitted on local selection changes (clicks, cursor moves) which indicate
+    /// the user is focusing the buffer but not necessarily asserting control
+    /// over the editing position in a way that conflicts with agent following.
+    UnfollowForPeers,
 }
 
 pub enum Dedup {
