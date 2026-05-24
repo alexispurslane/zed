@@ -5,6 +5,8 @@ use smallvec::SmallVec;
 use std::{
     cmp::{self, Ordering},
     fmt,
+    hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 pub use system_clock::*;
@@ -19,6 +21,7 @@ impl ReplicaId {
     /// The remote replica of the connected remote server.
     pub const REMOTE_SERVER: ReplicaId = ReplicaId(1);
     /// The agent's unique identifier.
+    #[deprecated(note = "Use ReplicaId::for_agent_thread() instead")]
     pub const AGENT: ReplicaId = ReplicaId(2);
     /// A local branch.
     pub const LOCAL_BRANCH: ReplicaId = ReplicaId(3);
@@ -36,6 +39,27 @@ impl ReplicaId {
     pub fn is_remote(self) -> bool {
         self == ReplicaId::REMOTE_SERVER || self >= ReplicaId::FIRST_COLLAB_ID
     }
+
+    /// Base replica ID for agent threads. All agent thread replicas fall in
+    /// the range `AGENT_REPLICA_BASE..AGENT_REPLICA_BASE + AGENT_REPLICA_COUNT`.
+    pub const AGENT_REPLICA_BASE: u64 = 100;
+    /// Number of replica IDs reserved for agent threads.
+    const AGENT_REPLICA_COUNT: u64 = 1000;
+
+    /// Deterministic replica ID for an agent thread, derived from its thread ID.
+    /// The same thread ID always maps to the same replica ID.
+    pub fn for_agent_thread(thread_id: &Arc<str>) -> Self {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        thread_id.hash(&mut hasher);
+        let hash = hasher.finish();
+        ReplicaId((Self::AGENT_REPLICA_BASE + (hash % Self::AGENT_REPLICA_COUNT)) as u16)
+    }
+
+    /// Whether this replica ID belongs to any agent thread.
+    pub fn is_agent(&self) -> bool {
+        (self.0 as u64) >= Self::AGENT_REPLICA_BASE
+            && (self.0 as u64) < Self::AGENT_REPLICA_BASE + Self::AGENT_REPLICA_COUNT
+    }
 }
 
 impl fmt::Debug for ReplicaId {
@@ -48,6 +72,8 @@ impl fmt::Debug for ReplicaId {
             write!(f, "<agent>")
         } else if *self == ReplicaId::LOCAL_BRANCH {
             write!(f, "<branch>")
+        } else if self.is_agent() {
+            write!(f, "<agent-thread:{}>", self.0)
         } else {
             write!(f, "{}", self.0)
         }

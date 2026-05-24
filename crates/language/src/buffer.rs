@@ -2588,6 +2588,7 @@ impl Buffer {
 
     pub fn set_agent_selections(
         &mut self,
+        replica_id: ReplicaId,
         selections: Arc<[Selection<Anchor>]>,
         line_mode: bool,
         cursor_shape: CursorShape,
@@ -2595,7 +2596,7 @@ impl Buffer {
     ) {
         let lamport_timestamp = self.text.lamport_clock.tick();
         self.remote_selections.insert(
-            ReplicaId::AGENT,
+            replica_id,
             SelectionSet {
                 selections,
                 lamport_timestamp,
@@ -2607,8 +2608,10 @@ impl Buffer {
         cx.notify();
     }
 
-    pub fn remove_agent_selections(&mut self, cx: &mut Context<Self>) {
-        self.set_agent_selections(Arc::default(), false, Default::default(), cx);
+    pub fn remove_agent_selections(&mut self, replica_id: ReplicaId, cx: &mut Context<Self>) {
+        self.remote_selections.remove(&replica_id);
+        self.non_text_state_update_count += 1;
+        cx.notify();
     }
 
     /// Replaces the buffer's entire text.
