@@ -4,8 +4,6 @@
 //! Agent Thread") register a [`NewItemMenuEntry`] with this registry, without
 //! the `workspace` crate depending on those crates.
 
-use std::sync::Arc;
-
 use gpui::App;
 
 /// A single entry in the "+" button's context menu.
@@ -17,14 +15,9 @@ pub struct NewItemMenuEntry {
     pub action: Box<dyn gpui::Action>,
 }
 
+#[derive(Default)]
 struct NewItemMenuRegistry {
     entries: Vec<NewItemMenuEntry>,
-}
-
-impl Default for NewItemMenuRegistry {
-    fn default() -> Self {
-        Self { entries: Vec::new() }
-    }
 }
 
 impl gpui::Global for NewItemMenuRegistry {}

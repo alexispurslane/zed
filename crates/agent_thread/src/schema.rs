@@ -1496,18 +1496,13 @@ impl PlanEntry {
 }
 
 /// Priority levels for plan entries.
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanEntryPriority {
     High,
+    #[default]
     Medium,
     Low,
-}
-
-impl Default for PlanEntryPriority {
-    fn default() -> Self {
-        Self::Medium
-    }
 }
 
 /// Status of a plan entry.

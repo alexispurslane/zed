@@ -139,7 +139,7 @@ impl FinderProvider for ThreadFinderProvider {
             .collect();
 
         // Sort by updated_at descending (most recent first).
-        entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        entries.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
         entries.truncate(MAX_RECENT_THREADS);
 
         let mut results = Vec::with_capacity(entries.len() + 1);
@@ -471,7 +471,7 @@ pub fn create_conversation_view(
     let agent = Agent::NativeAgent;
     let server = agent.server(fs.clone(), thread_store.clone());
 
-    let thread_store_handle = Some(thread_store.clone());
+    let thread_store_handle = Some(thread_store);
 
     // Use the global AgentConnectionStore so all tabs share the same
     // NativeAgent. Each tab creating its own store/agent meant that

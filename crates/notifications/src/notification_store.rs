@@ -340,8 +340,8 @@ impl NotificationStore {
     pub fn respond_to_notification(
         &mut self,
         notification: Notification,
-        response: bool,
-        cx: &mut Context<Self>,
+        _response: bool,
+        _cx: &mut Context<Self>,
     ) {
         match notification {
             Notification::ContactRequest { sender_id: _ } => {

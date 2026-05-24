@@ -616,11 +616,6 @@ impl Matches {
         self.matches.len()
     }
 
-    /// The number of *selectable* matches (excluding SectionHeaders).
-    fn selectable_len(&self) -> usize {
-        self.matches.iter().filter(|m| m.is_selectable()).count()
-    }
-
     fn get(&self, index: usize) -> Option<&Match> {
         self.matches.get(index)
     }
@@ -1810,7 +1805,7 @@ impl PickerDelegate for FileFinderDelegate {
                     // we need to call set_search_matches with empty file matches to
                     // trigger thread search and scoring.
                     if show_threads && !show_files {
-                        this.update_in(cx, |this, window, cx| {
+                        this.update_in(cx, |this, _window, cx| {
                             let search_id = util::post_inc(&mut this.delegate.search_count);
                             this.delegate.set_search_matches(
                                 search_id,

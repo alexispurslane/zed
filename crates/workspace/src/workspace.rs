@@ -1288,6 +1288,10 @@ pub enum Event {
     Activate,
     PanelAdded(AnyView),
     WorktreeCreationChanged,
+    AgentFollowChanged {
+        agent_thread_id: AgentThreadId,
+        following: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -3756,7 +3760,6 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let project = self.project.read(cx);
         let paths = self.prompt_for_open_path(
             PathPromptOptions {
                 files: false,
@@ -4062,13 +4065,6 @@ impl Workspace {
         let other_is_zoomed = self.zoomed.is_some() && self.zoomed_position != Some(dock_side);
         let was_visible = self.is_dock_at_position_open(dock_side, cx) && !other_is_zoomed;
 
-        if let Some(panel) = self.dock_at_position(dock_side).read(cx).active_panel() {
-            telemetry::event!(
-                "Panel Button Clicked",
-                name = panel.persistent_name(),
-                toggle_state = !was_visible
-            );
-        }
         if was_visible {
             self.save_open_dock_positions(cx);
         }
@@ -4801,10 +4797,6 @@ impl Workspace {
         } else {
             let watched_peer = self.next_watched_peer(cx);
             self.auto_watch = AutoWatch::Active { watched_peer };
-
-            if let Some(peer_id) = watched_peer {
-
-            }
         }
 
         cx.notify();
@@ -4813,7 +4805,7 @@ impl Workspace {
     fn handle_auto_watch_video_tracks_changed(
         &mut self,
         peer_id: PeerId,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let AutoWatch::Active { watched_peer } = self.auto_watch else {
@@ -4845,7 +4837,7 @@ impl Workspace {
 
     fn handle_auto_watch_local_share_stopped(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let AutoWatch::Paused = self.auto_watch else {
@@ -4854,10 +4846,6 @@ impl Workspace {
 
         let watched_peer = self.next_watched_peer(cx);
         self.auto_watch = AutoWatch::Active { watched_peer };
-
-        if let Some(peer_id) = watched_peer {
-
-        }
     }
 
     pub fn activate_item(
@@ -5909,7 +5897,7 @@ impl Workspace {
 
         // Mutual exclusion: only one agent thread can be followed at a time.
         // Unfollow any other agent thread before following the new one.
-        if let CollaboratorId::Agent(_) = leader_id {
+        if let CollaboratorId::Agent(agent_thread_id) = leader_id {
             let other_agent_ids: Vec<CollaboratorId> = self
                 .follower_states
                 .keys()
@@ -5919,6 +5907,17 @@ impl Workspace {
             for other_id in other_agent_ids {
                 self.unfollow(other_id, window, cx);
             }
+
+            // Otherwise, follow.
+            if let Some(task) = self.start_following(leader_id, window, cx) {
+                task.detach_and_log_err(cx)
+            }
+
+            cx.emit(Event::AgentFollowChanged {
+                agent_thread_id,
+                following: true,
+            });
+            return;
         }
 
         // Otherwise, follow.
@@ -5939,6 +5938,13 @@ impl Workspace {
         let state = self.follower_states.remove(&leader_id)?;
         for (_, item) in state.items_by_leader_view_id {
             item.view.set_leader_id(None, window, cx);
+        }
+
+        if let CollaboratorId::Agent(agent_thread_id) = leader_id {
+            cx.emit(Event::AgentFollowChanged {
+                agent_thread_id,
+                following: false,
+            });
         }
 
         if let CollaboratorId::PeerId(leader_peer_id) = leader_id {
@@ -9889,8 +9895,7 @@ pub fn open_workspace_by_id(
         let project_path_results = futures::future::join_all(project_path_tasks).await;
         let project_paths: Vec<(PathBuf, Option<ProjectPath>)> = paths_to_open
             .into_iter()
-            .zip(project_path_results.into_iter())
-            .map(|(path, project_path)| (path, project_path))
+            .zip(project_path_results)
             .collect();
 
         // Restore items from the serialized workspace

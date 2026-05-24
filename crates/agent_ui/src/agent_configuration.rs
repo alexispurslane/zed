@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod add_llm_provider_modal;
 pub mod configure_context_server_modal;
 mod configure_context_server_tools_modal;
@@ -27,7 +28,7 @@ use project::{
 };
 use settings::{Settings, update_settings_file};
 use ui::{
-    AiSettingItem, AiSettingItemSource, AiSettingItemStatus, ButtonStyle, Chip, ContextMenu,
+    AiSettingItem, AiSettingItemSource, AiSettingItemStatus, ButtonStyle, ContextMenu,
     Disclosure, Divider, DividerColor, ElevationIndex, LabelSize, PopoverMenu,
     Switch, Tooltip, WithScrollbar, prelude::*,
 };

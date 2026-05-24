@@ -5,7 +5,7 @@ use askpass::EncryptedPassword;
 use clap::Parser;
 use client::Client;
 use futures::channel::oneshot;
-use gpui::AppContext as _;
+
 use gpui::TaskExt;
 use http_client::FakeHttpClient;
 use language::LanguageRegistry;

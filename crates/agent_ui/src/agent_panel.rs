@@ -15,11 +15,10 @@ use xenomorphic_actions::agent::{
 use crate::ExpandMessageEditor;
 use crate::completion_provider::AgentContextSource;
 use crate::{
-    AgentDiffPane, ConversationView, CopyThreadToClipboard, Follow,
+    AgentDiffPane, CopyThreadToClipboard, Follow,
     LoadThreadFromClipboard, NewThread, OpenAgentDiff, ToggleNewThreadMenu,
 };
 use crate::{AgentInitialContent, NewAgentThread, NewNativeAgentThreadFromSummary};
-use agent_settings::AgentSettings;
 use settings::TerminalDockPosition;
 use terminal::terminal_settings::TerminalSettings;
 use workspace::{CollaboratorId, PathList, Workspace, dock::DockPosition};
@@ -405,6 +404,7 @@ fn build_conflicted_files_resolution_prompt(
     content
 }
 
+#[allow(dead_code)]
 fn format_timestamp_human(dt: &DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = now.signed_duration_since(*dt);
@@ -428,6 +428,7 @@ fn format_timestamp_human(dt: &DateTime<Utc>) -> String {
     format!("{} ({})", dt.to_rfc3339(), relative)
 }
 
+#[allow(dead_code)]
 fn thread_metadata_to_debug_json(
     metadata: &crate::thread_metadata_store::ThreadMetadata,
 ) -> serde_json::Value {

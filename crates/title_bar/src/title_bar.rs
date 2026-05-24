@@ -37,7 +37,7 @@ use std::sync::Arc;
 use theme::ActiveTheme;
 use title_bar_settings::TitleBarSettings;
 use ui::{
-    Avatar, ButtonLike, ContextMenu, ContextMenuEntry, IconButton, IconSize,
+    ButtonLike, ContextMenu, ContextMenuEntry, IconButton, IconSize,
     IconWithIndicator, Indicator, PopoverMenu, TintColor, Tooltip, prelude::*,
     utils::platform_title_bar_height,
 };
@@ -1005,7 +1005,7 @@ impl TitleBar {
     fn render_sidebar_toggle(
         &self,
         sidebar: &SidebarRenderState,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let on_right = sidebar.side == SidebarSide::Right;
         let is_open = sidebar.open;

@@ -52,7 +52,7 @@ pub(crate) fn xenomorph_dark() -> Theme {
     let _derelict = hsla(36.0 / 360., 41.0 / 100., 35.9 / 100., 1.0); // Derelict #816336
     let dormant = hsla(164.6 / 360., 37.9 / 100., 20.2 / 100., 1.0); // Dormant #20473D
     let hyperdream = hsla(274.6 / 360., 35.3 / 100., 67.3 / 100., 1.0); // Hyperdream #B08EC9
-    let acid_spray = hsla(91.8 / 360., 100.0 / 100., 64.5 / 100., 1.0); // Acid Spray #9FFF4A
+    let acid_spray = hsla(91.8 / 360., 1.0, 64.5 / 100., 1.0); // Acid Spray #9FFF4A
     let rebreather = hsla(180.0 / 360., 27.4 / 100., 54.1 / 100., 1.0); // Rebreather #6AAAAA
 
     const ADDED_COLOR: Hsla = Hsla {

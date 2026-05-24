@@ -3241,7 +3241,7 @@ impl GitPanel {
         })
     }
 
-    fn can_push_and_pull(&self, cx: &App) -> bool {
+    fn can_push_and_pull(&self, _cx: &App) -> bool {
         true
     }
 
@@ -3305,7 +3305,7 @@ impl GitPanel {
         }
     }
 
-    fn potential_co_authors(&self, cx: &App) -> Vec<(String, String)> {
+    fn potential_co_authors(&self, _cx: &App) -> Vec<(String, String)> {
         Vec::default()
     }
 

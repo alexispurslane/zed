@@ -14,7 +14,7 @@ const _: () = assert!(
      Forks: update APP_NAME in crates/paths/src/paths.rs when renaming the binary.",
 );
 
-use agent::{SharedThread, ThreadStore};
+use agent::SharedThread;
 use agent_thread::schema;
 use agent_ui::AgentSessionItem;
 use anyhow::{Context as _, Result};
@@ -31,7 +31,7 @@ use futures::{StreamExt, channel::oneshot};
 use git::GitHostingProviderRegistry;
 use git_ui::clone::clone_and_open;
 use gpui::{
-    App, AppContext, Application, AsyncApp, Focusable as _, QuitMode, Task, TaskExt,
+    App, AppContext, Application, AsyncApp, QuitMode, Task, TaskExt,
     UpdateGlobal as _, block_on,
 };
 use gpui_platform;
@@ -52,7 +52,7 @@ use proto;
 use recent_projects::{RemoteSettings, open_remote_project};
 use release_channel::{AppCommitSha, AppVersion, ReleaseChannel};
 use session::{AppSession, Session};
-use settings::{BaseKeymap, Settings, SettingsStore, watch_config_file};
+use settings::{Settings, SettingsStore, watch_config_file};
 use smol::future::poll_once;
 use std::{
     cell::RefCell,

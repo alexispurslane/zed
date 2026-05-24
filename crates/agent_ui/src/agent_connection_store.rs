@@ -1,5 +1,4 @@
 use std::rc::Rc;
-use std::sync::Arc;
 
 use agent_thread::{AgentConnection, LoadError};
 use agent_servers::{AgentServer, AgentServerDelegate};
@@ -181,7 +180,6 @@ impl AgentConnectionStore {
         cx.notify();
 
         cx.spawn({
-            let key = key.clone();
             let entry = entry.downgrade();
             async move |this, cx| match connect_task.await {
                 Ok(connected_state) => {

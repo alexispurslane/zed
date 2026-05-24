@@ -13,7 +13,6 @@ use theme_settings::ThemeSettings;
 use ui::{ButtonLike, TintColor, Tooltip, prelude::*};
 use workspace::{OpenOptions, Workspace};
 
-use crate::Agent;
 
 #[derive(IntoElement)]
 pub struct MentionCrease {

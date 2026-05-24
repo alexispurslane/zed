@@ -5,7 +5,6 @@ use language_model::{ConfiguredModel, LanguageModelRegistry, LanguageModelReques
 use language_models::provider::anthropic::telemetry::{
     AnthropicCompletionType, AnthropicEventData, AnthropicEventReporter, AnthropicEventType,
 };
-use std::time::Instant;
 use terminal::Terminal;
 use uuid::Uuid;
 
@@ -15,6 +14,7 @@ pub struct TerminalCodegen {
     generation: Task<()>,
     pub message_id: Option<String>,
     transaction: Option<TerminalTransaction>,
+    #[allow(dead_code)]
     session_id: Uuid,
 }
 
@@ -32,6 +32,7 @@ impl TerminalCodegen {
         }
     }
 
+    #[allow(dead_code)]
     pub fn session_id(&self) -> Uuid {
         self.session_id
     }
@@ -44,9 +45,6 @@ impl TerminalCodegen {
         };
 
         let anthropic_reporter = AnthropicEventReporter::new(&model, cx);
-        let session_id = self.session_id;
-        let model_telemetry_id = model.telemetry_id();
-        let model_provider_id = model.provider_id().to_string();
 
         self.status = CodegenStatus::Pending;
         self.transaction = Some(TerminalTransaction::start(self.terminal.clone()));
@@ -65,14 +63,9 @@ impl TerminalCodegen {
                     let message_id = message_id.clone();
                     let anthropic_reporter = anthropic_reporter.clone();
                     async move {
-                        let mut response_latency = None;
-                        let request_start = Instant::now();
                         let task = async {
                             let mut chunks = response?.stream;
                             while let Some(chunk) = chunks.next().await {
-                                if response_latency.is_none() {
-                                    response_latency = Some(request_start.elapsed());
-                                }
                                 let chunk = chunk?;
                                 hunks_tx.send(chunk).await?;
                             }
@@ -81,21 +74,6 @@ impl TerminalCodegen {
                         };
 
                         let result = task.await;
-
-                        let error_message = result.as_ref().err().map(|error| error.to_string());
-
-                        telemetry::event!(
-                            "Assistant Responded",
-                            session_id = session_id.to_string(),
-                            kind = "inline_terminal",
-                            phase = "response",
-                            model = model_telemetry_id,
-                            model_provider = model_provider_id,
-                            language_name = Option::<&str>::None,
-                            message_id = message_id,
-                            response_latency = response_latency,
-                            error_message = error_message,
-                        );
 
                         anthropic_reporter.report(AnthropicEventData {
                             completion_type: AnthropicCompletionType::Terminal,

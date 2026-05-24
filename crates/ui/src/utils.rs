@@ -28,8 +28,6 @@ pub fn is_light(cx: &mut App) -> bool {
 pub fn reveal_in_file_manager_label(is_remote: bool) -> &'static str {
     if cfg!(target_os = "macos") && !is_remote {
         "Reveal in Finder"
-    } else if false && !is_remote {
-        "Reveal in File Explorer"
     } else {
         "Reveal in File Manager"
     }

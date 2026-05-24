@@ -8,7 +8,6 @@ use gpui::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
-use project::ProjectGroupKey;
 use settings::SidebarSide;
 use ui::{
     ContextMenu, Icon, IconName, Label, LabelSize, ListItem, ListItemSpacing,
@@ -65,22 +64,8 @@ impl WorkspaceSidebar {
         }
     }
 
-    fn multi_workspace(&self, cx: &App) -> Option<Entity<MultiWorkspace>> {
+    fn multi_workspace(&self, _cx: &App) -> Option<Entity<MultiWorkspace>> {
         self.multi_workspace.as_ref().and_then(|mw| mw.upgrade())
-    }
-
-    fn toggle_project_group(&mut self, group_key: &ProjectGroupKey, cx: &mut Context<Self>) {
-        let Some(multi_workspace) = self.multi_workspace(cx) else {
-            return;
-        };
-        multi_workspace.update(cx, |multi_workspace, cx| {
-            if let Some(group) = multi_workspace.group_state_by_key_mut(group_key) {
-                group.expanded = !group.expanded;
-            }
-            cx.notify();
-        });
-        cx.emit(SidebarEvent::SerializeNeeded);
-        cx.notify();
     }
 
     fn project_name(paths: &PathList) -> SharedString {
@@ -387,7 +372,7 @@ impl Render for WorkspaceSidebar {
                                 });
                             }
                         });
-                        menu.context(focus_handle.clone())
+                        menu.context(focus_handle)
                     })
                 })
                 .into_any_element();
@@ -628,7 +613,7 @@ impl Render for WorkspaceSidebar {
                                     }
                                 });
 
-                                menu.context(focus_handle.clone())
+                                menu.context(focus_handle)
                             })
                         });
 

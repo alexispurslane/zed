@@ -595,7 +595,7 @@ impl Member {
     /// Find a pane horizontally opposite to the given pane within the tree.
     /// Walks the tree; when it finds the pane inside a Horizontal axis,
     /// returns the first pane from the opposite side(s).
-    fn find_opposite_horizontal(&self, target: &Entity<Pane>, cx: &App) -> Option<Entity<Pane>> {
+    fn find_opposite_horizontal(&self, target: &Entity<Pane>, _cx: &App) -> Option<Entity<Pane>> {
         match self {
             Member::Pane(pane) => {
                 // Single pane — no opposite exists
@@ -641,7 +641,7 @@ impl Member {
                 } else {
                     // Vertical axis — recurse into children
                     for member in &axis.members {
-                        if let Some(pane) = member.find_opposite_horizontal(target, cx) {
+                        if let Some(pane) = member.find_opposite_horizontal(target, _cx) {
                             return Some(pane);
                         }
                     }

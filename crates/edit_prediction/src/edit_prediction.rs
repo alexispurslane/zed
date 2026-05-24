@@ -7,7 +7,6 @@ use client::{Client, EditPredictionUsage, NeedsLlmTokenRefresh, global_llm_token
     MAX_EDIT_PREDICTION_REJECTIONS_PER_REQUEST,
     PREFERRED_EXPERIMENT_HEADER_NAME, RejectEditPredictionsBody,
     XENOMORPHIC_VERSION_HEADER_NAME, LlmApiToken, OrganizationId,
-    AcceptEditPredictionBody,
 };
 use collections::{HashMap, HashSet};
 use copilot::{Copilot, Reinstall, SignIn, SignOut};
@@ -51,7 +50,6 @@ use std::mem;
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
-use std::str::FromStr as _;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -107,7 +105,6 @@ const EDIT_HISTORY_DIFF_SIZE_LIMIT: usize = 2048 * 3; // ~2048 tokens or ~50% of
 const COLLABORATOR_EDIT_LOCALITY_CONTEXT_TOKENS: usize = 512;
 const LAST_CHANGE_GROUPING_TIME: Duration = Duration::from_secs(1);
 const REJECT_REQUEST_DEBOUNCE: Duration = Duration::from_secs(15);
-const EDIT_PREDICTION_SETTLED_EVENT: &str = "Edit Prediction Settled";
 const EDIT_PREDICTION_SETTLED_TTL: Duration = Duration::from_secs(60 * 5);
 const EDIT_PREDICTION_SETTLED_QUIESCENCE: Duration = Duration::from_secs(10);
 
@@ -479,6 +476,7 @@ impl std::ops::Deref for BufferEditPrediction<'_> {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct PendingSettledPrediction {
     request_id: EditPredictionId,
     editable_anchor_range: Range<Anchor>,
@@ -1637,30 +1635,9 @@ impl EditPredictionStore {
             });
 
             for (pending_prediction, settled_editable_region) in ready_predictions {
-                let PendingSettledPrediction {
-                    request_id,
-                    editable_region_before_prediction,
-                    predicted_editable_region,
-                    ts_error_count_before_prediction,
-                    ts_error_count_after_prediction,
-                    example,
-                    e2e_latency,
-                    ..
-                } = pending_prediction;
-                let settled_editable_region_for_metrics = settled_editable_region.clone();
-                let kept_rate_result = cx
-                    .background_spawn(async move {
-                        compute_kept_rate(
-                            &editable_region_before_prediction,
-                            &predicted_editable_region,
-                            &settled_editable_region_for_metrics,
-                        )
-                    })
-                    .await;
-
                 #[cfg(test)]
                 {
-                    let request_id = request_id.clone();
+                    let request_id = pending_prediction.request_id.clone();
                     let settled_editable_region = settled_editable_region.clone();
                     this.update(cx, |this, _| {
                         if let Some(callback) = &this.settled_event_callback {
@@ -1668,28 +1645,10 @@ impl EditPredictionStore {
                         }
                     });
                 }
+                #[cfg(not(test))]
+                drop((pending_prediction, settled_editable_region));
 
-                telemetry::event!(
-                    EDIT_PREDICTION_SETTLED_EVENT,
-                    request_id = request_id.0.clone(),
-                    settled_editable_region,
-                    ts_error_count_before_prediction,
-                    ts_error_count_after_prediction,
-                    edit_bytes_candidate_new = kept_rate_result.candidate_new_chars,
-                    edit_bytes_reference_new = kept_rate_result.reference_new_chars,
-                    edit_bytes_candidate_deleted = kept_rate_result.candidate_deleted_chars,
-                    edit_bytes_reference_deleted = kept_rate_result.reference_deleted_chars,
-                    edit_bytes_kept = kept_rate_result.kept_chars,
-                    edit_bytes_correctly_deleted = kept_rate_result.correctly_deleted_chars,
-                    edit_bytes_discarded = kept_rate_result.discarded_chars,
-                    edit_bytes_context = kept_rate_result.context_chars,
-                    edit_bytes_kept_rate = kept_rate_result.kept_rate,
-                    edit_bytes_recall_rate = kept_rate_result.recall_rate,
-                    example,
-                    e2e_latency = e2e_latency.as_millis(),
-                );
             }
-
             next_wake_time = oldest_edited_at.map(|time| time + EDIT_PREDICTION_SETTLED_QUIESCENCE);
         }
     }
@@ -2774,8 +2733,8 @@ impl EditPredictionStore {
     pub fn rate_prediction(
         &mut self,
         prediction: &EditPrediction,
-        rating: EditPredictionRating,
-        feedback: String,
+        _rating: EditPredictionRating,
+        _feedback: String,
         cx: &mut Context<Self>,
     ) {
         self.rated_predictions.insert(prediction.id.clone());

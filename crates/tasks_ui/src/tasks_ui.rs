@@ -150,7 +150,7 @@ pub fn toggle_modal(
     let workspace_handle = workspace.weak_handle();
     let can_open_modal = workspace
         .project()
-        .read_with(cx, |project, _| true);
+        .read_with(cx, |_, _| true);
     if can_open_modal {
         let task_contexts = task_contexts(workspace, window, cx);
         cx.spawn_in(window, async move |workspace, cx| {

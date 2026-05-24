@@ -1,5 +1,5 @@
 // Modules are loaded via lib.rs
-use action_log::{ActionLog, ActionLogTelemetry};
+use action_log::ActionLog;
 use crate::schema;
 use crate::connection::{AgentConnection, UserMessageId, PermissionOptions};
 use crate::diff::Diff;
@@ -1098,15 +1098,6 @@ impl StreamingTextBuffer {
     const REVEAL_TARGET: f32 = 200.0;
 }
 
-impl From<&AgentThread> for ActionLogTelemetry {
-    fn from(value: &AgentThread) -> Self {
-        Self {
-            agent_telemetry_id: value.connection().telemetry_id(),
-            session_id: value.session_id.0.clone(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum AgentThreadEvent {
     PromptUpdated,
@@ -1907,24 +1898,6 @@ impl AgentThread {
         let path_style = self.project.read(cx).path_style(cx);
         let id = update.tool_call_id.clone();
 
-        let agent_telemetry_id = self.connection().telemetry_id();
-        let session = self.session_id();
-        let parent_session_id = self.parent_session_id();
-        if let ToolCallStatus::Completed | ToolCallStatus::Failed = status {
-            let status = if matches!(status, ToolCallStatus::Completed) {
-                "completed"
-            } else {
-                "failed"
-            };
-            telemetry::event!(
-                "Agent Tool Call Completed",
-                agent_telemetry_id,
-                session,
-                parent_session_id,
-                status
-            );
-        }
-
         if let Some(ix) = self.index_for_tool_call(&id) {
             let AgentThreadEntry::ToolCall(call) = &mut self.entries[ix] else {
                 unreachable!()
@@ -2503,7 +2476,6 @@ impl AgentThread {
         };
 
         Self::flush_streaming_text(&mut self.streaming_text_buffer, cx);
-        let telemetry = ActionLogTelemetry::from(&*self);
         cx.spawn(async move |this, cx| {
             cx.update(|cx| truncate.run(id.clone(), cx)).await?;
             this.update(cx, |this, cx| {
@@ -2529,7 +2501,7 @@ impl AgentThread {
                     }
                 }
                 this.action_log().update(cx, |action_log, cx| {
-                    action_log.reject_all_edits(Some(telemetry), cx)
+                    action_log.reject_all_edits(cx)
                 })
             })?
             .await;

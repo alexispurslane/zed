@@ -6,10 +6,12 @@ pub struct TitleBarSettings {
     pub show_branch_status_icon: bool,
     pub show_onboarding_banner: bool,
     #[deprecated = "Cloud user picture no longer supported"]
+    #[allow(dead_code)]
     pub show_user_picture: bool,
     pub show_branch_name: bool,
     pub show_project_items: bool,
     #[deprecated = "Cloud sign-in no longer supported"]
+    #[allow(dead_code)]
     pub show_sign_in: bool,
     pub show_user_menu: bool,
     pub show_menus: bool,

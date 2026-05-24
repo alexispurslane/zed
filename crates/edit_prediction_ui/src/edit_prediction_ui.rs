@@ -13,7 +13,7 @@ use language::language_settings::AllLanguageSettings;
 use project::DisableAiSettings;
 use rate_prediction_modal::RatePredictionsModal;
 use settings::{Settings as _, SettingsStore};
-use std::any::{Any as _, TypeId};
+use std::any::TypeId;
 use ui::{App, prelude::*};
 use workspace::{SplitDirection, Workspace};
 

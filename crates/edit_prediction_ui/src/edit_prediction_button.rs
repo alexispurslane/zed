@@ -335,7 +335,7 @@ impl Render for EditPredictionButton {
 
                 let ep_icon;
                 let tooltip_meta;
-                let mut missing_token = false;
+                let missing_token;
 
                 let mercury_has_error =
                     edit_prediction::EditPredictionStore::try_global(cx).is_some_and(
@@ -620,7 +620,7 @@ impl EditPredictionButton {
     pub fn build_language_settings_menu(
         &self,
         mut menu: ContextMenu,
-        window: &Window,
+        _window: &Window,
         cx: &mut App,
     ) -> ContextMenu {
         let fs = self.fs.clone();
@@ -666,7 +666,7 @@ impl EditPredictionButton {
             let language_name = language.name();
 
             menu = menu.toggleable_entry(
-                language_name.clone(),
+                language_name,
                 language_enabled,
                 IconPosition::Start,
                 None,
@@ -693,7 +693,6 @@ impl EditPredictionButton {
             });
         menu = menu.item(entry);
 
-        let provider = settings.edit_predictions.provider;
         let current_mode = settings.edit_predictions_mode();
         let subtle_mode = matches!(current_mode, EditPredictionsMode::Subtle);
         let eager_mode = matches!(current_mode, EditPredictionsMode::Eager);
@@ -1259,35 +1258,12 @@ fn toggle_edit_prediction_mode(fs: Arc<dyn Fs>, mode: EditPredictionsMode, cx: &
 }
 
 fn emit_edit_prediction_menu_opened(
-    provider: &str,
-    file: &Option<Arc<dyn File>>,
-    language: &Option<Arc<Language>>,
-    project: &WeakEntity<Project>,
-    cx: &App,
+    _provider: &str,
+    _file: &Option<Arc<dyn File>>,
+    _language: &Option<Arc<Language>>,
+    _project: &WeakEntity<Project>,
+    _cx: &App,
 ) {
-    let language_name = language.as_ref().map(|l| l.name());
-    let edit_predictions_enabled_for_language =
-        LanguageSettings::resolve(None, language_name.as_ref(), cx).show_edit_predictions;
-    let file_extension = file
-        .as_ref()
-        .and_then(|f| {
-            std::path::Path::new(f.file_name(cx))
-                .extension()
-                .and_then(|e| e.to_str())
-        })
-        .map(|s| s.to_string());
-    let is_via_ssh = project
-        .upgrade()
-        .map(|p| p.read(cx).is_via_remote_server())
-        .unwrap_or(false);
-    telemetry::event!(
-        "Toolbar Menu Opened",
-        name = "Edit Predictions",
-        provider,
-        file_extension,
-        edit_predictions_enabled_for_language,
-        is_via_ssh,
-    );
 }
 
 fn copilot_settings_url(enterprise_uri: Option<&str>) -> String {

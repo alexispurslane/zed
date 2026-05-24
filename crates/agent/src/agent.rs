@@ -900,7 +900,6 @@ impl NativeAgent {
         let shared_task = cx
             .spawn({
                 let id = id.clone();
-                let project = project.clone();
                 async move |this, cx| {
                     let thread = match task.await {
                         Ok(thread) => thread,
@@ -1861,7 +1860,6 @@ impl NativeThreadEnvironment {
                 Ok(agent.register_session(subagent_thread.clone(), project_id, 1, cx))
             })??;
 
-        let depth = current_depth + 1;
 
         telemetry::event!(
             "Subagent Started",
@@ -1887,16 +1885,9 @@ impl NativeThreadEnvironment {
             anyhow::Ok((session.thread.clone(), session.agent_thread.clone()))
         })??;
 
-        let depth = subagent_thread.read(cx).depth();
 
-        if let Some(parent_thread_entity) = self.thread.upgrade() {
-            telemetry::event!(
-                "Subagent Started",
-                session = parent_thread_entity.read(cx).id().to_string(),
-                subagent_session = session_id.to_string(),
-                depth,
-                is_resumed = true,
-            );
+        if let Some(_parent_thread_entity) = self.thread.upgrade() {
+            // Telemetry removed
         }
 
         self.prompt_subagent(session_id, subagent_thread, agent_thread)

@@ -6,9 +6,9 @@ use agent_thread::{
     ToolCall, ToolCallContent, ToolCallStatus, UserMessageId,
 };
 use agent_thread::{AgentConnection, Plan};
-use action_log::{ActionLog, ActionLogTelemetry, DiffStats};
+use action_log::{ActionLog, DiffStats};
 use agent::{
-    NativeAgentServer, NativeAgentSessionList, NoModelConfiguredError, SharedThread, ThreadStore,
+    NativeAgentSessionList, NoModelConfiguredError, SharedThread, ThreadStore,
 };
 use agent_thread::schema;
 #[cfg(test)]
@@ -40,12 +40,11 @@ use markdown::{
 use parking_lot::RwLock;
 use project::{AgentId, Project};
 
-
 use crate::DEFAULT_THREAD_TITLE;
 use crate::message_editor::SessionCapabilities;
 use rope::Point;
 use settings::{
-    NotifyWhenAgentWaiting, Settings as _, SettingsStore, SidebarSide, ThinkingBlockDisplay,
+    NotifyWhenAgentWaiting, Settings as _, SettingsStore, ThinkingBlockDisplay,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -64,7 +63,7 @@ use util::{ResultExt, size::format_file_size, time::duration_alt_display};
 use util::{debug_panic, defer};
 use workspace::PathList;
 use workspace::{
-    CollaboratorId, MultiWorkspace, NewTerminal, Toast, Workspace, notifications::NotificationId,
+    MultiWorkspace, NewTerminal, Toast, Workspace, notifications::NotificationId,
 };
 use xenomorphic_actions::agent::{Chat, ToggleModelSelector};
 
@@ -373,16 +372,6 @@ impl Conversation {
         let Some(thread) = self.threads.get(&session_id) else {
             return;
         };
-        let agent_telemetry_id = thread.read(cx).connection().telemetry_id();
-        let session_id = thread.read(cx).session_id().clone();
-
-        telemetry::event!(
-            "Agent Tool Call Authorized",
-            agent = agent_telemetry_id,
-            session = session_id,
-            option = outcome.option_kind
-        );
-
         thread.update(cx, |thread, cx| {
             thread.authorize_tool_call(tool_call_id, outcome, cx);
         });
@@ -798,7 +787,7 @@ impl ConversationView {
         title: Option<SharedString>,
         project: Entity<Project>,
         initial_content: Option<AgentInitialContent>,
-        source: &'static str,
+        _source: &'static str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> ServerState {
@@ -809,12 +798,6 @@ impl ConversationView {
         });
 
         let connect_result = connection_entry.read(cx).wait_for_connection();
-
-        let side = match AgentSettings::get_global(cx).sidebar_side() {
-            SidebarSide::Left => "left",
-            SidebarSide::Right => "right",
-        };
-        let thread_location = "current_worktree";
 
         let load_task = cx.spawn_in(window, async move |this, cx| {
             let connection = match connect_result.await {
@@ -828,14 +811,6 @@ impl ConversationView {
                     return;
                 }
             };
-
-            telemetry::event!(
-                "Agent Thread Started",
-                agent = connection.telemetry_id(),
-                source = source,
-                side = side,
-                thread_location = thread_location
-            );
 
             let resumed_without_history = false;
             let result = if let Some(session_id) = session_id_to_load.clone() {
@@ -868,10 +843,7 @@ impl ConversationView {
                 return;
             };
 
-            let result = match result.await {
-                Err(e) => Err(e),
-                Ok(thread) => Ok(thread),
-            };
+            let result = result.await;
 
             this.update_in(cx, |this, window, cx| {
                 match result {
@@ -1092,7 +1064,6 @@ impl ConversationView {
                 self.focus_handle.focus(window, cx)
             }
         }
-        self.emit_load_error_telemetry(&err);
         self.set_server_state(ServerState::LoadError { error: err }, cx);
     }
 
@@ -1509,24 +1480,6 @@ impl ConversationView {
         })
     }
 
-    fn emit_load_error_telemetry(&self, error: &LoadError) {
-        let error_kind = match error {
-            LoadError::Unsupported { .. } => "unsupported",
-            LoadError::FailedToInstall(_) => "failed_to_install",
-            LoadError::Exited { .. } => "exited",
-            LoadError::Other(_) => "other",
-        };
-
-        let agent_name = self.agent.agent_id();
-
-        telemetry::event!(
-            "Agent Panel Error Shown",
-            agent = agent_name,
-            kind = error_kind,
-            message = error.to_string(),
-        );
-    }
-
     fn render_load_error(
         &self,
         e: &LoadError,
@@ -1881,7 +1834,6 @@ impl ConversationView {
         let root_thread = root_thread.read(cx).thread.read(cx);
         let root_session_id = root_thread.session_id().clone();
         let root_work_dirs = root_thread.work_dirs().cloned();
-        let root_title = root_thread.title();
 
         // TODO: Change this once we have title summarization for external agents.
         let title = self.agent.agent_id().0;
@@ -1895,7 +1847,6 @@ impl ConversationView {
                         title,
                         root_session_id,
                         root_work_dirs,
-                        root_title,
                         window,
                         primary,
                         cx,
@@ -1911,7 +1862,6 @@ impl ConversationView {
                         title.clone(),
                         root_session_id.clone(),
                         root_work_dirs.clone(),
-                        root_title.clone(),
                         window,
                         screen,
                         cx,
@@ -1931,7 +1881,6 @@ impl ConversationView {
         title: SharedString,
         root_session_id: schema::SessionId,
         root_work_dirs: Option<PathList>,
-        root_title: Option<SharedString>,
         window: &mut Window,
         screen: Rc<dyn PlatformDisplay>,
         cx: &mut Context<Self>,
@@ -1971,10 +1920,8 @@ impl ConversationView {
                             cx.activate(true);
 
                             let workspace_handle = this.workspace.clone();
-                            let agent = this.connection_key.clone();
                             let root_session_id = root_session_id.clone();
                             let root_work_dirs = root_work_dirs.clone();
-                            let root_title = root_title.clone();
 
                             cx.defer(move |cx| {
                                 handle
@@ -2072,23 +2019,6 @@ impl ConversationView {
         {
             entry_view_state.update(cx, |entry_view_state, cx| {
                 entry_view_state.agent_ui_font_size_changed(cx);
-            });
-        }
-    }
-
-    pub(crate) fn insert_dragged_files(
-        &self,
-        paths: Vec<project::ProjectPath>,
-        added_worktrees: Vec<Entity<project::Worktree>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(active_thread) = self.active_thread() {
-            active_thread.update(cx, |thread, cx| {
-                thread.message_editor.update(cx, |editor, cx| {
-                    editor.insert_dragged_files(paths, added_worktrees, window, cx);
-                    editor.focus_handle(cx).focus(window, cx);
-                })
             });
         }
     }

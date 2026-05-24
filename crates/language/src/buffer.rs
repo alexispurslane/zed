@@ -2589,7 +2589,6 @@ impl Buffer {
     #[allow(deprecated)]
     pub fn set_agent_selections(
         &mut self,
-        replica_id: ReplicaId,
         selections: Arc<[Selection<Anchor>]>,
         line_mode: bool,
         cursor_shape: CursorShape,

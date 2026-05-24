@@ -1,6 +1,5 @@
 mod persistence;
 
-use client::Client;
 use collections::HashMap;
 use component::{ComponentId, ComponentMetadata, ComponentStatus, components};
 use gpui::{

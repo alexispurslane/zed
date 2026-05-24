@@ -1,6 +1,5 @@
 use client::Client;
 use anyhow::Context as _;
-use gpui::AppContext as _;
 use std::{sync::Arc, thread::ThreadId, time::Duration};
 use util::ResultExt;
 use futures::StreamExt;

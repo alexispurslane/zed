@@ -112,6 +112,7 @@ impl AgentContextSource {
         None
     }
 
+    #[allow(dead_code)]
     pub(crate) fn exists(&self, workspace: &Workspace, cx: &App) -> bool {
         match self {
             Self::Editor(handle) => handle.upgrade().is_some(),
@@ -986,7 +987,7 @@ impl<T: PromptCompletionProviderDelegate> PromptCompletionProvider<T> {
     ) -> Task<Vec<Match>> {
         let mut recent = Vec::with_capacity(6);
 
-        let mut mentions = self
+        let mentions = self
             .mention_set
             .read_with(cx, |store, _cx| store.mentions());
         let workspace = workspace.read(cx);

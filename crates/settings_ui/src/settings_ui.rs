@@ -1420,14 +1420,6 @@ enum SettingsUiFile {
 }
 
 impl SettingsUiFile {
-    fn setting_type(&self) -> &'static str {
-        match self {
-            SettingsUiFile::User => "User",
-            SettingsUiFile::Project(_) => "Project",
-            SettingsUiFile::Server(_) => "Server",
-        }
-    }
-
     fn is_server(&self) -> bool {
         matches!(self, SettingsUiFile::Server(_))
     }
@@ -2174,15 +2166,6 @@ impl SettingsWindow {
         cx.notify();
     }
 
-    fn rebuild_pages(&mut self, window: &mut Window, cx: &mut Context<SettingsWindow>) {
-        self.pages.clear();
-        self.navbar_entries.clear();
-        self.navbar_focus_subscriptions.clear();
-        self.content_handles.clear();
-        self.build_ui(window, cx);
-        self.build_search_index();
-    }
-
     #[track_caller]
     fn fetch_files(&mut self, window: &mut Window, cx: &mut Context<SettingsWindow>) {
         self.worktree_root_dirs.clear();
@@ -2765,10 +2748,6 @@ impl SettingsWindow {
                                                 ))
                                         })
                                         .on_click({
-                                            let category = this.pages[entry.page_index].title;
-                                            let subcategory =
-                                                (!entry.is_root).then_some(entry.title);
-
                                             cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
                                                 if this.toggle_navbar_entry_on_double_click(
                                                         entry_index,
@@ -2779,12 +2758,6 @@ impl SettingsWindow {
                                                 {
                                                     return;
                                                 }
-
-                                                telemetry::event!(
-                                                    "Settings Navigation Clicked",
-                                                    category = category,
-                                                    subcategory = subcategory
-                                                );
 
                                                 this.open_and_scroll_to_navbar_entry(
                                                     entry_index,
@@ -3913,13 +3886,11 @@ fn open_user_settings_in_workspace(
 
 fn update_settings_file(
     file: SettingsUiFile,
-    file_name: Option<&'static str>,
+    _file_name: Option<&'static str>,
     window: &mut Window,
     cx: &mut App,
     update: impl 'static + Send + FnOnce(&mut SettingsContent, &App),
 ) -> Result<()> {
-    telemetry::event!("Settings Change", setting = file_name, type = file.setting_type());
-
     match file {
         SettingsUiFile::Project((worktree_id, rel_path)) => {
             let rel_path = rel_path.join(paths::local_settings_file_relative_path());

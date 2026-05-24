@@ -15,7 +15,7 @@ use gpui::List;
 use gpui::TaskExt;
 use heapless::Vec as ArrayVec;
 use language_model::{LanguageModelEffortLevel, Speed};
-use settings::{SidebarSide, update_settings_file};
+use settings::update_settings_file;
 use ui::{ButtonLike, SpinnerLabel, SpinnerVariant, SplitButton, SplitButtonStyle, Tab};
 use workspace::{AgentThreadId, CollaboratorId, SERIALIZATION_THROTTLE_TIME};
 
@@ -235,7 +235,6 @@ pub struct ThreadView {
     pub(super) thread_error: Option<ThreadError>,
     pub thread_error_markdown: Option<Entity<Markdown>>,
     pub token_limit_callout_dismissed: bool,
-    pub last_token_limit_telemetry: Option<agent_thread::TokenUsageRatio>,
     thread_feedback: ThreadFeedbackState,
     pub list_state: ListState,
     pub session_capabilities: SharedSessionCapabilities,
@@ -377,9 +376,7 @@ impl ThreadView {
             editor
         });
 
-        let show_codex_windows_warning = false
-            && project.upgrade().is_some_and(|p| p.read(cx).is_local())
-            && agent_id.as_ref() == "Codex";
+        let show_codex_windows_warning = false;
 
         let title_editor = {
             let can_edit = thread.update(cx, |thread, cx| thread.can_set_title(cx));
@@ -433,6 +430,12 @@ impl ThreadView {
             }));
         }));
 
+        // Subscribe to workspace events so we can react when another agent thread is
+        // followed, which should unfollow this thread (mutual exclusion).
+        if let Some(workspace_entity) = workspace.upgrade() {
+            subscriptions.push(cx.subscribe_in(&workspace_entity, window, Self::handle_workspace_event));
+        }
+
         let mut this = Self {
             session_id,
             parent_session_id,
@@ -456,7 +459,6 @@ impl ThreadView {
             thread_error: None,
             thread_error_markdown: None,
             token_limit_callout_dismissed: false,
-            last_token_limit_telemetry: None,
             thread_feedback: Default::default(),
             expanded_tool_calls: HashSet::default(),
             expanded_tool_call_raw_inputs: HashSet::default(),
@@ -799,49 +801,8 @@ impl ThreadView {
         if let Some(usage) = self.thread.read(cx).token_usage() {
             if let Some(tokens) = &mut self.turn_fields.turn_tokens {
                 *tokens += usage.output_tokens;
-                self.emit_token_limit_telemetry_if_needed(cx);
             }
         }
-    }
-
-    fn emit_token_limit_telemetry_if_needed(&mut self, cx: &App) {
-        let (ratio, agent_telemetry_id, session_id) = {
-            let thread_data = self.thread.read(cx);
-            let Some(token_usage) = thread_data.token_usage() else {
-                return;
-            };
-            (
-                token_usage.ratio(),
-                thread_data.connection().telemetry_id(),
-                thread_data.session_id().clone(),
-            )
-        };
-
-        let kind = match ratio {
-            agent_thread::TokenUsageRatio::Normal => {
-                self.last_token_limit_telemetry = None;
-                return;
-            }
-            agent_thread::TokenUsageRatio::Warning => "warning",
-            agent_thread::TokenUsageRatio::Exceeded => "exceeded",
-        };
-
-        let should_skip = self
-            .last_token_limit_telemetry
-            .as_ref()
-            .is_some_and(|last| *last >= ratio);
-        if should_skip {
-            return;
-        }
-
-        self.last_token_limit_telemetry = Some(ratio);
-
-        telemetry::event!(
-            "Agent Token Limit Warning",
-            agent = agent_telemetry_id,
-            session_id = session_id,
-            kind = kind,
-        );
     }
 
     // sending
@@ -928,27 +889,17 @@ impl ThreadView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let session_id = self.thread.read(cx).session_id().clone();
-        let parent_session_id = self.thread.read(cx).parent_session_id().cloned();
-        let agent_telemetry_id = self.thread.read(cx).connection().telemetry_id();
         let is_first_message = self.thread.read(cx).entries().is_empty();
         let thread = self.thread.downgrade();
 
         self.is_loading_contents = true;
 
-        let model_id = self.current_model_id(cx);
-        let mode_id = self.current_mode_id(cx);
         let guard = cx.new(|_| ());
         cx.observe_release(&guard, |this, _guard, cx| {
             this.is_loading_contents = false;
             cx.notify();
         })
         .detach();
-
-        let side = match AgentSettings::get_global(cx).sidebar_side() {
-            SidebarSide::Left => "left",
-            SidebarSide::Right => "right",
-        };
 
         let task = cx.spawn_in(window, async move |this, cx| {
             let Some((contents, tracked_buffers)) = contents_task.await? else {
@@ -1003,7 +954,6 @@ impl ThreadView {
                 }
             }
 
-            let turn_start_time = Instant::now();
             let send = thread.update(cx, |thread, cx| {
                 thread.action_log().update(cx, |action_log, cx| {
                     for buffer in tracked_buffers {
@@ -1011,16 +961,6 @@ impl ThreadView {
                     }
                 });
                 drop(guard);
-
-                telemetry::event!(
-                    "Agent Message Sent",
-                    agent = agent_telemetry_id,
-                    session = session_id,
-                    parent_session_id = parent_session_id.as_ref().map(|id| id.to_string()),
-                    model = model_id,
-                    mode = mode_id,
-                    side = side
-                );
 
                 thread.send(contents, cx)
             })?;
@@ -1031,25 +971,10 @@ impl ThreadView {
             });
 
             let res = send.await;
-            let turn_time_ms = turn_start_time.elapsed().as_millis();
             drop(_stop_turn);
-            let status = if res.is_ok() {
+            if res.is_ok() {
                 let _ = this.update(cx, |this, _| this.in_flight_prompt.take());
-                "success"
-            } else {
-                "failure"
-            };
-            telemetry::event!(
-                "Agent Turn Completed",
-                agent = agent_telemetry_id,
-                session = session_id,
-                parent_session_id = parent_session_id.as_ref().map(|id| id.to_string()),
-                model = model_id,
-                mode = mode_id,
-                status,
-                turn_time_ms,
-                side = side
-            );
+            }
             res.map(|_| ())
         });
 
@@ -1127,86 +1052,7 @@ impl ThreadView {
         cx.notify();
     }
 
-    fn emit_thread_error_telemetry(&self, error: &ThreadError, cx: &mut Context<Self>) {
-        let (error_kind, message): (&str, SharedString) = match error {
-                ThreadError::PaymentRequired => (
-                    "payment_required",
-                    "You reached your usage limit.".into(),
-                ),
-                ThreadError::Refusal => {
-                    let model_or_agent_name = self.current_model_name(cx);
-                    let message = format!(
-                        "{} refused to respond to this prompt. This can happen when a model believes the prompt violates its content policy or safety guidelines, so rephrasing it can sometimes address the issue.",
-                        model_or_agent_name
-                    );
-                    ("refusal", message.into())
-                }
-                ThreadError::RateLimitExceeded { provider } => (
-                    "rate_limit_exceeded",
-                    format!("{provider}'s rate limit was reached.").into(),
-                ),
-                ThreadError::ServerOverloaded { provider } => (
-                    "server_overloaded",
-                    format!("{provider}'s servers are temporarily unavailable.").into(),
-                ),
-                ThreadError::PromptTooLarge => (
-                    "prompt_too_large",
-                    "Context too large for the model's context window.".into(),
-                ),
-                ThreadError::NoApiKey { provider } => (
-                    "no_api_key",
-                    format!("No API key configured for {provider}.").into(),
-                ),
-                ThreadError::StreamError { provider } => (
-                    "stream_error",
-                    format!("Connection to {provider}'s API was interrupted.").into(),
-                ),
-                ThreadError::InvalidApiKey { provider } => (
-                    "invalid_api_key",
-                    format!("Invalid or expired API key for {provider}.").into(),
-                ),
-                ThreadError::PermissionDenied { provider } => (
-                    "permission_denied",
-                    format!(
-                        "{provider}'s API rejected the request due to insufficient permissions."
-                    )
-                    .into(),
-                ),
-                ThreadError::RequestFailed => (
-                    "request_failed",
-                    "Request could not be completed after multiple attempts.".into(),
-                ),
-                ThreadError::MaxOutputTokens => (
-                    "max_output_tokens",
-                    "Model reached its maximum output length.".into(),
-                ),
-                ThreadError::NoModelSelected => {
-                    ("no_model_selected", "No model selected.".into())
-                }
-                ThreadError::ApiError { provider } => (
-                    "api_error",
-                    format!("{provider}'s API returned an unexpected error.").into(),
-                ),
-                ThreadError::Other { message } => ("other", message.clone()),
-            };
-
-        let agent_telemetry_id = self.thread.read(cx).connection().telemetry_id();
-        let session_id = self.thread.read(cx).session_id().clone();
-        let parent_session_id = self
-            .thread
-            .read(cx)
-            .parent_session_id()
-            .map(|id| id.to_string());
-
-        telemetry::event!(
-            "Agent Panel Error Shown",
-            agent = agent_telemetry_id,
-            session_id = session_id,
-            parent_session_id = parent_session_id,
-            kind = error_kind,
-            message = message,
-        );
-    }
+    fn emit_thread_error_telemetry(&self, _error: &ThreadError, _cx: &mut Context<Self>) {}
 
     pub fn cancel_generation(&mut self, cx: &mut Context<Self>) {
         self.thread_retry_status.take();
@@ -1277,7 +1123,7 @@ impl ThreadView {
             if has_earlier_edits {
                 thread.update(cx, |thread, cx| {
                     thread.action_log().update(cx, |action_log, cx| {
-                        action_log.keep_all_edits(None, cx);
+                        action_log.keep_all_edits(cx);
                     });
                 });
             }
@@ -1410,7 +1256,7 @@ impl ThreadView {
                     workspace
                         .update_in(cx, |workspace, window, cx| {
                             workspace.follow_from_item(
-                                CollaboratorId::Agent(agent_thread_id.clone()),
+                                CollaboratorId::Agent(agent_thread_id),
                                 item_id,
                                 window,
                                 cx,
@@ -1420,7 +1266,7 @@ impl ThreadView {
                 } else {
                     workspace
                         .update_in(cx, |workspace, window, cx| {
-                            workspace.follow(CollaboratorId::Agent(agent_thread_id.clone()), window, cx);
+                            workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                         })
                         .ok();
                 }
@@ -1777,22 +1623,20 @@ impl ThreadView {
 
     pub fn keep_all(&mut self, _: &KeepAll, _window: &mut Window, cx: &mut Context<Self>) {
         let thread = &self.thread;
-        let telemetry = ActionLogTelemetry::from(thread.read(cx));
         let action_log = thread.read(cx).action_log().clone();
         action_log.update(cx, |action_log, cx| {
-            action_log.keep_all_edits(Some(telemetry), cx)
+            action_log.keep_all_edits(cx)
         });
     }
 
     pub fn reject_all(&mut self, _: &RejectAll, _window: &mut Window, cx: &mut Context<Self>) {
         let thread = &self.thread;
-        let telemetry = ActionLogTelemetry::from(thread.read(cx));
         let action_log = thread.read(cx).action_log().clone();
         let has_changes = action_log.read(cx).changed_buffers(cx).len() > 0;
 
         action_log
             .update(cx, |action_log, cx| {
-                action_log.reject_all_edits(Some(telemetry), cx)
+                action_log.reject_all_edits(cx)
             })
             .detach();
 
@@ -1972,13 +1816,6 @@ impl ThreadView {
         cx.notify();
     }
 
-    /// Deterministic color index for this thread's follow button and cursor color.
-    /// Uses a simple hash of the session ID to pick from the player color palette.
-    fn session_id_color_index(&self) -> u32 {
-        let hash = self.session_id.0.as_ref().bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
-        hash
-    }
-
     /// Returns the item_id of the AgentSessionItem containing this thread view.
     /// Used to tell the workspace which pane the agent thread is in, so that
     /// the follow editor opens in the opposite pane.
@@ -2011,6 +1848,26 @@ impl ThreadView {
         }
     }
 
+    fn handle_workspace_event(
+        &mut self,
+        _workspace: &Entity<Workspace>,
+        event: &workspace::Event,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let workspace::Event::AgentFollowChanged { agent_thread_id, following } = event {
+            let my_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
+            if *agent_thread_id != my_thread_id {
+                // Another agent thread was followed, so we should no longer
+                // consider ourselves as "should be following".
+                if *following {
+                    self.should_be_following = false;
+                    cx.notify();
+                }
+            }
+        }
+    }
+
     fn is_following(&self, cx: &App) -> bool {
         let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
         match self.thread.read(cx).status() {
@@ -2034,8 +1891,6 @@ impl ThreadView {
                 .update(cx, |workspace, cx| {
                     if following {
                         workspace.unfollow(CollaboratorId::Agent(agent_thread_id), window, cx);
-                    } else {
-                        drop(workspace);
                     }
                 })
                 .ok();
@@ -2044,7 +1899,6 @@ impl ThreadView {
             }
         }
 
-        telemetry::event!("Follow Agent Selected", following = !following);
     }
 
     // other
@@ -2101,7 +1955,6 @@ impl ThreadView {
     ) -> Option<AnyElement> {
         let thread = self.thread.read(cx);
         let action_log = thread.action_log();
-        let telemetry = ActionLogTelemetry::from(thread);
         let changed_buffers = action_log.read(cx).changed_buffers(cx);
         let plan = thread.plan();
         let queue_is_empty = !self.has_queued_messages();
@@ -2181,7 +2034,6 @@ impl ThreadView {
                             .when(edits_expanded, |parent| {
                                 parent.child(self.render_edited_files(
                                     action_log,
-                                    telemetry.clone(),
                                     &changed_buffers,
                                     pending_edits,
                                     cx,
@@ -2206,7 +2058,6 @@ impl ThreadView {
     fn render_edited_files(
         &self,
         action_log: &Entity<ActionLog>,
-        telemetry: ActionLogTelemetry,
         changed_buffers: &BTreeMap<Entity<Buffer>, Entity<BufferDiff>>,
         pending_edits: bool,
         cx: &Context<Self>,
@@ -2273,7 +2124,6 @@ impl ThreadView {
                             index,
                             buffer,
                             action_log,
-                            &telemetry,
                             pending_edits,
                             editor_bg_color,
                             cx,
@@ -2341,7 +2191,6 @@ impl ThreadView {
         index: usize,
         buffer: &Entity<Buffer>,
         action_log: &Entity<ActionLog>,
-        telemetry: &ActionLogTelemetry,
         pending_edits: bool,
         editor_bg_color: Hsla,
         cx: &Context<Self>,
@@ -2379,7 +2228,6 @@ impl ThreadView {
                     .on_click({
                         let buffer = buffer.clone();
                         let action_log = action_log.clone();
-                        let telemetry = telemetry.clone();
                         move |_, _, cx| {
                             action_log.update(cx, |action_log, cx| {
                                 action_log
@@ -2388,7 +2236,6 @@ impl ThreadView {
                                         vec![Anchor::min_max_range_for_buffer(
                                             buffer.read(cx).remote_id(),
                                         )],
-                                        Some(telemetry.clone()),
                                         cx,
                                     )
                                     .0
@@ -2404,13 +2251,11 @@ impl ThreadView {
                     .on_click({
                         let buffer = buffer.clone();
                         let action_log = action_log.clone();
-                        let telemetry = telemetry.clone();
                         move |_, _, cx| {
                             action_log.update(cx, |action_log, cx| {
                                 action_log.keep_edits_in_range(
                                     buffer.clone(),
                                     Anchor::min_max_range_for_buffer(buffer.read(cx).remote_id()),
-                                    Some(telemetry.clone()),
                                     cx,
                                 );
                             })
@@ -7781,9 +7626,6 @@ impl ThreadView {
                                                 this.expanded_tool_calls
                                                     .insert(tool_call_id.clone());
                                             }
-                                            let expanded =
-                                                this.expanded_tool_calls.contains(&tool_call_id);
-                                            telemetry::event!("Subagent Toggled", expanded);
                                             cx.notify();
                                         }
                                     }))
@@ -7802,7 +7644,6 @@ impl ThreadView {
                                     |this, thread| {
                                         this.on_click(cx.listener(
                                             move |_this, _event, _window, cx| {
-                                                telemetry::event!("Subagent Stopped");
                                                 thread.update(cx, |thread, cx| {
                                                     thread.cancel(cx).detach();
                                                 });
@@ -7840,7 +7681,6 @@ impl ThreadView {
                     )
                     .tooltip(Tooltip::text("Make Subagent Full Screen"))
                     .on_click(cx.listener(move |this, _event, window, cx| {
-                        telemetry::event!("Subagent Maximized");
                         this.server_view
                             .update(cx, |this, cx| {
                                 this.navigate_to_thread(nav_session_id.clone(), window, cx);
@@ -8831,7 +8671,7 @@ pub(crate) fn open_link(
                     .detach_and_log_err(cx);
             }
             MentionUri::Selection { abs_path: None, .. } => {}
-            MentionUri::Thread { id, name } => {
+            MentionUri::Thread { id, name: _ } => {
                 crate::agent_panel::open_new_agent_session_tab(
                     Some(id),
                     None,

@@ -85,8 +85,7 @@ pub fn init(cx: &mut App) {
 
                 let is_valid_project = project
                     .as_ref()
-                    .map(|project| {
-                        let p = project.read(cx);
+                    .map(|_| {
                         true
                     })
                     .unwrap_or(false);

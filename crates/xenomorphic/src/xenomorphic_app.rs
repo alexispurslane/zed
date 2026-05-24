@@ -15,7 +15,7 @@ pub mod visual_tests;
 pub(crate) mod windows_only_instance;
 
 use agent_ui::AgentDiffToolbar;
-use agent_ui::thread_metadata_store::ThreadMetadataStore;
+
 use anyhow::Context as _;
 pub use app_menus::*;
 use assets::Assets;
@@ -27,7 +27,6 @@ use editor::{Editor, MultiBuffer};
 use extension_host::ExtensionStore;
 use feature_flags::{FeatureFlagAppExt as _, PanicFeatureFlag};
 use fs::Fs;
-use futures::FutureExt as _;
 use futures::{StreamExt, channel::mpsc, select_biased};
 use git_ui::commit_view::CommitViewToolbar;
 use git_ui::git_panel::GitPanel;
@@ -423,7 +422,6 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
                 .unwrap_or(true)
         });
 
-        let window_handle = window.window_handle();
         let multi_workspace_handle = cx.entity();
         cx.subscribe_in(
             &multi_workspace_handle,
@@ -758,6 +756,7 @@ fn initialize_panels(window: &mut Window, cx: &mut Context<Workspace>) -> Task<a
     })
 }
 
+#[allow(dead_code)]
 fn setup_or_teardown_ai_panel<P: Panel>(
     workspace: &mut Workspace,
     window: &mut Window,
@@ -801,6 +800,7 @@ fn setup_or_teardown_ai_panel<P: Panel>(
 /// This replaces the old `ToggleFocus`/`FocusAgent`/`Toggle` actions that
 /// toggled the AgentPanel. In the "Agent Sessions as Tabs" design, these
 /// keybindings open a new agent tab (or focus an already-open one).
+#[allow(dead_code)]
 fn open_agent_session_or_focus(
     workspace: &mut Workspace,
     window: &mut Window,

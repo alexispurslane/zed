@@ -67,12 +67,8 @@ fn parse_timestamp(text: &str) -> DateTime<Utc> {
         .unwrap_or_else(|_| Utc::now())
 }
 
-fn contains_wsl_path(paths: &PathList) -> bool {
+fn contains_wsl_path(_paths: &PathList) -> bool {
     false
-        && paths
-            .paths()
-            .iter()
-            .any(|path| util::paths::WslPath::from_path(path).is_some())
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

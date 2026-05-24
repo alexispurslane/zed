@@ -62,7 +62,6 @@ pub fn init(client: Arc<Client>, cx: &mut App) {
     cx.on_action(clear_edit_prediction_store_edit_history);
 
     cx.observe_global::<SettingsStore>({
-        let editors = editors.clone();
         let client = client.clone();
         let mut previous_config = edit_prediction_provider_config_for_settings(cx);
         move |cx| {
@@ -154,6 +153,7 @@ enum EditPredictionProviderConfig {
 }
 
 impl EditPredictionProviderConfig {
+    #[allow(dead_code)]
     fn name(&self) -> &'static str {
         match self {
             EditPredictionProviderConfig::Copilot => "Copilot",

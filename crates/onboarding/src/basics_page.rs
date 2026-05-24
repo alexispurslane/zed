@@ -159,15 +159,9 @@ fn render_theme_section(tab_index: &mut isize, cx: &mut App) -> impl IntoElement
                         })
                         .on_click({
                             let theme_name = theme.name.clone();
-                            let current_theme_name = current_theme_name.clone();
 
                             move |_, _, cx| {
                                 write_theme_change(theme_name.clone(), theme_mode, cx);
-                                telemetry::event!(
-                                    "Welcome Theme Changed",
-                                    from = current_theme_name,
-                                    to = theme_name
-                                );
                             }
                         })
                         .map(|this| {
@@ -428,7 +422,7 @@ fn render_setting_import_button(
 ) -> impl IntoElement + 'static {
     let action = action.boxed_clone();
 
-    Button::new(label.clone(), label.clone())
+    Button::new(label.clone(), label)
         .style(ButtonStyle::OutlinedGhost)
         .size(ButtonSize::Medium)
         .label_size(LabelSize::Small)

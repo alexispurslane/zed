@@ -538,7 +538,7 @@ impl PickerDelegate for ProfilePickerDelegate {
                         }
                     });
 
-                    provider.set_profile(profile_id.clone(), cx);
+                    provider.set_profile(profile_id, cx);
 
                     telemetry::event!(
                         "agent_profile_switched",

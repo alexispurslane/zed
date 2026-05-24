@@ -23,7 +23,6 @@ use language::{
 };
 use lsp::DiagnosticSeverity;
 use multi_buffer::{BufferOffset, MultiBufferOffset, PathKey};
-use clock::ReplicaId;
 use project::{
     File, Project, ProjectItem as _, ProjectPath, lsp_store::FormatTrigger,
     project_settings::ProjectSettings, search::SearchQuery,
@@ -55,7 +54,7 @@ use workspace::{
 };
 use workspace::{
     Pane, WorkspaceSettings,
-    item::{FollowEvent, ProjectItemKind},
+    item::{ProjectItemKind},
     searchable::SearchOptions,
 };
 use xenomorphic_actions::preview::{
@@ -924,9 +923,9 @@ impl Item for Editor {
     ) -> Task<Result<()>> {
         // Add meta data tracking # of auto saves
         if options.autosave {
-            self.report_editor_event(ReportEditorEvent::Saved { auto_saved: true }, None, cx);
+            self.report_editor_event(ReportEditorEvent::Saved, None, cx);
         } else {
-            self.report_editor_event(ReportEditorEvent::Saved { auto_saved: false }, None, cx);
+            self.report_editor_event(ReportEditorEvent::Saved, None, cx);
         }
 
         let buffers = self.buffer().clone().read(cx).all_buffers();
@@ -991,7 +990,7 @@ impl Item for Editor {
 
         let file_extension = path.path.extension().map(|a| a.to_string());
         self.report_editor_event(
-            ReportEditorEvent::Saved { auto_saved: false },
+            ReportEditorEvent::Saved,
             file_extension,
             cx,
         );

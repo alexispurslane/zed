@@ -10,8 +10,7 @@ use gpui::{
 use project::Project;
 use ui::{Color, Icon, IconName, IntoElement, prelude::*};
 use workspace::{
-    Item, ItemId, Pane, SerializableItem, Workspace, WorkspaceId,
-    delete_unloaded_items,
+    Item, ItemId, SerializableItem, Workspace, WorkspaceId,
     item::ItemEvent,
 };
 
@@ -370,7 +369,7 @@ impl SerializableItem for AgentSessionItem {
             // The stored value is a bare UUID string like "550e8400-..."; wrap
             // it in quotes to form valid JSON for deserialization.
             let thread_id_json = format!("\"{}\"", thread_id_str);
-            let thread_id: ThreadId = serde_json::from_str(&thread_id_json)
+            let _thread_id: ThreadId = serde_json::from_str(&thread_id_json)
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize thread_id: {e}"))?;
 
             // Reconstruct the SessionId if present.

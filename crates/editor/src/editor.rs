@@ -124,7 +124,6 @@ use code_context_menus::{
 use code_lens::CodeLensState;
 use collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use convert_case::{Case, Casing};
-use dap::TelemetrySpawnLocation;
 use display_map::*;
 use document_colors::LspColorData;
 use edit_prediction_types::{
@@ -289,19 +288,9 @@ pub(crate) const EDIT_PREDICTION_KEY_CONTEXT: &str = "edit_prediction";
 pub(crate) const MINIMAP_FONT_SIZE: AbsoluteLength = AbsoluteLength::Pixels(px(2.));
 
 enum ReportEditorEvent {
-    Saved { auto_saved: bool },
+    Saved,
     EditorOpened,
     Closed,
-}
-
-impl ReportEditorEvent {
-    pub fn event_type(&self) -> &'static str {
-        match self {
-            Self::Saved { .. } => "Editor Saved",
-            Self::EditorOpened => "Editor Opened",
-            Self::Closed => "Editor Closed",
-        }
-    }
 }
 
 pub enum ActiveDebugLine {}
@@ -4588,40 +4577,8 @@ impl Editor {
 
         self.take_active_edit_prediction(reason == EditPredictionDiscardReason::Ignored, cx)
     }
-
-    fn report_edit_prediction_event(&self, id: Option<SharedString>, accepted: bool, cx: &App) {
-        let Some(provider) = self.edit_prediction_provider() else {
-            return;
-        };
-
-        let buffer_snapshot = self.buffer.read(cx).snapshot(cx);
-        let Some((position, _)) =
-            buffer_snapshot.anchor_to_buffer_anchor(self.selections.newest_anchor().head())
-        else {
-            return;
-        };
-        let Some(buffer) = self.buffer.read(cx).buffer(position.buffer_id) else {
-            return;
-        };
-
-        let extension = buffer
-            .read(cx)
-            .file()
-            .and_then(|file| Some(file.path().extension()?.to_string()));
-
-        let event_type = match accepted {
-            true => "Edit Prediction Accepted",
-            false => "Edit Prediction Discarded",
-        };
-        telemetry::event!(
-            event_type,
-            provider = provider.name(),
-            prediction_id = id,
-            suggestion_accepted = accepted,
-            file_extension = extension,
-        );
+    fn report_edit_prediction_event(&self, _id: Option<SharedString>, _accepted: bool, _cx: &App) {
     }
-
     fn open_editor_at_anchor(
         snapshot: &language::BufferSnapshot,
         target: language::Anchor,
@@ -17455,66 +17412,10 @@ impl Editor {
 
     fn report_editor_event(
         &self,
-        reported_event: ReportEditorEvent,
-        file_extension: Option<String>,
-        cx: &App,
+        _reported_event: ReportEditorEvent,
+        _file_extension: Option<String>,
+        _cx: &App,
     ) {
-        if cfg!(any(test, feature = "test-support")) {
-            return;
-        }
-
-        let Some(project) = &self.project else { return };
-
-        // If None, we are in a file without an extension
-        let file = self
-            .buffer
-            .read(cx)
-            .as_singleton()
-            .and_then(|b| b.read(cx).file());
-        let file_extension = file_extension.or(file
-            .as_ref()
-            .and_then(|file| Path::new(file.file_name(cx)).extension())
-            .and_then(|e| e.to_str())
-            .map(|a| a.to_string()));
-
-        let vim_mode = vim_mode_setting::VimModeSetting::try_get(cx)
-            .map(|vim_mode| vim_mode.0)
-            .unwrap_or(false);
-
-        let edit_predictions_provider = all_language_settings(file, cx).edit_predictions.provider;
-        let copilot_enabled = edit_predictions_provider
-            == language::language_settings::EditPredictionProvider::Copilot;
-        let copilot_enabled_for_language = self
-            .buffer
-            .read(cx)
-            .language_settings(cx)
-            .show_edit_predictions;
-
-        let project = project.read(cx);
-        let event_type = reported_event.event_type();
-
-        if let ReportEditorEvent::Saved { auto_saved } = reported_event {
-            telemetry::event!(
-                event_type,
-                type = if auto_saved {"autosave"} else {"manual"},
-                file_extension,
-                vim_mode,
-                copilot_enabled,
-                copilot_enabled_for_language,
-                edit_predictions_provider,
-                is_via_ssh = project.is_via_remote_server(),
-            );
-        } else {
-            telemetry::event!(
-                event_type,
-                file_extension,
-                vim_mode,
-                copilot_enabled,
-                copilot_enabled_for_language,
-                edit_predictions_provider,
-                is_via_ssh = project.is_via_remote_server(),
-            );
-        };
     }
 
     /// Copy the highlighted chunks to the clipboard as JSON. The format is an array of lines,
@@ -18430,14 +18331,14 @@ impl CollaborationHub for Entity<Project> {
         self.read(cx).collaborators()
     }
 
-    fn user_participant_indices<'a>(&self, cx: &'a App) -> &'a HashMap<u64, ParticipantIndex> {
+    fn user_participant_indices<'a>(&self, _cx: &'a App) -> &'a HashMap<u64, ParticipantIndex> {
         // Cloud user store removed; return empty map
         static EMPTY: std::sync::LazyLock<HashMap<u64, ParticipantIndex>> =
             std::sync::LazyLock::new(HashMap::default);
         &EMPTY
     }
 
-    fn user_names(&self, cx: &App) -> HashMap<u64, SharedString> {
+    fn user_names(&self, _cx: &App) -> HashMap<u64, SharedString> {
         // Cloud user store removed; return empty map
         HashMap::default()
     }

@@ -6077,7 +6077,7 @@ impl Project {
         cx: &mut Context<Self>,
     ) {
         let thread_id = match new_location.as_ref() {
-            Some(loc) => loc.agent_thread_id.clone(),
+            Some(loc) => loc.agent_thread_id,
             None => return, // Use remove_agent_location() to remove by thread ID
         };
 
@@ -6095,7 +6095,7 @@ impl Project {
             location
                 .buffer
                 .update(cx, |buffer, cx| {
-                    buffer.set_agent_selections(
+                    buffer.set_agent_selections_for_replica(
                         replica_id,
                         Arc::from([language::Selection {
                             id: 0,
@@ -6110,7 +6110,7 @@ impl Project {
                     )
                 })
                 .ok();
-            self.agent_locations.insert(thread_id.clone(), location);
+            self.agent_locations.insert(thread_id, location);
         }
 
         cx.emit(Event::AgentLocationChanged(AgentLocationChanged {

@@ -2043,7 +2043,7 @@ impl GitStore {
                     .spawn(async move { fs.git_config(&path, args).await })
             }
             GitStoreState::Remote {
-                upstream_client, ..
+                ..
             } => {
                 // TODO: Implement this for remote repositories.
                 Task::ready(Err(anyhow!(

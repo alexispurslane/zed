@@ -396,11 +396,6 @@ impl MultiWorkspace {
         if self.sidebar.is_none() {
             return;
         }
-        let side = match self.sidebar_side(cx) {
-            SidebarSide::Left => "left",
-            SidebarSide::Right => "right",
-        };
-        telemetry::event!("Sidebar Toggled", action = "open", side = side);
         self.apply_open_sidebar(cx);
     }
 
@@ -427,11 +422,6 @@ impl MultiWorkspace {
     }
 
     pub fn close_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let side = match self.sidebar_side(cx) {
-            SidebarSide::Left => "left",
-            SidebarSide::Right => "right",
-        };
-        telemetry::event!("Sidebar Toggled", action = "close", side = side);
         self.sidebar_open = false;
         for workspace in self.retained_workspaces.clone() {
             workspace.update(cx, |workspace, _cx| {
@@ -1477,7 +1467,6 @@ impl MultiWorkspace {
             return;
         }
 
-        let old_active_workspace = self.active_workspace.clone();
         let workspace_was_retained = self.is_workspace_retained(&workspace);
 
         // Retain the old active workspace so it persists across switches.
