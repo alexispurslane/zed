@@ -496,6 +496,10 @@ impl ThreadView {
             generating_indicator_in_list: false,
         };
 
+        this.message_editor.update(cx, |editor, _cx| {
+            editor.set_session_id(this.session_id.clone());
+        });
+
         this.sync_generating_indicator(cx);
         this.sync_editor_mode_for_empty_state(cx);
         let list_state_for_scroll = this.list_state.clone();
@@ -895,9 +899,10 @@ impl ThreadView {
         self.editing_message.take();
 
         if self.should_be_following {
+            let agent_thread_id = self.session_id.0.clone();
             self.workspace
                 .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                 })
                 .ok();
         }
@@ -1063,7 +1068,7 @@ impl ThreadView {
                     let should_be_following = this
                         .workspace
                         .update(cx, |workspace, _| {
-                            workspace.is_being_followed(CollaboratorId::Agent)
+                            workspace.is_being_followed(&CollaboratorId::Agent(this.session_id.0.clone()))
                         })
                         .unwrap_or_default();
                     this.should_be_following = should_be_following;
@@ -1400,12 +1405,13 @@ impl ThreadView {
         let workspace = self.workspace.clone();
 
         let should_be_following = self.should_be_following;
+        let agent_thread_id = self.session_id.0.clone();
         let contents_task = cx.spawn_in(window, async move |_this, cx| {
             cancelled.await;
             if should_be_following {
                 workspace
                     .update_in(cx, |workspace, window, cx| {
-                        workspace.follow(CollaboratorId::Agent, window, cx);
+                        workspace.follow(CollaboratorId::Agent(agent_thread_id.clone()), window, cx);
                     })
                     .ok();
             }
@@ -1580,9 +1586,10 @@ impl ThreadView {
             conversation.authorize_tool_call(session_id, tool_call_id, outcome, cx);
         });
         if self.should_be_following {
+            let agent_thread_id = self.session_id.0.clone();
             self.workspace
                 .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                 })
                 .ok();
         }
@@ -1612,9 +1619,10 @@ impl ThreadView {
             conversation.authorize_pending_tool_call(&session_id, kind, cx)
         })?;
         if self.should_be_following {
+            let agent_thread_id = self.session_id.0.clone();
             self.workspace
                 .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                 })
                 .ok();
         }
@@ -1756,9 +1764,10 @@ impl ThreadView {
             )
         });
         if self.should_be_following {
+            let agent_thread_id = self.session_id.0.clone();
             self.workspace
                 .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                 })
                 .ok();
         }
@@ -1965,12 +1974,20 @@ impl ThreadView {
         cx.notify();
     }
 
+    /// Deterministic color index for this thread's follow button and cursor color.
+    /// Uses a simple hash of the session ID to pick from the player color palette.
+    fn session_id_color_index(&self) -> u32 {
+        let hash = self.session_id.0.as_ref().bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+        hash
+    }
+
     fn is_following(&self, cx: &App) -> bool {
+        let agent_thread_id = self.session_id.0.clone();
         match self.thread.read(cx).status() {
             ThreadStatus::Generating => self
                 .workspace
                 .read_with(cx, |workspace, _| {
-                    workspace.is_being_followed(CollaboratorId::Agent)
+                    workspace.is_being_followed(&CollaboratorId::Agent(agent_thread_id))
                 })
                 .unwrap_or(false),
             _ => self.should_be_following,
@@ -1982,12 +1999,13 @@ impl ThreadView {
 
         self.should_be_following = !following;
         if self.thread.read(cx).status() == ThreadStatus::Generating {
+            let agent_thread_id = self.session_id.0.clone();
             self.workspace
                 .update(cx, |workspace, cx| {
                     if following {
-                        workspace.unfollow(CollaboratorId::Agent, window, cx);
+                        workspace.unfollow(&CollaboratorId::Agent(agent_thread_id), window, cx);
                     } else {
-                        workspace.follow(CollaboratorId::Agent, window, cx);
+                        workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                     }
                 })
                 .ok();
@@ -4051,7 +4069,7 @@ impl ThreadView {
             .icon_size(IconSize::Small)
             .icon_color(Color::Muted)
             .toggle_state(following)
-            .selected_icon_color(Some(Color::Custom(cx.theme().players().agent_for_thread(self.session_id.0.as_ref()).cursor)))
+            .selected_icon_color(Some(Color::Custom(cx.theme().players().color_for_participant(self.session_id_color_index()).cursor)))
             .tooltip(move |_window, cx| {
                 if following {
                     Tooltip::for_action(tooltip_label.clone(), &Follow, cx)

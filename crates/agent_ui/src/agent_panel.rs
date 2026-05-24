@@ -56,7 +56,12 @@ pub fn init(cx: &mut App) {
                     open_new_agent_session_tab(None, None, None, workspace, window, cx);
                 })
                 .register_action(|workspace, _: &Follow, window, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    if let Some(item) = active_agent_session_item(workspace, cx) {
+                        if let Some(root_thread_view) = item.read(cx).conversation_view().read(cx).root_thread_view() {
+                            let agent_thread_id = root_thread_view.read(cx).session_id.0.clone();
+                            workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
+                        }
+                    }
                 })
                 .register_action(|workspace, _: &OpenAgentDiff, window, cx| {
                     let thread = active_agent_session_item(workspace, cx)

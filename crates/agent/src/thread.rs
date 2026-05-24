@@ -1552,8 +1552,8 @@ impl Thread {
         environment: Rc<dyn ThreadEnvironment>,
         cx: &mut Context<Self>,
     ) {
-        // Only update the agent location for the root thread, not for subagents.
-        let update_agent_location = self.parent_thread_id().is_none();
+        // All threads (including subagents) update their own agent location.
+        let agent_thread_id = self.id().0.clone();
 
         let language_registry = self.project.read(cx).languages().clone();
         self.add_tool(CopyPathTool::new(self.project.clone()));
@@ -1587,8 +1587,7 @@ impl Thread {
         self.add_tool(ReadFileTool::new(
             self.project.clone(),
             self.action_log.clone(),
-            update_agent_location,
-            self.id().0.clone(),
+            agent_thread_id,
         ));
         self.add_tool(TerminalTool::new(self.project.clone(), environment.clone()));
         self.add_tool(WebSearchTool);

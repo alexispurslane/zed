@@ -141,6 +141,7 @@ pub struct MessageEditor {
     workspace: WeakEntity<Workspace>,
     session_capabilities: SharedSessionCapabilities,
     agent_id: AgentId,
+    session_id: Option<schema::SessionId>,
     thread_store: Option<Entity<ThreadStore>>,
     _subscriptions: Vec<Subscription>,
     _parse_slash_command_task: Task<()>,
@@ -555,6 +556,7 @@ impl MessageEditor {
             workspace,
             session_capabilities,
             agent_id,
+            session_id: None,
             thread_store,
             _subscriptions: subscriptions,
             _parse_slash_command_task: Task::ready(()),
@@ -567,6 +569,10 @@ impl MessageEditor {
         _cx: &mut Context<Self>,
     ) {
         self.session_capabilities = session_capabilities;
+    }
+
+    pub fn set_session_id(&mut self, session_id: schema::SessionId) {
+        self.session_id = Some(session_id);
     }
 
     fn command_hint(&self, snapshot: &MultiBufferSnapshot) -> Option<Inlay> {
@@ -899,11 +905,14 @@ impl MessageEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.workspace
-            .update(cx, |this, cx| {
-                this.follow(CollaboratorId::Agent, window, cx)
-            })
-            .log_err();
+        let agent_thread_id = self.session_id.as_ref().map(|id| id.0.clone());
+        if let Some(agent_thread_id) = agent_thread_id {
+            self.workspace
+                .update(cx, |this, cx| {
+                    this.follow(CollaboratorId::Agent(agent_thread_id), window, cx)
+                })
+                .log_err();
+        }
 
         self.send(cx);
     }

@@ -58,7 +58,6 @@ pub struct ReadFileToolInput {
 pub struct ReadFileTool {
     project: Entity<Project>,
     action_log: Entity<ActionLog>,
-    update_agent_location: bool,
     agent_thread_id: Arc<str>,
 }
 
@@ -66,13 +65,11 @@ impl ReadFileTool {
     pub fn new(
         project: Entity<Project>,
         action_log: Entity<ActionLog>,
-        update_agent_location: bool,
         agent_thread_id: Arc<str>,
     ) -> Self {
         Self {
             project,
             action_log,
-            update_agent_location,
             agent_thread_id,
         }
     }
@@ -325,18 +322,16 @@ impl AgentTool for ReadFileTool {
             };
 
             project.update(cx, |project, cx| {
-                if self.update_agent_location {
-                    project.set_agent_location(
-                        Some(AgentLocation {
-                            agent_thread_id: self.agent_thread_id.clone(),
-                            buffer: buffer.downgrade(),
-                            position: anchor.unwrap_or_else(|| {
-                                text::Anchor::min_for_buffer(buffer.read(cx).remote_id())
-                            }),
+                project.set_agent_location(
+                    Some(AgentLocation {
+                        agent_thread_id: self.agent_thread_id.clone(),
+                        buffer: buffer.downgrade(),
+                        position: anchor.unwrap_or_else(|| {
+                            text::Anchor::min_for_buffer(buffer.read(cx).remote_id())
                         }),
-                        cx,
-                    );
-                }
+                    }),
+                    cx,
+                );
                 if let Ok(LanguageModelToolResultContent::Text(text)) = &result {
                     let text: &str = text;
                     let markdown = MarkdownCodeBlock {
@@ -381,7 +376,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
         let (event_stream, _) = ToolCallEventStream::test();
 
         let result = cx
@@ -408,7 +403,7 @@ mod test {
         fs.insert_tree(path!("/root"), json!({})).await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
         let (event_stream, _) = ToolCallEventStream::test();
 
         let result = cx
@@ -441,7 +436,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -475,7 +470,7 @@ mod test {
         let language_registry = project.read_with(cx, |project, _| project.languages().clone());
         language_registry.add(language::rust_lang());
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -555,7 +550,7 @@ mod test {
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -587,7 +582,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
 
         // start_line of 0 should be treated as 1
         let result = cx
@@ -717,7 +712,7 @@ mod test {
 
         let project = Project::test(fs.clone(), [path!("/project_root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
 
         // Reading a file outside the project worktree should fail
         let result = cx
@@ -912,7 +907,7 @@ mod test {
 
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let read_task = cx.update(|cx| {
@@ -1021,7 +1016,7 @@ mod test {
         .await;
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log.clone(), true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log.clone(), true));
 
         // Test reading allowed files in worktree1
         let result = cx
@@ -1208,7 +1203,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let task = cx.update(|cx| {
@@ -1270,7 +1265,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let task = cx.update(|cx| {
@@ -1333,7 +1328,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true, Arc::from("test-thread")));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let result = cx
