@@ -1363,6 +1363,10 @@ pub struct Workspace {
     project: Entity<Project>,
     follower_states: HashMap<CollaboratorId, FollowerState>,
     last_leaders_by_pane: HashMap<WeakEntity<Pane>, CollaboratorId>,
+    /// When following an agent thread, the item_id of the AgentSessionItem that
+    /// triggered the follow. Used to find the correct source pane so the editor
+    /// opens in the horizontally opposite pane.
+    agent_follow_source_item_id: Option<EntityId>,
     auto_watch: AutoWatch,
     window_edited: bool,
     last_window_title: Option<String>,
@@ -1808,6 +1812,7 @@ impl Workspace {
             project: project.clone(),
             follower_states: Default::default(),
             last_leaders_by_pane: Default::default(),
+            agent_follow_source_item_id: None,
             auto_watch: AutoWatch::Off,
             dispatching_keystrokes: Default::default(),
             window_edited: false,
@@ -5674,7 +5679,7 @@ impl Workspace {
 
     /// Find the pane horizontally opposite to `source_pane`, or create one by splitting.
     /// Used for agent thread following — the editor pane should be opposite the agent pane.
-    fn pane_opposite_or_split(
+    pub fn pane_opposite_or_split(
         &mut self,
         source_pane: Entity<Pane>,
         split_direction: SplitDirection,
@@ -5700,23 +5705,29 @@ impl Workspace {
 
         // Determine the follower pane:
         // - For agent threads: use the pane horizontally opposite the agent thread's
-        //   pane, creating it via split if needed. The agent pane is the active center
-        //   pane (or the last active center pane if follow was triggered from a dock).
+        //   pane, creating it via split if needed. The agent pane is found via the
+        //   source item_id passed through follow_from_item, falling back to the
+        //   active center pane if unavailable.
         // - For peers: use the active pane as before.
         let pane = match leader_id {
             CollaboratorId::Agent(_) => {
-                // Find the center pane containing the agent thread
-                let agent_pane = if self.active_pane().read(cx).in_center_group {
-                    self.active_pane().clone()
-                } else if let Some(pane) = self
-                    .last_active_center_pane
-                    .as_ref()
-                    .and_then(|p| p.upgrade())
-                {
-                    pane
-                } else {
-                    self.active_pane().clone()
-                };
+                // Find the center pane containing the agent thread's tab.
+                // Prefer the pane from the source item_id (passed through follow_from_item),
+                // falling back to the active center pane.
+                let agent_pane = self
+                    .agent_follow_source_item_id
+                    .take()
+                    .and_then(|id| self.pane_for_item_id(id))
+                    .or_else(|| {
+                        if self.active_pane().read(cx).in_center_group {
+                            Some(self.active_pane().clone())
+                        } else {
+                            self.last_active_center_pane
+                                .as_ref()
+                                .and_then(|p| p.upgrade())
+                        }
+                    })
+                    .unwrap_or_else(|| self.active_pane().clone());
                 self.pane_opposite_or_split(agent_pane, SplitDirection::Right, window, cx)
             }
             CollaboratorId::PeerId(_) => self.active_pane().clone(),
@@ -5823,6 +5834,20 @@ impl Workspace {
         if let Some(task) = self.start_following(leader_id, window, cx) {
             task.detach_and_log_err(cx)
         }
+    }
+
+    /// Follow a leader, using the pane that contains the given item as the source pane
+    /// (for agent threads, the editor pane is opened in the horizontally opposite pane).
+    pub fn follow_from_item(
+        &mut self,
+        leader_id: impl Into<CollaboratorId>,
+        source_item_id: EntityId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Store the source item id so start_following can find the correct pane
+        self.agent_follow_source_item_id = Some(source_item_id);
+        self.follow(leader_id, window, cx);
     }
 
     pub fn follow(

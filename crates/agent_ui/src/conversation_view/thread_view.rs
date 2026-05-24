@@ -900,11 +900,7 @@ impl ThreadView {
 
         if self.should_be_following {
             let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
-            self.workspace
-                .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
-                })
-                .ok();
+            self.follow_agent(agent_thread_id, window, cx);
         }
 
         let contents_task = cx.spawn_in(window, async move |_this, cx| {
@@ -1403,17 +1399,31 @@ impl ThreadView {
         let cancelled = self.thread.update(cx, |thread, cx| thread.cancel(cx));
 
         let workspace = self.workspace.clone();
+        let source_item_id = self.source_item_id(cx);
 
         let should_be_following = self.should_be_following;
         let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
         let contents_task = cx.spawn_in(window, async move |_this, cx| {
             cancelled.await;
             if should_be_following {
-                workspace
-                    .update_in(cx, |workspace, window, cx| {
-                        workspace.follow(CollaboratorId::Agent(agent_thread_id.clone()), window, cx);
-                    })
-                    .ok();
+                if let Some(item_id) = source_item_id {
+                    workspace
+                        .update_in(cx, |workspace, window, cx| {
+                            workspace.follow_from_item(
+                                CollaboratorId::Agent(agent_thread_id.clone()),
+                                item_id,
+                                window,
+                                cx,
+                            );
+                        })
+                        .ok();
+                } else {
+                    workspace
+                        .update_in(cx, |workspace, window, cx| {
+                            workspace.follow(CollaboratorId::Agent(agent_thread_id.clone()), window, cx);
+                        })
+                        .ok();
+                }
             }
 
             Ok(Some((content, tracked_buffers)))
@@ -1587,11 +1597,7 @@ impl ThreadView {
         });
         if self.should_be_following {
             let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
-            self.workspace
-                .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
-                })
-                .ok();
+            self.follow_agent(agent_thread_id, window, cx);
         }
         cx.notify();
     }
@@ -1620,11 +1626,7 @@ impl ThreadView {
         })?;
         if self.should_be_following {
             let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
-            self.workspace
-                .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
-                })
-                .ok();
+            self.follow_agent(agent_thread_id, window, cx);
         }
         cx.notify();
         Some(())
@@ -1765,11 +1767,7 @@ impl ThreadView {
         });
         if self.should_be_following {
             let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
-            self.workspace
-                .update(cx, |workspace, cx| {
-                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
-                })
-                .ok();
+            self.follow_agent(agent_thread_id, window, cx);
         }
         cx.notify();
         result
@@ -1981,6 +1979,34 @@ impl ThreadView {
         hash
     }
 
+    /// Returns the item_id of the AgentSessionItem containing this thread view.
+    /// Used to tell the workspace which pane the agent thread is in, so that
+    /// the follow editor opens in the opposite pane.
+    fn source_item_id(&self, cx: &App) -> Option<gpui::EntityId> {
+        self.server_view
+            .upgrade()
+            .and_then(|view| view.read(cx).session_item_id())
+    }
+
+    /// Follow this thread's agent, passing the source item_id so the workspace
+    /// can find the correct opposite pane for the editor.
+    fn follow_agent(&self, agent_thread_id: AgentThreadId, window: &mut Window, cx: &mut App) {
+        if let Some(source_item_id) = self.source_item_id(cx) {
+            self.workspace
+                .update(cx, |workspace, cx| {
+                    workspace.follow_from_item(
+                        CollaboratorId::Agent(agent_thread_id),
+                        source_item_id,
+                        window,
+                        cx,
+                    );
+                })
+                .ok();
+        } else {
+            self.follow_agent(agent_thread_id, window, cx);
+        }
+    }
+
     fn is_following(&self, cx: &App) -> bool {
         let agent_thread_id = AgentThreadId::from_session_id(&self.session_id.0);
         match self.thread.read(cx).status() {
@@ -2005,10 +2031,13 @@ impl ThreadView {
                     if following {
                         workspace.unfollow(CollaboratorId::Agent(agent_thread_id), window, cx);
                     } else {
-                        workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
+                        drop(workspace);
                     }
                 })
                 .ok();
+            if !following {
+                self.follow_agent(agent_thread_id, window, cx);
+            }
         }
 
         telemetry::event!("Follow Agent Selected", following = !following);

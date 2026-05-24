@@ -31,7 +31,7 @@ use std::{
 use ui::{CommonAnimationExt, IconButtonShape, KeyBinding, Tooltip, prelude::*, vertical_divider};
 use util::ResultExt;
 use workspace::{
-    Item, ItemHandle, ItemNavHistory, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
+    Item, ItemHandle, ItemNavHistory, SplitDirection, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
     Workspace,
     item::{ItemEvent, SaveOptions, TabContentParams},
     searchable::SearchableItemHandle,
@@ -75,7 +75,10 @@ impl AgentDiffPane {
         } else {
             let agent_diff = cx
                 .new(|cx| AgentDiffPane::new(thread.clone(), workspace.weak_handle(), window, cx));
-            let target_pane = workspace.adjacent_pane(window, cx);
+            // Find the pane opposite the active pane (which is likely the agent thread pane),
+            // or split to create one. This puts the diff preview opposite the agent tab.
+            let source_pane = workspace.active_pane().clone();
+            let target_pane = workspace.pane_opposite_or_split(source_pane, SplitDirection::Right, window, cx);
             workspace.add_item(target_pane, Box::new(agent_diff.clone()), None, true, true, window, cx);
             agent_diff
         }

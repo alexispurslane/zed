@@ -10,7 +10,7 @@ use gpui::{
 use project::Project;
 use ui::{Color, Icon, IconName, IntoElement, prelude::*};
 use workspace::{
-    Item, ItemId, SerializableItem, Workspace, WorkspaceId,
+    Item, ItemId, Pane, SerializableItem, Workspace, WorkspaceId,
     delete_unloaded_items,
     item::ItemEvent,
 };
@@ -330,6 +330,7 @@ impl Item for AgentSessionItem {
     fn telemetry_event_text(&self) -> Option<&'static str> {
         Some("Agent Session Tab Opened")
     }
+
 }
 
 impl SerializableItem for AgentSessionItem {

@@ -61,7 +61,8 @@ pub fn init(cx: &mut App) {
                             let agent_thread_id = workspace::AgentThreadId::from_session_id(
                                 &root_thread_view.read(cx).session_id.0
                             );
-                            workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
+                            let item_id = item.entity_id();
+                            workspace.follow_from_item(CollaboratorId::Agent(agent_thread_id), item_id, window, cx);
                         }
                     }
                 })

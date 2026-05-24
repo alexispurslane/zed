@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use agent_thread::{
     AgentThread, AgentThreadEvent, AgentThreadEntry, AssistantMessage, AssistantMessageChunk,
     LoadError, MaxOutputTokensError, MentionUri, PermissionOptionChoice,
@@ -26,7 +27,7 @@ use file_icons::FileIcons;
 use fs::Fs;
 use gpui::{
     Action, Animation, AnimationExt, App, ClickEvent, ClipboardItem, CursorStyle,
-    ElementId, Empty, Entity, EventEmitter, FocusHandle, Focusable, Hsla, ListOffset, ListState,
+    ElementId, Empty, Entity, EntityId, EventEmitter, FocusHandle, Focusable, Hsla, ListOffset, ListState,
     ObjectFit, PlatformDisplay, ScrollHandle, SharedString, Subscription, Task, TaskExt, TextStyle,
     WeakEntity, Window, WindowHandle, div, ease_in_out, img, linear_color_stop, linear_gradient,
     list, point, pulsating_between,
@@ -478,6 +479,10 @@ pub struct ConversationView {
     thread_store: Option<Entity<ThreadStore>>,
     pub(crate) thread_id: ThreadId,
     pub(crate) root_session_id: Option<schema::SessionId>,
+    /// The item_id (entity_id) of the AgentSessionItem that contains this ConversationView.
+    /// Set when the AgentSessionItem is added to a pane, so that child views can
+    /// look up which pane contains them.
+    session_item_id: Cell<Option<EntityId>>,
     server_state: ServerState,
     focus_handle: FocusHandle,
     notifications: Vec<WindowHandle<AgentNotification>>,
@@ -490,6 +495,18 @@ impl ConversationView {
     /// Public accessor for the thread ID.
     pub fn thread_id(&self) -> ThreadId {
         self.thread_id
+    }
+
+    /// Returns the item_id of the AgentSessionItem containing this view.
+    /// Set when the item is added to a pane.
+    pub fn session_item_id(&self) -> Option<EntityId> {
+        self.session_item_id.get()
+    }
+
+    /// Sets the item_id of the AgentSessionItem containing this view.
+    /// Called by AgentSessionItem::added_to_pane.
+    pub fn set_session_item_id(&self, id: EntityId) {
+        self.session_item_id.set(Some(id));
     }
 
     /// Public accessor for the root session ID.
@@ -708,6 +725,7 @@ impl ConversationView {
             notification_subscriptions: HashMap::default(),
             _subscriptions: subscriptions,
             focus_handle: cx.focus_handle(),
+            session_item_id: Cell::new(None),
         }
     }
 
