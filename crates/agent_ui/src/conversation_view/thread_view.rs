@@ -2003,7 +2003,11 @@ impl ThreadView {
                 })
                 .ok();
         } else {
-            self.follow_agent(agent_thread_id, window, cx);
+            self.workspace
+                .update(cx, |workspace, cx| {
+                    workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
+                })
+                .ok();
         }
     }
 
