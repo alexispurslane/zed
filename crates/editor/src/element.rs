@@ -1657,9 +1657,9 @@ impl EditorElement {
                                     .color_for_participant(participant_index.0);
                             }
                         }
-                        CollaboratorId::Agent => {
+                        CollaboratorId::Agent(thread_id) => {
                             if let Some((local_selection_style, _)) = selections.first_mut() {
-                                *local_selection_style = cx.theme().players().agent();
+                                *local_selection_style = cx.theme().players().agent_for_thread(&thread_id);
                             }
                         }
                     }

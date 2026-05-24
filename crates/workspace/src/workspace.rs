@@ -104,6 +104,8 @@ use project::{
     toolchain_store::ToolchainStoreEvent,
     trusted_worktrees::{RemoteHostLocation, TrustedWorktrees, TrustedWorktreesEvent},
 };
+
+pub use theme::AgentThreadId;
 use remote::{
     RemoteClientDelegate, RemoteConnection, RemoteConnectionOptions,
     remote_client::ConnectionIdentifier,
@@ -1137,7 +1139,7 @@ pub struct WorkspaceStore {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CollaboratorId {
     PeerId(PeerId),
-    Agent,
+    Agent(AgentThreadId),
 }
 
 impl From<PeerId> for CollaboratorId {
@@ -5728,7 +5730,7 @@ impl Workspace {
                     Ok(())
                 }))
             }
-            CollaboratorId::Agent => {
+            CollaboratorId::Agent(_thread_id) => {
                 self.leader_updated(leader_id, window, cx)?;
                 Some(Task::ready(Ok(())))
             }
@@ -5761,7 +5763,7 @@ impl Workspace {
                         None
                     }
                 }
-                CollaboratorId::Agent => Some(CollaboratorId::Agent),
+                CollaboratorId::Agent(thread_id) => Some(CollaboratorId::Agent(*thread_id)),
             }
         } else {
             None
@@ -6051,7 +6053,7 @@ impl Workspace {
             .and_then(|pane| self.leader_for_pane(&pane));
         let leader_peer_id = match leader_id {
             Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-            Some(CollaboratorId::Agent) | None => None,
+            Some(CollaboratorId::Agent(_)) | None => None,
         };
 
         let item_handle = item.to_followable_item_handle(cx)?;
@@ -6269,14 +6271,31 @@ impl Workspace {
     }
 
     fn handle_agent_location_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(follower_state) = self.follower_states.get_mut(&CollaboratorId::Agent) else {
-            return;
-        };
+        // TODO: Once the project crate's AgentLocation has agent_thread_id,
+        // use event.agent_thread_id to look up the specific thread's follower state
+        // instead of iterating. For now, we handle all agent locations.
+        //
+        // Workers who are following specific agent threads will be in follower_states
+        // keyed by CollaboratorId::Agent(thread_id).
 
-        if let Some(agent_location) = self.project.read(cx).agent_location() {
+        // If project still has the single agent_location() API, use that.
+        // Once Worker 1's changes land, switch to agent_locations() HashMap.
+        let agent_location = self.project.read(cx).agent_location();
+
+        // Derive a thread ID from the current agent location. Once AgentLocation
+        // has agent_thread_id, use that instead.
+        // TODO: Use agent_location.agent_thread_id once available from project crate.
+        let thread_id: AgentThreadId = AgentThreadId::from_session_id("agent"); // placeholder — will be replaced
+        let collaborator_id = CollaboratorId::Agent(thread_id);
+
+        if let Some(agent_location) = agent_location {
+            let Some(follower_state) = self.follower_states.get_mut(&collaborator_id) else {
+                return;
+            };
+
             let buffer_entity_id = agent_location.buffer.entity_id();
             let view_id = ViewId {
-                creator: CollaboratorId::Agent,
+                creator: collaborator_id.clone(),
                 id: buffer_entity_id.as_u64(),
             };
             follower_state.active_view_id = Some(view_id);
@@ -6320,15 +6339,19 @@ impl Workspace {
 
             if let Some(item) = item {
                 item.view
-                    .set_leader_id(Some(CollaboratorId::Agent), window, cx);
+                    .set_leader_id(Some(collaborator_id.clone()), window, cx);
                 item.view
                     .update_agent_location(agent_location.position, window, cx);
             }
         } else {
-            follower_state.active_view_id = None;
+            // If there's no agent location, clean up any follower states for agent threads
+            // that no longer have a location.
+            if let Some(follower_state) = self.follower_states.get_mut(&collaborator_id) {
+                follower_state.active_view_id = None;
+            }
         }
 
-        self.leader_updated(CollaboratorId::Agent, window, cx);
+        self.leader_updated(collaborator_id, window, cx);
     }
 
     pub fn update_active_view_for_followers(&mut self, window: &mut Window, cx: &mut App) {
@@ -6345,7 +6368,7 @@ impl Workspace {
                     .and_then(|pane| self.leader_for_pane(&pane));
                 let leader_peer_id = match leader_id {
                     Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-                    Some(CollaboratorId::Agent) | None => None,
+                    Some(CollaboratorId::Agent(_)) | None => None,
                 };
 
                 if let Some(item) = item.to_followable_item_handle(cx) {
@@ -6449,7 +6472,7 @@ impl Workspace {
         let leader_id = leader_id.into();
         let (panel_id, item) = match leader_id {
             CollaboratorId::PeerId(peer_id) => self.active_item_for_peer(peer_id, window, cx)?,
-            CollaboratorId::Agent => (None, self.active_item_for_agent()?),
+            CollaboratorId::Agent(thread_id) => (None, self.active_item_for_agent(thread_id)?),
         };
 
         let state = self.follower_states.get(&leader_id)?;
@@ -6485,8 +6508,8 @@ impl Workspace {
         Some(item)
     }
 
-    fn active_item_for_agent(&self) -> Option<Box<dyn ItemHandle>> {
-        let state = self.follower_states.get(&CollaboratorId::Agent)?;
+    fn active_item_for_agent(&self, thread_id: AgentThreadId) -> Option<Box<dyn ItemHandle>> {
+        let state = self.follower_states.get(&CollaboratorId::Agent(thread_id))?;
         let active_view_id = state.active_view_id?;
         Some(
             state
@@ -8085,7 +8108,9 @@ fn leader_border_for_pane(
                 .color_for_participant(leader.participant_index.0)
                 .cursor
         }
-        CollaboratorId::Agent => cx.theme().players().agent().cursor,
+        CollaboratorId::Agent(thread_id) => {
+            cx.theme().players().agent_for_thread(&thread_id).cursor
+        }
     };
     leader_color.fade_out(0.3);
     Some(

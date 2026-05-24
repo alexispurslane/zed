@@ -1,9 +1,28 @@
 #![allow(missing_docs)]
 
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+
 use gpui::Hsla;
 use serde::Deserialize;
 
 use crate::{amber, blue, jade, lime, orange, pink, purple, red};
+
+/// Uniquely identifies an agent thread. Derived from the thread's session ID.
+/// This is a Copy type (u64 hash) so it can be used in Copy derive chains.
+/// TODO: Replace with `project::AgentThreadId` once that crate exports it.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct AgentThreadId(pub u64);
+
+impl AgentThreadId {
+    /// Create from a session ID string (typically from schema::SessionId).
+    /// Uses a deterministic hash so the same session ID always produces the same AgentThreadId.
+    pub fn from_session_id(session_id: &str) -> Self {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        session_id.hash(&mut hasher);
+        Self(hasher.finish())
+    }
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq)]
 pub struct PlayerColor {
@@ -127,8 +146,25 @@ impl PlayerColors {
         *self.0.first().unwrap()
     }
 
+    #[deprecated(note = "Use agent_for_thread() instead for per-thread agent colors")]
     pub fn agent(&self) -> PlayerColor {
         *self.0.last().unwrap()
+    }
+
+    /// Color for a specific agent thread. Deterministic from the thread ID —
+    /// the same thread always gets the same color across restarts.
+    /// Uses indices 1..len-1 from the palette (skipping local=0 and the last
+    /// color which was the old single-agent color), cycling through
+    /// orange, pink, lime, purple, amber, jade.
+    pub fn agent_for_thread(&self, thread_id: &AgentThreadId) -> PlayerColor {
+        let index = thread_id.0 as usize;
+        let color_count = self.0.len().saturating_sub(2);
+        let color_index = if color_count > 0 {
+            (index % color_count) + 1
+        } else {
+            0
+        };
+        self.0[color_index]
     }
 
     pub fn absent(&self) -> PlayerColor {

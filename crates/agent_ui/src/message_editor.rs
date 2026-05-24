@@ -40,7 +40,7 @@ use theme_settings::ThemeSettings;
 use ui::{ContextMenu, prelude::*};
 use util::paths::PathStyle;
 use util::{ResultExt, debug_panic};
-use workspace::{CollaboratorId, Workspace};
+use workspace::{AgentThreadId, CollaboratorId, Workspace};
 use xenomorphic_actions::agent::{Chat, PasteRaw};
 
 #[derive(Default)]
@@ -901,7 +901,8 @@ impl MessageEditor {
     ) {
         self.workspace
             .update(cx, |this, cx| {
-                this.follow(CollaboratorId::Agent, window, cx)
+                // TODO: Follow a specific agent thread once MessageEditor has a session_id
+                this.follow(CollaboratorId::Agent(AgentThreadId::from_session_id("default")), window, cx)
             })
             .log_err();
 

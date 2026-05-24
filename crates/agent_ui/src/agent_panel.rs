@@ -22,7 +22,7 @@ use crate::{AgentInitialContent, NewAgentThread, NewNativeAgentThreadFromSummary
 use agent_settings::AgentSettings;
 use settings::TerminalDockPosition;
 use terminal::terminal_settings::TerminalSettings;
-use workspace::{CollaboratorId, PathList, Workspace, dock::DockPosition};
+use workspace::{AgentThreadId, CollaboratorId, PathList, Workspace, dock::DockPosition};
 
 pub fn init(cx: &mut App) {
     cx.observe_new(
@@ -56,7 +56,8 @@ pub fn init(cx: &mut App) {
                     open_new_agent_session_tab(None, None, None, workspace, window, cx);
                 })
                 .register_action(|workspace, _: &Follow, window, cx| {
-                    workspace.follow(CollaboratorId::Agent, window, cx);
+                    // TODO: Follow a specific agent thread once we track which one is active
+                    workspace.follow(CollaboratorId::Agent(AgentThreadId::from_session_id("default")), window, cx);
                 })
                 .register_action(|workspace, _: &OpenAgentDiff, window, cx| {
                     let thread = active_agent_session_item(workspace, cx)

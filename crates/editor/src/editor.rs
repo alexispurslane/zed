@@ -243,7 +243,7 @@ use ui::{
 use ui_input::ErasedEditor;
 use util::{RangeExt, ResultExt, TryFutureExt, maybe, post_inc};
 use workspace::{
-    CollaboratorId, Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
+    AgentThreadId, CollaboratorId, Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
     OpenTerminal, Pane, RestoreOnStartupBehavior, SERIALIZATION_THROTTLE_TIME, SplitDirection,
     TabBarSettings, Toast, ViewId, Workspace, WorkspaceId, WorkspaceSettings,
     item::{ItemBufferKind, ItemHandle, PreviewTabsSettings, SaveOptions},
@@ -18730,15 +18730,17 @@ impl EditorSnapshot {
         self.buffer_snapshot()
             .selections_in_range(range, false)
             .filter_map(move |(replica_id, line_mode, cursor_shape, selection)| {
-                if replica_id == ReplicaId::AGENT {
+                if replica_id.is_agent_thread() {
+                    // TODO: Derive actual AgentThreadId from replica_id once per-thread mapping is available
+                    let thread_id = AgentThreadId::from_session_id(&format!("agent-replica-{}", replica_id.as_u16()));
                     Some(RemoteSelection {
                         replica_id,
                         selection,
                         cursor_shape,
                         line_mode,
-                        collaborator_id: CollaboratorId::Agent,
+                        collaborator_id: CollaboratorId::Agent(thread_id),
                         user_name: Some("Agent".into()),
-                        color: cx.theme().players().agent(),
+                        color: cx.theme().players().agent_for_thread(&thread_id),
                     })
                 } else {
                     let collaborator = collaborators_by_replica_id.get(&replica_id)?;

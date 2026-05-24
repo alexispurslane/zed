@@ -36,6 +36,22 @@ impl ReplicaId {
     pub fn is_remote(self) -> bool {
         self == ReplicaId::REMOTE_SERVER || self >= ReplicaId::FIRST_COLLAB_ID
     }
+
+    /// The base value for agent thread replica IDs.
+    /// Agent thread replica IDs occupy the range 100..1100.
+    pub const AGENT_REPLICA_BASE: u16 = 100;
+
+    /// Returns a deterministic ReplicaId for the given agent thread hash.
+    /// The same thread hash always maps to the same ReplicaId.
+    /// Use `AgentThreadId::from_session_id(session_id).0` as the hash value.
+    pub fn for_agent_thread_hash(thread_hash: u64) -> Self {
+        ReplicaId(Self::AGENT_REPLICA_BASE + ((thread_hash as u16) % 1000))
+    }
+
+    /// Whether this replica ID belongs to any agent thread.
+    pub fn is_agent_thread(self) -> bool {
+        self.0 >= Self::AGENT_REPLICA_BASE && self.0 < Self::AGENT_REPLICA_BASE + 1000
+    }
 }
 
 impl fmt::Debug for ReplicaId {
