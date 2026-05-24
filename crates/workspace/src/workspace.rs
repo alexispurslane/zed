@@ -5672,6 +5672,24 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Find the pane horizontally opposite to `source_pane`, or create one by splitting.
+    /// Used for agent thread following — the editor pane should be opposite the agent pane.
+    fn pane_opposite_or_split(
+        &mut self,
+        source_pane: Entity<Pane>,
+        split_direction: SplitDirection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<Pane> {
+        // Try to find an existing pane on the opposite horizontal side
+        if let Some(opposite) = self.center.pane_horizontally_opposite(&source_pane, cx) {
+            return opposite;
+        }
+
+        // No opposite pane exists — split to create one
+        self.split_pane(source_pane, split_direction, window, cx)
+    }
+
     pub fn start_following(
         &mut self,
         leader_id: impl Into<CollaboratorId>,
@@ -5679,7 +5697,30 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<Task<Result<()>>> {
         let leader_id = leader_id.into();
-        let pane = self.active_pane().clone();
+
+        // Determine the follower pane:
+        // - For agent threads: use the pane horizontally opposite the agent thread's
+        //   pane, creating it via split if needed. The agent pane is the active center
+        //   pane (or the last active center pane if follow was triggered from a dock).
+        // - For peers: use the active pane as before.
+        let pane = match leader_id {
+            CollaboratorId::Agent(_) => {
+                // Find the center pane containing the agent thread
+                let agent_pane = if self.active_pane().read(cx).in_center_group {
+                    self.active_pane().clone()
+                } else if let Some(pane) = self
+                    .last_active_center_pane
+                    .as_ref()
+                    .and_then(|p| p.upgrade())
+                {
+                    pane
+                } else {
+                    self.active_pane().clone()
+                };
+                self.pane_opposite_or_split(agent_pane, SplitDirection::Right, window, cx)
+            }
+            CollaboratorId::PeerId(_) => self.active_pane().clone(),
+        };
 
         self.last_leaders_by_pane
             .insert(pane.downgrade(), leader_id);

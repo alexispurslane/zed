@@ -235,6 +235,14 @@ impl PaneGroup {
         self.root.render(0, zoomed, render_cx, window, cx).element
     }
 
+    /// Find a pane that is horizontally opposite to the given pane.
+    /// For a horizontal split [A | B], if `pane` is A, returns B (and vice versa).
+    /// For more complex layouts, returns the first pane found on the opposite horizontal side.
+    /// Returns None if there is no horizontally adjacent pane (single column layout).
+    pub fn pane_horizontally_opposite(&self, pane: &Entity<Pane>, cx: &App) -> Option<Entity<Pane>> {
+        self.root.find_opposite_horizontal(pane, cx)
+    }
+
     pub fn panes(&self) -> Vec<&Entity<Pane>> {
         let mut panes = Vec::new();
         self.root.collect_panes(&mut panes);
@@ -581,6 +589,83 @@ impl Member {
                 }
             }
             Member::Pane(pane) => panes.push(pane),
+        }
+    }
+
+    /// Find a pane horizontally opposite to the given pane within the tree.
+    /// Walks the tree; when it finds the pane inside a Horizontal axis,
+    /// returns the first pane from the opposite side(s).
+    fn find_opposite_horizontal(&self, target: &Entity<Pane>, cx: &App) -> Option<Entity<Pane>> {
+        match self {
+            Member::Pane(pane) => {
+                // Single pane — no opposite exists
+                if pane == target { None } else { None }
+            }
+            Member::Axis(axis) => {
+                if axis.axis == Axis::Horizontal {
+                    // Check which side the target is on
+                    let mut found_in_left = false;
+                    let mut found_in_right = false;
+                    let mut opposite_panes = Vec::new();
+
+                    // The first member containing target is "left", the other is "right"
+                    for (i, member) in axis.members.iter().enumerate() {
+                        if member.contains_pane(target) {
+                            if i == 0 {
+                                found_in_left = true;
+                            } else {
+                                found_in_right = true;
+                            }
+                        }
+                    }
+
+                    if found_in_left {
+                        // Target is on the left; collect panes from right members
+                        for member in axis.members.iter().skip(1) {
+                            if !member.contains_pane(target) {
+                                member.collect_panes_into(&mut opposite_panes);
+                            }
+                        }
+                    } else if found_in_right {
+                        // Target is on the right; collect panes from left members
+                        for member in axis.members.iter() {
+                            if member.contains_pane(target) {
+                                break;
+                            }
+                            member.collect_panes_into(&mut opposite_panes);
+                        }
+                    }
+
+                    // Return the first pane from the opposite side
+                    opposite_panes.into_iter().next()
+                } else {
+                    // Vertical axis — recurse into children
+                    for member in &axis.members {
+                        if let Some(pane) = member.find_opposite_horizontal(target, cx) {
+                            return Some(pane);
+                        }
+                    }
+                    None
+                }
+            }
+        }
+    }
+
+    fn contains_pane(&self, target: &Entity<Pane>) -> bool {
+        match self {
+            Member::Pane(pane) => pane == target,
+            Member::Axis(axis) => axis.members.iter().any(|m| m.contains_pane(target)),
+        }
+    }
+
+    fn collect_panes_into(&self, panes: &mut Vec<Entity<Pane>>) {
+        match self {
+            Member::Axis(axis) => {
+                for member in &axis.members {
+                    member.collect_panes_into(panes);
+                }
+            }
+            Member::Pane(pane) => panes.push(pane.clone()),
         }
     }
 
