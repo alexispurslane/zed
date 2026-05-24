@@ -5841,6 +5841,20 @@ impl Workspace {
             return;
         }
 
+        // Mutual exclusion: only one agent thread can be followed at a time.
+        // Unfollow any other agent thread before following the new one.
+        if let CollaboratorId::Agent(_) = leader_id {
+            let other_agent_ids: Vec<CollaboratorId> = self
+                .follower_states
+                .keys()
+                .copied()
+                .filter(|id| matches!(id, CollaboratorId::Agent(_)) && *id != leader_id)
+                .collect();
+            for other_id in other_agent_ids {
+                self.unfollow(other_id, window, cx);
+            }
+        }
+
         // Otherwise, follow.
         if let Some(task) = self.start_following(leader_id, window, cx) {
             task.detach_and_log_err(cx)
