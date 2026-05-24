@@ -833,7 +833,7 @@ impl<T: Item> ItemHandle for Entity<T> {
 
                         if item.item_focus_handle(cx).contains_focused(window, cx) {
                             match leader_id {
-                                Some(CollaboratorId::Agent) => {}
+                                Some(CollaboratorId::Agent(_)) => {}
                                 Some(CollaboratorId::PeerId(leader_peer_id)) => {
                                     item.add_event_to_update_proto(
                                         event,
