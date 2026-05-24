@@ -58,7 +58,9 @@ pub fn init(cx: &mut App) {
                 .register_action(|workspace, _: &Follow, window, cx| {
                     if let Some(item) = active_agent_session_item(workspace, cx) {
                         if let Some(root_thread_view) = item.read(cx).conversation_view().read(cx).root_thread_view() {
-                            let agent_thread_id = root_thread_view.read(cx).session_id.0.clone();
+                            let agent_thread_id = workspace::AgentThreadId::from_session_id(
+                                &root_thread_view.read(cx).session_id.0
+                            );
                             workspace.follow(CollaboratorId::Agent(agent_thread_id), window, cx);
                         }
                     }

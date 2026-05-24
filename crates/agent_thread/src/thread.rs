@@ -2024,7 +2024,7 @@ impl AgentThread {
 
     pub fn resolve_locations(&mut self, id: schema::ToolCallId, cx: &mut Context<Self>) {
         let project = self.project.clone();
-        let agent_thread_id = self.session_id.0.clone();
+        let agent_thread_id = project::AgentThreadId::from_session_id(&self.session_id.0);
         let Some((_, tool_call)) = self.tool_call_mut(&id) else {
             return;
         };
@@ -2062,7 +2062,7 @@ impl AgentThread {
                         };
                         if !should_ignore {
                             project.set_agent_location(Some(AgentLocation {
-                                agent_thread_id: agent_thread_id.clone(),
+                                agent_thread_id: agent_thread_id,
                                 buffer: location.buffer.downgrade(),
                                 position: location.position,
                             }), cx);
@@ -2073,7 +2073,7 @@ impl AgentThread {
                 let resolved_locations = resolved_locations
                     .iter()
                     .map(|l| l.as_ref().map(|l| AgentLocation {
-                        agent_thread_id: agent_thread_id.clone(),
+                        agent_thread_id: agent_thread_id,
                         buffer: l.buffer.downgrade(),
                         position: l.position,
                     }))
@@ -2313,7 +2313,7 @@ impl AgentThread {
                 .await?;
 
             this.update(cx, |this, cx| {
-                let agent_thread_id = this.session_id.0.clone();
+                let agent_thread_id = project::AgentThreadId::from_session_id(&this.session_id.0);
                 this.project
                     .update(cx, |project, cx| project.remove_agent_location(&agent_thread_id, cx));
 
@@ -2622,7 +2622,7 @@ impl AgentThread {
         let limit = limit.unwrap_or(u32::MAX);
         let project = self.project.clone();
         let action_log = self.action_log.clone();
-        let agent_thread_id = self.session_id.0.clone();
+        let agent_thread_id = project::AgentThreadId::from_session_id(&self.session_id.0);
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2679,7 +2679,7 @@ impl AgentThread {
             project.update(cx, |project, cx| {
                 project.set_agent_location(
                     Some(AgentLocation {
-                        agent_thread_id: agent_thread_id.clone(),
+                        agent_thread_id: agent_thread_id,
                         buffer: buffer.downgrade(),
                         position: start,
                     }),
@@ -2699,7 +2699,7 @@ impl AgentThread {
     ) -> Task<Result<()>> {
         let project = self.project.clone();
         let action_log = self.action_log.clone();
-        let agent_thread_id = self.session_id.0.clone();
+        let agent_thread_id = project::AgentThreadId::from_session_id(&self.session_id.0);
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2730,7 +2730,7 @@ impl AgentThread {
             project.update(cx, |project, cx| {
                 project.set_agent_location(
                     Some(AgentLocation {
-                        agent_thread_id: agent_thread_id.clone(),
+                        agent_thread_id: agent_thread_id,
                         buffer: buffer.downgrade(),
                         position: edits
                             .last()

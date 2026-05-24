@@ -466,7 +466,7 @@ impl PaneLeaderDecorator for PaneRenderContext<'_> {
             }
             CollaboratorId::Agent(thread_id) => {
                 status_box = None;
-                leader_color = cx.theme().players().agent_for_thread(&thread_id).cursor;
+                leader_color = cx.theme().players().agent_for_thread(thread_id.0).cursor;
             }
         }
 

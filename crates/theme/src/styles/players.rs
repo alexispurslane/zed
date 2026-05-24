@@ -137,11 +137,8 @@ impl PlayerColors {
     /// thread always gets the same color. Uses the collaborator palette (indices
     /// 1 through len-2), skipping the local color (index 0) and the old fixed
     /// agent color (last index).
-    pub fn agent_for_thread(&self, thread_id: &str) -> PlayerColor {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        thread_id.hash(&mut hasher);
-        let hash = hasher.finish() as usize;
+    pub fn agent_for_thread(&self, thread_id: u64) -> PlayerColor {
+        let hash = thread_id as usize;
         // Skip index 0 (local) and last index (absent/old-agent).
         // Cycle through indices 1..len-1.
         let palette_len = self.0.len().saturating_sub(2);

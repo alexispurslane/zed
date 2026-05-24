@@ -58,14 +58,14 @@ pub struct ReadFileToolInput {
 pub struct ReadFileTool {
     project: Entity<Project>,
     action_log: Entity<ActionLog>,
-    agent_thread_id: Arc<str>,
+    agent_thread_id: project::AgentThreadId,
 }
 
 impl ReadFileTool {
     pub fn new(
         project: Entity<Project>,
         action_log: Entity<ActionLog>,
-        agent_thread_id: Arc<str>,
+        agent_thread_id: project::AgentThreadId,
     ) -> Self {
         Self {
             project,
@@ -324,7 +324,7 @@ impl AgentTool for ReadFileTool {
             project.update(cx, |project, cx| {
                 project.set_agent_location(
                     Some(AgentLocation {
-                        agent_thread_id: self.agent_thread_id.clone(),
+                        agent_thread_id: self.agent_thread_id,
                         buffer: buffer.downgrade(),
                         position: anchor.unwrap_or_else(|| {
                             text::Anchor::min_for_buffer(buffer.read(cx).remote_id())

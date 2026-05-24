@@ -243,7 +243,7 @@ use ui::{
 use ui_input::ErasedEditor;
 use util::{RangeExt, ResultExt, TryFutureExt, maybe, post_inc};
 use workspace::{
-    CollaboratorId, Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
+    AgentThreadId, CollaboratorId, Item as WorkspaceItem, ItemId, ItemNavHistory, NavigationEntry, OpenInTerminal,
     OpenTerminal, Pane, RestoreOnStartupBehavior, SERIALIZATION_THROTTLE_TIME, SplitDirection,
     TabBarSettings, Toast, ViewId, Workspace, WorkspaceId, WorkspaceSettings,
     item::{ItemBufferKind, ItemHandle, PreviewTabsSettings, SaveOptions},
@@ -1103,7 +1103,7 @@ pub struct Editor {
     leader_id: Option<CollaboratorId>,
     /// Maps agent thread replica IDs back to their AgentThreadId.
     /// Used to look up per-thread colors and names when rendering remote selections.
-    agent_replica_to_thread_id: HashMap<ReplicaId, Arc<str>>,
+    agent_replica_to_thread_id: HashMap<ReplicaId, AgentThreadId>,
     remote_id: Option<ViewId>,
     pub hover_state: HoverState,
     pending_mouse_down: Option<Rc<RefCell<Option<MouseDownEvent>>>>,
@@ -1282,7 +1282,7 @@ pub struct EditorSnapshot {
     semantic_tokens_enabled: bool,
     /// Maps agent thread replica IDs back to their AgentThreadId,
     /// used for per-thread cursor color/name rendering.
-    pub agent_replica_to_thread_id: HashMap<ReplicaId, Arc<str>>,
+    pub agent_replica_to_thread_id: HashMap<ReplicaId, AgentThreadId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -3145,7 +3145,7 @@ impl Editor {
     pub fn register_agent_thread_replica(
         &mut self,
         replica_id: ReplicaId,
-        agent_thread_id: Arc<str>,
+        agent_thread_id: AgentThreadId,
     ) {
         self.agent_replica_to_thread_id.insert(replica_id, agent_thread_id);
     }
@@ -18757,10 +18757,9 @@ impl EditorSnapshot {
             .filter_map(move |(replica_id, line_mode, cursor_shape, selection)| {
                 if replica_id.is_agent() {
                     // Per-thread agent cursor rendering:
-                    // Look up the AgentThreadId for this replica to get per-thread color.
-                    let thread_id = agent_replica_map.get(&replica_id).cloned();
-                    let color = match thread_id.as_deref() {
-                        Some(tid) => cx.theme().players().agent_for_thread(tid),
+                    let thread_id = agent_replica_map.get(&replica_id).copied();
+                    let color = match thread_id {
+                        Some(tid) => cx.theme().players().agent_for_thread(tid.0),
                         None => cx.theme().players().agent(),
                     };
                     Some(RemoteSelection {
@@ -18768,8 +18767,7 @@ impl EditorSnapshot {
                         selection,
                         cursor_shape,
                         line_mode,
-                        collaborator_id: CollaboratorId::Agent,
-                        // TODO: Once CollaboratorId::Agent carries AgentThreadId,
+                        collaborator_id: CollaboratorId::Agent(thread_id.unwrap_or(AgentThreadId::from_session_id("unknown"))),
                         // update this to CollaboratorId::Agent(thread_id.clone().unwrap_or_default())
                         user_name: Some("Agent".into()),
                         // TODO: Show per-thread name like "Agent 1", "Agent 2" or thread title

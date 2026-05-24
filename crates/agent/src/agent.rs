@@ -995,7 +995,7 @@ impl NativeAgent {
         }
 
         // Clean up this thread's agent location before removing the session.
-        let agent_thread_id = session_id.0.clone();
+        let agent_thread_id = project::AgentThreadId::from_session_id(&session_id.0);
         if let Some(project_state) = self.projects.get(&session.project_id) {
             project_state.project.update(cx, |project, cx| {
                 project.remove_agent_location(&agent_thread_id, cx);

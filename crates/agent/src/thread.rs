@@ -1553,7 +1553,7 @@ impl Thread {
         cx: &mut Context<Self>,
     ) {
         // All threads (including subagents) update their own agent location.
-        let agent_thread_id = self.id().0.clone();
+        let agent_thread_id = project::AgentThreadId::from_session_id(&self.id().0);
 
         let language_registry = self.project.read(cx).languages().clone();
         self.add_tool(CopyPathTool::new(self.project.clone()));

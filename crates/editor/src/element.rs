@@ -1657,7 +1657,7 @@ impl EditorElement {
                                     .color_for_participant(participant_index.0);
                             }
                         }
-                        CollaboratorId::Agent => {
+                        CollaboratorId::Agent(_) => {
                             if let Some((local_selection_style, _)) = selections.first_mut() {
                                 // TODO: Once CollaboratorId::Agent carries AgentThreadId,
                                 // use agent_for_thread() with the thread ID for per-thread color.

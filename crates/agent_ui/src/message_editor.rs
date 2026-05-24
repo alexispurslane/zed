@@ -905,7 +905,7 @@ impl MessageEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let agent_thread_id = self.session_id.as_ref().map(|id| id.0.clone());
+        let agent_thread_id = self.session_id.as_ref().map(|id| workspace::AgentThreadId::from_session_id(&id.0));
         if let Some(agent_thread_id) = agent_thread_id {
             self.workspace
                 .update(cx, |this, cx| {

@@ -42,6 +42,7 @@ pub use remote::{
     RemoteConnectionIdentity, remote_connection_identity, same_remote_connection_identity,
 };
 pub use toast_layer::{ToastAction, ToastLayer, ToastView};
+pub use project::AgentThreadId;
 pub use workspace_sidebar::{RenameWorkspace, WorkspaceSidebar};
 
 use anyhow::{Context as _, Result, anyhow};
@@ -1137,7 +1138,7 @@ pub struct WorkspaceStore {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CollaboratorId {
     PeerId(PeerId),
-    Agent,
+    Agent(AgentThreadId),
 }
 
 impl From<PeerId> for CollaboratorId {
@@ -5728,7 +5729,7 @@ impl Workspace {
                     Ok(())
                 }))
             }
-            CollaboratorId::Agent => {
+            CollaboratorId::Agent(_) => {
                 self.leader_updated(leader_id, window, cx)?;
                 Some(Task::ready(Ok(())))
             }
@@ -5761,7 +5762,7 @@ impl Workspace {
                         None
                     }
                 }
-                CollaboratorId::Agent => Some(CollaboratorId::Agent),
+                CollaboratorId::Agent(id) => Some(CollaboratorId::Agent(*id)),
             }
         } else {
             None
@@ -6051,7 +6052,7 @@ impl Workspace {
             .and_then(|pane| self.leader_for_pane(&pane));
         let leader_peer_id = match leader_id {
             Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-            Some(CollaboratorId::Agent) | None => None,
+            Some(CollaboratorId::Agent(_)) | None => None,
         };
 
         let item_handle = item.to_followable_item_handle(cx)?;
@@ -6274,10 +6275,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // TODO: Once CollaboratorId::Agent carries AgentThreadId, use
-        // CollaboratorId::Agent(event.agent_thread_id) here for per-thread follow.
-        // For now, continue using the single CollaboratorId::Agent variant.
-        let collaborator_id = CollaboratorId::Agent;
+        let collaborator_id = CollaboratorId::Agent(event.agent_thread_id);
 
         let Some(follower_state) = self.follower_states.get_mut(&collaborator_id) else {
             return;
@@ -6355,7 +6353,7 @@ impl Workspace {
                     .and_then(|pane| self.leader_for_pane(&pane));
                 let leader_peer_id = match leader_id {
                     Some(CollaboratorId::PeerId(peer_id)) => Some(peer_id),
-                    Some(CollaboratorId::Agent) | None => None,
+                    Some(CollaboratorId::Agent(_)) | None => None,
                 };
 
                 if let Some(item) = item.to_followable_item_handle(cx) {
@@ -6459,7 +6457,7 @@ impl Workspace {
         let leader_id = leader_id.into();
         let (panel_id, item) = match leader_id {
             CollaboratorId::PeerId(peer_id) => self.active_item_for_peer(peer_id, window, cx)?,
-            CollaboratorId::Agent => (None, self.active_item_for_agent()?),
+            CollaboratorId::Agent(_) => (None, self.active_item_for_agent()?),
         };
 
         let state = self.follower_states.get(&leader_id)?;
@@ -6496,7 +6494,10 @@ impl Workspace {
     }
 
     fn active_item_for_agent(&self) -> Option<Box<dyn ItemHandle>> {
-        let state = self.follower_states.get(&CollaboratorId::Agent)?;
+        // Find any agent thread's follower state
+        let state = self.follower_states.iter()
+            .find(|(id, _)| matches!(id, CollaboratorId::Agent(_)))
+            .map(|(_, s)| s)?;
         let active_view_id = state.active_view_id?;
         Some(
             state
@@ -8095,10 +8096,8 @@ fn leader_border_for_pane(
                 .color_for_participant(leader.participant_index.0)
                 .cursor
         }
-        CollaboratorId::Agent => {
-            // TODO: Once CollaboratorId::Agent carries AgentThreadId,
-            // use agent_for_thread() for per-thread border color.
-            cx.theme().players().agent().cursor
+        CollaboratorId::Agent(thread_id) => {
+            cx.theme().players().agent_for_thread(thread_id.0).cursor
         }
     };
     leader_color.fade_out(0.3);

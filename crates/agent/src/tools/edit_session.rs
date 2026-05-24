@@ -22,7 +22,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
 use streaming_diff::{CharOperation, StreamingDiff};
 use streaming_fuzzy_matcher::StreamingFuzzyMatcher;
 use streaming_parser::{EditEvent, StreamingParser, WriteEvent};
@@ -179,8 +178,8 @@ impl EditSessionContext {
     fn set_agent_location(&self, buffer: WeakEntity<Buffer>, position: text::Anchor, cx: &mut App) {
         let agent_thread_id = self
             .thread
-            .read_with(cx, |thread, _cx| thread.id().0.clone())
-            .unwrap_or_else(|_| Arc::from("unknown"));
+            .read_with(cx, |thread, _cx| project::AgentThreadId::from_session_id(&thread.id().0))
+            .unwrap_or_else(|_| project::AgentThreadId::from_session_id("unknown"));
         self.project.update(cx, |project, cx| {
             project.set_agent_location(Some(AgentLocation { agent_thread_id, buffer, position }), cx);
         });

@@ -300,11 +300,24 @@ struct DownloadingFile {
 
 /// Uniquely identifies an agent thread across the workspace/editor boundary.
 ///
-/// This is a type alias for `Arc<str>`, representing the same value as
-/// `agent_thread::schema::SessionId` (a UUID v4 string) but with a distinct
-/// name to avoid confusion with editor/window session IDs at the interface
-/// boundary between the agent system and the workspace/editor layer.
-pub type AgentThreadId = Arc<str>;
+/// This is a Copy newtype wrapping a deterministic u64 hash of the session ID string.
+/// The same session ID always maps to the same `AgentThreadId`, enabling stable
+/// color assignment and cursor identity across the application.
+///
+/// The original session ID string can be converted via `AgentThreadId::from_session_id()`.
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+pub struct AgentThreadId(pub u64);
+
+impl AgentThreadId {
+    /// Create an AgentTypeId from a session ID string (e.g. a UUID v4).
+    /// The same string always produces the same ID.
+    pub fn from_session_id(session_id: &str) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        session_id.hash(&mut hasher);
+        AgentThreadId(hasher.finish())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentLocation {
@@ -6063,11 +6076,6 @@ impl Project {
         new_location: Option<AgentLocation>,
         cx: &mut Context<Self>,
     ) {
-    pub fn set_agent_location(
-        &mut self,
-        new_location: Option<AgentLocation>,
-        cx: &mut Context<Self>,
-    ) {
         let thread_id = match new_location.as_ref() {
             Some(loc) => loc.agent_thread_id.clone(),
             None => return, // Use remove_agent_location() to remove by thread ID
@@ -6075,7 +6083,7 @@ impl Project {
 
         // Remove old location for this thread if it exists
         if let Some(old_location) = self.agent_locations.remove(&thread_id) {
-            let old_replica_id = ReplicaId::for_agent_thread(&thread_id);
+            let old_replica_id = ReplicaId::for_agent_thread(thread_id.0);
             old_location
                 .buffer
                 .update(cx, |buffer, cx| buffer.remove_agent_selections(old_replica_id, cx))
@@ -6083,7 +6091,7 @@ impl Project {
         }
 
         if let Some(location) = new_location {
-            let replica_id = ReplicaId::for_agent_thread(&location.agent_thread_id);
+            let replica_id = ReplicaId::for_agent_thread(location.agent_thread_id.0);
             location
                 .buffer
                 .update(cx, |buffer, cx| {
@@ -6117,14 +6125,14 @@ impl Project {
         cx: &mut Context<Self>,
     ) {
         if let Some(old_location) = self.agent_locations.remove(thread_id) {
-            let replica_id = ReplicaId::for_agent_thread(thread_id);
+            let replica_id = ReplicaId::for_agent_thread(thread_id.0);
             old_location
                 .buffer
                 .update(cx, |buffer, cx| buffer.remove_agent_selections(replica_id, cx))
                 .ok();
         }
         cx.emit(Event::AgentLocationChanged(AgentLocationChanged {
-            agent_thread_id: thread_id.clone(),
+            agent_thread_id: *thread_id,
         }));
     }
 
