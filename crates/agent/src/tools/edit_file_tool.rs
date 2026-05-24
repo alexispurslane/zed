@@ -1637,6 +1637,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         // Read the file first
@@ -1707,6 +1708,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         // Read the file first
@@ -1792,6 +1794,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         cx.update(|cx| {
@@ -1882,6 +1885,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         cx.update(|cx| {
@@ -1973,6 +1977,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         cx.update(|cx| {
@@ -2051,6 +2056,7 @@ mod tests {
             project.clone(),
             action_log.clone(),
             true,
+            Arc::from("test-thread"),
         ));
 
         cx.update(|cx| {

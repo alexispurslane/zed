@@ -299,8 +299,11 @@ struct DownloadingFile {
 }
 
 /// Uniquely identifies an agent thread across the workspace/editor boundary.
-/// This is the same value as `agent_thread::schema::SessionId` (a UUID v4 string),
-/// but aliased to avoid ambiguity with editor/window session IDs.
+///
+/// This is a type alias for `Arc<str>`, representing the same value as
+/// `agent_thread::schema::SessionId` (a UUID v4 string) but with a distinct
+/// name to avoid confusion with editor/window session IDs at the interface
+/// boundary between the agent system and the workspace/editor layer.
 pub type AgentThreadId = Arc<str>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -453,11 +456,14 @@ pub enum Event {
     ExpandedAllForEntry(WorktreeId, ProjectEntryId),
     EntryRenamed(ProjectTransaction, ProjectPath, PathBuf),
     WorkspaceEditApplied(ProjectTransaction),
-    AgentLocationChanged(AgentThreadId),
+    AgentLocationChanged(AgentLocationChanged),
     BufferEdited,
 }
 
-pub struct AgentLocationChanged(pub AgentThreadId);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentLocationChanged {
+    pub agent_thread_id: AgentThreadId,
+}
 
 pub enum DebugAdapterClientState {
     Starting(Task<Option<Arc<DebugAdapterClient>>>),
@@ -6057,80 +6063,84 @@ impl Project {
         new_location: Option<AgentLocation>,
         cx: &mut Context<Self>,
     ) {
-        let Some(location) = new_location else {
-            // To remove a location, use remove_agent_location() instead.
-            return;
-        };
-
-        let thread_id = location.agent_thread_id.clone();
-        let replica_id = ReplicaId::for_agent_thread(&thread_id);
-
-        // Remove old selections for this thread if the buffer changed.
-        if let Some(old_location) = self.agent_locations.get(&thread_id) {
-            if old_location.buffer != location.buffer {
-                let old_replica_id = ReplicaId::for_agent_thread(&thread_id);
-                old_location
-                    .buffer
-                    .update(cx, |buffer, cx| {
-                        buffer.remove_agent_selections(old_replica_id, cx)
-                    })
-                    .ok();
-            }
-        }
-
-        // Set new selections on the target buffer.
-        location
-            .buffer
-            .update(cx, |buffer, cx| {
-                buffer.set_agent_selections(
-                    replica_id,
-                    Arc::from([language::Selection {
-                        id: 0,
-                        start: location.position,
-                        end: location.position,
-                        reversed: false,
-                        goal: language::SelectionGoal::None,
-                    }]),
-                    false,
-                    CursorShape::Hollow,
-                    cx,
-                )
-            })
-            .ok();
-
-        self.agent_locations.insert(thread_id.clone(), location);
-        cx.emit(Event::AgentLocationChanged(thread_id));
-    }
-
-    /// Remove a specific agent thread's location and its buffer selections.
-    pub fn remove_agent_location(
+    pub fn set_agent_location(
         &mut self,
-        agent_thread_id: &AgentThreadId,
+        new_location: Option<AgentLocation>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(old_location) = self.agent_locations.remove(agent_thread_id) {
-            let replica_id = ReplicaId::for_agent_thread(agent_thread_id);
+        let thread_id = match new_location.as_ref() {
+            Some(loc) => loc.agent_thread_id.clone(),
+            None => return, // Use remove_agent_location() to remove by thread ID
+        };
+
+        // Remove old location for this thread if it exists
+        if let Some(old_location) = self.agent_locations.remove(&thread_id) {
+            let old_replica_id = ReplicaId::for_agent_thread(&thread_id);
             old_location
                 .buffer
-                .update(cx, |buffer, cx| {
-                    buffer.remove_agent_selections(replica_id, cx)
-                })
+                .update(cx, |buffer, cx| buffer.remove_agent_selections(old_replica_id, cx))
                 .ok();
         }
-        cx.emit(Event::AgentLocationChanged(agent_thread_id.clone()));
+
+        if let Some(location) = new_location {
+            let replica_id = ReplicaId::for_agent_thread(&location.agent_thread_id);
+            location
+                .buffer
+                .update(cx, |buffer, cx| {
+                    buffer.set_agent_selections(
+                        replica_id,
+                        Arc::from([language::Selection {
+                            id: 0,
+                            start: location.position,
+                            end: location.position,
+                            reversed: false,
+                            goal: language::SelectionGoal::None,
+                        }]),
+                        false,
+                        CursorShape::Hollow,
+                        cx,
+                    )
+                })
+                .ok();
+            self.agent_locations.insert(thread_id.clone(), location);
+        }
+
+        cx.emit(Event::AgentLocationChanged(AgentLocationChanged {
+            agent_thread_id: thread_id,
+        }));
     }
 
-    /// Get a specific agent thread's location.
-    pub fn agent_location_for(&self, id: &AgentThreadId) -> Option<&AgentLocation> {
-        self.agent_locations.get(id)
+    /// Removes the agent location for a specific thread, cleaning up its buffer selections.
+    pub fn remove_agent_location(
+        &mut self,
+        thread_id: &AgentThreadId,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(old_location) = self.agent_locations.remove(thread_id) {
+            let replica_id = ReplicaId::for_agent_thread(thread_id);
+            old_location
+                .buffer
+                .update(cx, |buffer, cx| buffer.remove_agent_selections(replica_id, cx))
+                .ok();
+        }
+        cx.emit(Event::AgentLocationChanged(AgentLocationChanged {
+            agent_thread_id: thread_id.clone(),
+        }));
     }
 
-    /// Get all agent thread locations.
+    /// Returns the agent location for a specific thread.
+    pub fn agent_location_for(&self, thread_id: &AgentThreadId) -> Option<AgentLocation> {
+        self.agent_locations.get(thread_id).cloned()
+    }
+
+    /// Returns all current agent locations.
     pub fn agent_locations(&self) -> &HashMap<AgentThreadId, AgentLocation> {
         &self.agent_locations
     }
 
-    #[deprecated(note = "Use agent_location_for() with a specific AgentThreadId")]
+    /// Returns the agent location for backward compatibility.
+    /// Returns the location of the first thread, if any.
+    #[deprecated(note = "Use agent_location_for() with a specific thread ID")]
     pub fn agent_location(&self) -> Option<AgentLocation> {
         self.agent_locations.values().next().cloned()
     }

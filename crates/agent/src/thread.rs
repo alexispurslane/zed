@@ -1588,6 +1588,7 @@ impl Thread {
             self.project.clone(),
             self.action_log.clone(),
             update_agent_location,
+            self.id().0.clone(),
         ));
         self.add_tool(TerminalTool::new(self.project.clone(), environment.clone()));
         self.add_tool(WebSearchTool);

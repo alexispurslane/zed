@@ -2586,7 +2586,27 @@ impl Buffer {
         }
     }
 
+    #[allow(deprecated)]
     pub fn set_agent_selections(
+        &mut self,
+        replica_id: ReplicaId,
+        selections: Arc<[Selection<Anchor>]>,
+        line_mode: bool,
+        cursor_shape: CursorShape,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_agent_selections_for_replica(
+            ReplicaId::AGENT,
+            selections,
+            line_mode,
+            cursor_shape,
+            cx,
+        )
+    }
+
+    /// Sets the agent selections for a specific replica ID.
+    /// Use this for per-thread agent cursors with `ReplicaId::for_agent_thread()`.
+    pub fn set_agent_selections_for_replica(
         &mut self,
         replica_id: ReplicaId,
         selections: Arc<[Selection<Anchor>]>,
@@ -2609,6 +2629,18 @@ impl Buffer {
     }
 
     pub fn remove_agent_selections(&mut self, replica_id: ReplicaId, cx: &mut Context<Self>) {
+        self.remote_selections.remove(&replica_id);
+        self.non_text_state_update_count += 1;
+        cx.notify();
+    }
+
+    /// Removes the agent selections for a specific replica ID.
+    /// Use this for per-thread agent cursors with `ReplicaId::for_agent_thread()`.
+    pub fn remove_agent_selections_for_replica(
+        &mut self,
+        replica_id: ReplicaId,
+        cx: &mut Context<Self>,
+    ) {
         self.remote_selections.remove(&replica_id);
         self.non_text_state_update_count += 1;
         cx.notify();

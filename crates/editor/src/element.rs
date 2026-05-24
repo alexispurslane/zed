@@ -1659,6 +1659,9 @@ impl EditorElement {
                         }
                         CollaboratorId::Agent => {
                             if let Some((local_selection_style, _)) = selections.first_mut() {
+                                // TODO: Once CollaboratorId::Agent carries AgentThreadId,
+                                // use agent_for_thread() with the thread ID for per-thread color.
+                                // For now, fall back to the fixed agent color.
                                 *local_selection_style = cx.theme().players().agent();
                             }
                         }

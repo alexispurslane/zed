@@ -179,9 +179,20 @@ impl EditSessionContext {
             .thread
             .read_with(cx, |thread, _cx| !thread.is_subagent())
             .unwrap_or_default();
+        let agent_thread_id = self
+            .thread
+            .read_with(cx, |thread, _cx| thread.id().0.clone())
+            .unwrap_or_else(|_| Arc::from(""));
         if should_update_agent_location {
             self.project.update(cx, |project, cx| {
-                project.set_agent_location(Some(AgentLocation { buffer, position }), cx);
+                project.set_agent_location(
+                    Some(AgentLocation {
+                        agent_thread_id,
+                        buffer,
+                        position,
+                    }),
+                    cx,
+                );
             });
         }
     }

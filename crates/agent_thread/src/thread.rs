@@ -512,6 +512,10 @@ struct ResolvedLocation {
 impl From<&ResolvedLocation> for AgentLocation {
     fn from(value: &ResolvedLocation) -> Self {
         Self {
+            // TODO: AgentThreadId should be passed explicitly by the caller.
+            // Using a placeholder for now; this From impl will be deprecated
+            // in favor of explicit construction with the thread ID.
+            agent_thread_id: Arc::from(""),
             buffer: value.buffer.downgrade(),
             position: value.position,
         }
@@ -2030,6 +2034,7 @@ impl AgentThread {
     pub fn resolve_locations(&mut self, id: schema::ToolCallId, cx: &mut Context<Self>) {
         let project = self.project.clone();
         let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id: Arc<str> = self.session_id().0.clone();
         let Some((_, tool_call)) = self.tool_call_mut(&id) else {
             return;
         };
@@ -2066,7 +2071,12 @@ impl AgentThread {
                             false
                         };
                         if !should_ignore && should_update_agent_location {
-                            project.set_agent_location(Some(location.into()), cx);
+                            let agent_location = AgentLocation {
+                                agent_thread_id: agent_thread_id.clone(),
+                                buffer: location.buffer.downgrade(),
+                                position: location.position,
+                            };
+                            project.set_agent_location(Some(agent_location), cx);
                         }
                     });
                 }
@@ -2310,10 +2320,10 @@ impl AgentThread {
                 .await?;
 
             this.update(cx, |this, cx| {
-                if this.parent_session_id.is_none() {
-                    this.project
-                        .update(cx, |project, cx| project.set_agent_location(None, cx));
-                }
+                // Per-thread removal: remove only this thread's agent location
+                let thread_id = this.session_id().0.clone();
+                this.project
+                    .update(cx, |project, cx| project.remove_agent_location(&thread_id, cx));
 
                 let is_same_turn = this
                     .running_turn
@@ -2621,6 +2631,7 @@ impl AgentThread {
         let project = self.project.clone();
         let action_log = self.action_log.clone();
         let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id: Arc<str> = self.session_id().0.clone();
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2678,6 +2689,7 @@ impl AgentThread {
                 project.update(cx, |project, cx| {
                     project.set_agent_location(
                         Some(AgentLocation {
+                            agent_thread_id: agent_thread_id.clone(),
                             buffer: buffer.downgrade(),
                             position: start,
                         }),
@@ -2699,6 +2711,7 @@ impl AgentThread {
         let project = self.project.clone();
         let action_log = self.action_log.clone();
         let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id: Arc<str> = self.session_id().0.clone();
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2730,6 +2743,7 @@ impl AgentThread {
                 project.update(cx, |project, cx| {
                     project.set_agent_location(
                         Some(AgentLocation {
+                            agent_thread_id: agent_thread_id.clone(),
                             buffer: buffer.downgrade(),
                             position: edits
                                 .last()
