@@ -286,7 +286,7 @@ pub struct Project {
     environment: Entity<ProjectEnvironment>,
     settings_observer: Entity<SettingsObserver>,
     toolchain_store: Option<Entity<ToolchainStore>>,
-    agent_location: Option<AgentLocation>,
+    agent_locations: HashMap<AgentThreadId, AgentLocation>,
     downloading_files: Arc<Mutex<HashMap<(WorktreeId, String), DownloadingFile>>>,
     last_worktree_paths: WorktreePaths,
 }
@@ -298,8 +298,17 @@ struct DownloadingFile {
     file_id: Option<u64>, // Set when we receive the State message
 }
 
+/// Uniquely identifies an agent thread across the application.
+///
+/// This is a type alias for `Arc<str>`, representing the same value as
+/// `agent_thread::schema::SessionId` but with a distinct name to avoid
+/// confusion with editor/window session IDs at the interface boundary
+/// between the agent system and the workspace/editor layer.
+pub type AgentThreadId = Arc<str>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentLocation {
+    pub agent_thread_id: AgentThreadId,
     pub buffer: WeakEntity<Buffer>,
     pub position: Anchor,
 }
@@ -447,11 +456,14 @@ pub enum Event {
     ExpandedAllForEntry(WorktreeId, ProjectEntryId),
     EntryRenamed(ProjectTransaction, ProjectPath, PathBuf),
     WorkspaceEditApplied(ProjectTransaction),
-    AgentLocationChanged,
+    AgentLocationChanged(AgentLocationChanged),
     BufferEdited,
 }
 
-pub struct AgentLocationChanged;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentLocationChanged {
+    pub agent_thread_id: AgentThreadId,
+}
 
 pub enum DebugAdapterClientState {
     Starting(Task<Option<Arc<DebugAdapterClient>>>),
@@ -1374,7 +1386,7 @@ impl Project {
 
                 toolchain_store: Some(toolchain_store),
 
-                agent_location: None,
+                agent_locations: HashMap::default(),
                 downloading_files: Default::default(),
                 last_worktree_paths: WorktreePaths::default(),
             }
@@ -1605,7 +1617,7 @@ impl Project {
                 search_excluded_history: Self::new_search_history(),
 
                 toolchain_store: Some(toolchain_store),
-                agent_location: None,
+                agent_locations: HashMap::default(),
                 downloading_files: Default::default(),
                 last_worktree_paths: WorktreePaths::default(),
             };
@@ -1883,7 +1895,7 @@ impl Project {
                 environment,
                 remotely_created_models: Arc::new(Mutex::new(RemotelyCreatedModels::default())),
                 toolchain_store: None,
-                agent_location: None,
+                agent_locations: HashMap::default(),
                 downloading_files: Default::default(),
                 last_worktree_paths: WorktreePaths::default(),
             };
@@ -6051,18 +6063,26 @@ impl Project {
         new_location: Option<AgentLocation>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(old_location) = self.agent_location.as_ref() {
+        let thread_id = match new_location.as_ref() {
+            Some(loc) => loc.agent_thread_id.clone(),
+            None => return, // Removing without a thread_id should use remove_agent_location
+        };
+
+        // Remove old location for this thread if it exists
+        if let Some(old_location) = self.agent_locations.remove(&thread_id) {
             old_location
                 .buffer
                 .update(cx, |buffer, cx| buffer.remove_agent_selections(cx))
                 .ok();
         }
 
-        if let Some(location) = new_location.as_ref() {
+        if let Some(location) = new_location {
+            let replica_id = ReplicaId::for_agent_thread(&location.agent_thread_id);
             location
                 .buffer
                 .update(cx, |buffer, cx| {
-                    buffer.set_agent_selections(
+                    buffer.set_agent_selections_for_replica(
+                        replica_id,
                         Arc::from([language::Selection {
                             id: 0,
                             start: location.position,
@@ -6076,14 +6096,49 @@ impl Project {
                     )
                 })
                 .ok();
+            self.agent_locations.insert(thread_id.clone(), location);
         }
 
-        self.agent_location = new_location;
-        cx.emit(Event::AgentLocationChanged);
+        cx.emit(Event::AgentLocationChanged(AgentLocationChanged {
+            agent_thread_id: thread_id,
+        }));
     }
 
+    /// Removes the agent location for a specific thread, cleaning up its buffer selections.
+    pub fn remove_agent_location(
+        &mut self,
+        thread_id: &AgentThreadId,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(old_location) = self.agent_locations.remove(thread_id) {
+            let replica_id = ReplicaId::for_agent_thread(thread_id);
+            old_location
+                .buffer
+                .update(cx, |buffer, cx| {
+                    buffer.remove_agent_selections_for_replica(replica_id, cx)
+                })
+                .ok();
+        }
+        cx.emit(Event::AgentLocationChanged(AgentLocationChanged {
+            agent_thread_id: thread_id.clone(),
+        }));
+    }
+
+    /// Returns the agent location for a specific thread.
+    pub fn agent_location_for(&self, thread_id: &AgentThreadId) -> Option<AgentLocation> {
+        self.agent_locations.get(thread_id).cloned()
+    }
+
+    /// Returns all current agent locations.
+    pub fn agent_locations(&self) -> &HashMap<AgentThreadId, AgentLocation> {
+        &self.agent_locations
+    }
+
+    /// Returns the agent location for backward compatibility.
+    /// Returns the location of the first thread, if any.
+    #[deprecated(note = "Use agent_location_for() with a specific thread ID")]
     pub fn agent_location(&self) -> Option<AgentLocation> {
-        self.agent_location.clone()
+        self.agent_locations.values().next().cloned()
     }
 
     pub fn path_style(&self, cx: &App) -> PathStyle {

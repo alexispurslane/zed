@@ -1588,8 +1588,8 @@ impl Workspace {
                     );
                 }
 
-                project::Event::AgentLocationChanged => {
-                    this.handle_agent_location_changed(window, cx)
+                project::Event::AgentLocationChanged(event) => {
+                    this.handle_agent_location_changed(event, window, cx)
                 }
 
                 _ => {}
@@ -6268,15 +6268,25 @@ impl Workspace {
         Ok(())
     }
 
-    fn handle_agent_location_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(follower_state) = self.follower_states.get_mut(&CollaboratorId::Agent) else {
+    fn handle_agent_location_changed(
+        &mut self,
+        event: &project::AgentLocationChanged,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // TODO: Once CollaboratorId::Agent carries AgentThreadId, use
+        // CollaboratorId::Agent(event.agent_thread_id) here for per-thread follow.
+        // For now, continue using the single CollaboratorId::Agent variant.
+        let collaborator_id = CollaboratorId::Agent;
+
+        let Some(follower_state) = self.follower_states.get_mut(&collaborator_id) else {
             return;
         };
 
-        if let Some(agent_location) = self.project.read(cx).agent_location() {
+        if let Some(agent_location) = self.project.read(cx).agent_location_for(&event.agent_thread_id) {
             let buffer_entity_id = agent_location.buffer.entity_id();
             let view_id = ViewId {
-                creator: CollaboratorId::Agent,
+                creator: collaborator_id,
                 id: buffer_entity_id.as_u64(),
             };
             follower_state.active_view_id = Some(view_id);
@@ -6320,7 +6330,7 @@ impl Workspace {
 
             if let Some(item) = item {
                 item.view
-                    .set_leader_id(Some(CollaboratorId::Agent), window, cx);
+                    .set_leader_id(Some(collaborator_id), window, cx);
                 item.view
                     .update_agent_location(agent_location.position, window, cx);
             }
@@ -6328,7 +6338,7 @@ impl Workspace {
             follower_state.active_view_id = None;
         }
 
-        self.leader_updated(CollaboratorId::Agent, window, cx);
+        self.leader_updated(collaborator_id, window, cx);
     }
 
     pub fn update_active_view_for_followers(&mut self, window: &mut Window, cx: &mut App) {
@@ -8085,7 +8095,11 @@ fn leader_border_for_pane(
                 .color_for_participant(leader.participant_index.0)
                 .cursor
         }
-        CollaboratorId::Agent => cx.theme().players().agent().cursor,
+        CollaboratorId::Agent => {
+            // TODO: Once CollaboratorId::Agent carries AgentThreadId,
+            // use agent_for_thread() for per-thread border color.
+            cx.theme().players().agent().cursor
+        }
     };
     leader_color.fade_out(0.3);
     Some(

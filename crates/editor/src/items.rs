@@ -23,6 +23,7 @@ use language::{
 };
 use lsp::DiagnosticSeverity;
 use multi_buffer::{BufferOffset, MultiBufferOffset, PathKey};
+use clock::ReplicaId;
 use project::{
     File, Project, ProjectItem as _, ProjectPath, lsp_store::FormatTrigger,
     project_settings::ProjectSettings, search::SearchQuery,

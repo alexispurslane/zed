@@ -131,6 +131,27 @@ impl PlayerColors {
         *self.0.last().unwrap()
     }
 
+    /// Returns the color for a specific agent thread.
+    ///
+    /// The color is deterministically derived from the thread ID, so the same
+    /// thread always gets the same color. Uses the collaborator palette (indices
+    /// 1 through len-2), skipping the local color (index 0) and the old fixed
+    /// agent color (last index).
+    pub fn agent_for_thread(&self, thread_id: &str) -> PlayerColor {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        thread_id.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+        // Skip index 0 (local) and last index (absent/old-agent).
+        // Cycle through indices 1..len-1.
+        let palette_len = self.0.len().saturating_sub(2);
+        if palette_len == 0 {
+            return self.agent();
+        }
+        let color_index = (hash % palette_len) + 1;
+        self.0[color_index]
+    }
+
     pub fn absent(&self) -> PlayerColor {
         *self.0.last().unwrap()
     }

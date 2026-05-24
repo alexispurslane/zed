@@ -4051,7 +4051,7 @@ impl ThreadView {
             .icon_size(IconSize::Small)
             .icon_color(Color::Muted)
             .toggle_state(following)
-            .selected_icon_color(Some(Color::Custom(cx.theme().players().agent().cursor)))
+            .selected_icon_color(Some(Color::Custom(cx.theme().players().agent_for_thread(self.session_id.0.as_ref()).cursor)))
             .tooltip(move |_window, cx| {
                 if following {
                     Tooltip::for_action(tooltip_label.clone(), &Follow, cx)

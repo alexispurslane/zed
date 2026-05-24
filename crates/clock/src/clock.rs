@@ -19,11 +19,21 @@ impl ReplicaId {
     /// The remote replica of the connected remote server.
     pub const REMOTE_SERVER: ReplicaId = ReplicaId(1);
     /// The agent's unique identifier.
+    ///
+    /// Deprecated: use `for_agent_thread()` for per-agent-thread replica IDs.
+    /// This constant remains for backward compatibility during the migration.
+    #[deprecated(note = "Use ReplicaId::for_agent_thread() for per-thread agent replica IDs")]
     pub const AGENT: ReplicaId = ReplicaId(2);
     /// A local branch.
     pub const LOCAL_BRANCH: ReplicaId = ReplicaId(3);
     /// The first collaborative replica ID, any replica equal or greater than this is a collaborative replica.
     pub const FIRST_COLLAB_ID: ReplicaId = ReplicaId(8);
+
+    /// The base value for agent thread replica IDs.
+    /// Agent thread replicas occupy the range [AGENT_REPLICA_BASE, AGENT_REPLICA_BASE + AGENT_REPLICA_RANGE).
+    pub const AGENT_REPLICA_BASE: u16 = 100;
+    /// The number of replica IDs reserved for agent threads.
+    pub const AGENT_REPLICA_RANGE: u16 = 1000;
 
     pub fn new(id: u16) -> Self {
         ReplicaId(id)
@@ -36,6 +46,23 @@ impl ReplicaId {
     pub fn is_remote(self) -> bool {
         self == ReplicaId::REMOTE_SERVER || self >= ReplicaId::FIRST_COLLAB_ID
     }
+
+    /// Returns a deterministic replica ID for an agent thread, derived from the
+    /// thread's ID string. The same thread ID always maps to the same replica ID.
+    pub fn for_agent_thread(thread_id: &str) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        thread_id.hash(&mut hasher);
+        let hash = hasher.finish();
+        let offset = (hash % (Self::AGENT_REPLICA_RANGE as u64)) as u16;
+        ReplicaId(Self::AGENT_REPLICA_BASE + offset)
+    }
+
+    /// Returns true if this replica ID belongs to any agent thread.
+    pub fn is_agent(self) -> bool {
+        self.0 >= Self::AGENT_REPLICA_BASE
+            && self.0 < Self::AGENT_REPLICA_BASE + Self::AGENT_REPLICA_RANGE
+    }
 }
 
 impl fmt::Debug for ReplicaId {
@@ -44,8 +71,10 @@ impl fmt::Debug for ReplicaId {
             write!(f, "<local>")
         } else if *self == ReplicaId::REMOTE_SERVER {
             write!(f, "<remote>")
-        } else if *self == ReplicaId::AGENT {
-            write!(f, "<agent>")
+        } else if self.is_agent() {
+            write!(f, "<agent:{}>", self.0)
+        } else if *self == ReplicaId(2) {
+            write!(f, "<agent-legacy>")
         } else if *self == ReplicaId::LOCAL_BRANCH {
             write!(f, "<branch>")
         } else {

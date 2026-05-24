@@ -1101,6 +1101,9 @@ pub struct Editor {
     use_modal_editing: bool,
     read_only: bool,
     leader_id: Option<CollaboratorId>,
+    /// Maps agent thread replica IDs back to their AgentThreadId.
+    /// Used to look up per-thread colors and names when rendering remote selections.
+    agent_replica_to_thread_id: HashMap<ReplicaId, Arc<str>>,
     remote_id: Option<ViewId>,
     pub hover_state: HoverState,
     pending_mouse_down: Option<Rc<RefCell<Option<MouseDownEvent>>>>,
@@ -1277,6 +1280,9 @@ pub struct EditorSnapshot {
     current_line_highlight: CurrentLineHighlight,
     gutter_hovered: bool,
     semantic_tokens_enabled: bool,
+    /// Maps agent thread replica IDs back to their AgentThreadId,
+    /// used for per-thread cursor color/name rendering.
+    pub agent_replica_to_thread_id: HashMap<ReplicaId, Arc<str>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2357,6 +2363,7 @@ impl Editor {
             auto_replace_emoji_shortcode: false,
             jsx_tag_auto_close_enabled_in_any_buffer: false,
             leader_id: None,
+            agent_replica_to_thread_id: HashMap::default(),
             remote_id: None,
             hover_state: HoverState::default(),
             pending_mouse_down: None,
@@ -3132,6 +3139,22 @@ impl Editor {
         self.leader_id
     }
 
+    /// Stores the mapping from an agent thread's replica ID to its AgentThreadId.
+    /// This is called when the project sets an agent location, enabling per-thread
+    /// cursor color and name rendering in the editor.
+    pub fn register_agent_thread_replica(
+        &mut self,
+        replica_id: ReplicaId,
+        agent_thread_id: Arc<str>,
+    ) {
+        self.agent_replica_to_thread_id.insert(replica_id, agent_thread_id);
+    }
+
+    /// Removes the mapping for an agent thread's replica ID.
+    pub fn unregister_agent_thread_replica(&mut self, replica_id: &ReplicaId) {
+        self.agent_replica_to_thread_id.remove(replica_id);
+    }
+
     pub fn buffer(&self) -> &Entity<MultiBuffer> {
         &self.buffer
     }
@@ -3215,6 +3238,7 @@ impl Editor {
                 .current_line_highlight
                 .unwrap_or_else(|| EditorSettings::get_global(cx).current_line_highlight),
             gutter_hovered: self.gutter_hovered,
+            agent_replica_to_thread_id: self.agent_replica_to_thread_id.clone(),
         }
     }
 
@@ -18727,18 +18751,29 @@ impl EditorSnapshot {
             .values()
             .map(|collaborator| (collaborator.replica_id, collaborator))
             .collect::<HashMap<_, _>>();
+        let agent_replica_map = &self.agent_replica_to_thread_id;
         self.buffer_snapshot()
             .selections_in_range(range, false)
             .filter_map(move |(replica_id, line_mode, cursor_shape, selection)| {
-                if replica_id == ReplicaId::AGENT {
+                if replica_id.is_agent() {
+                    // Per-thread agent cursor rendering:
+                    // Look up the AgentThreadId for this replica to get per-thread color.
+                    let thread_id = agent_replica_map.get(&replica_id).cloned();
+                    let color = match thread_id.as_deref() {
+                        Some(tid) => cx.theme().players().agent_for_thread(tid),
+                        None => cx.theme().players().agent(),
+                    };
                     Some(RemoteSelection {
                         replica_id,
                         selection,
                         cursor_shape,
                         line_mode,
                         collaborator_id: CollaboratorId::Agent,
+                        // TODO: Once CollaboratorId::Agent carries AgentThreadId,
+                        // update this to CollaboratorId::Agent(thread_id.clone().unwrap_or_default())
                         user_name: Some("Agent".into()),
-                        color: cx.theme().players().agent(),
+                        // TODO: Show per-thread name like "Agent 1", "Agent 2" or thread title
+                        color,
                     })
                 } else {
                     let collaborator = collaborators_by_replica_id.get(&replica_id)?;
