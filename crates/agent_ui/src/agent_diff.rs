@@ -75,7 +75,8 @@ impl AgentDiffPane {
         } else {
             let agent_diff = cx
                 .new(|cx| AgentDiffPane::new(thread.clone(), workspace.weak_handle(), window, cx));
-            workspace.add_item_to_center(Box::new(agent_diff.clone()), window, cx);
+            let target_pane = workspace.adjacent_pane(window, cx);
+            workspace.add_item(target_pane, Box::new(agent_diff.clone()), None, true, true, window, cx);
             agent_diff
         }
     }

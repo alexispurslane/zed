@@ -72,8 +72,8 @@ Zed's built-in agent moves too slowly — with ACP removed, the focus is squarel
 Thanks to [Kat Suricata](https://katsuricata.com/),
 [Amolith](https://secluded.site/), and [Diogenes of
 Toronto](https://www.dio.computer/) for encouraging me to work on this project
-and being part of our little community, which has provided me a space for
-support and to show off my ideas and projects.
+and for being part of our little community — a space for
+support, ideas, and showing off what we've built.
 
 Special thanks to Kat Suricata for creating the color scheme of my dreams
 ("Xenomorphic") that acts as the branding color scheme of this editor. You can
@@ -88,5 +88,5 @@ the Apache License 2.0, and the GNU General Public License v3.0.
 See the `LICENSE-AGPL`, `LICENSE-APACHE`, and `LICENSE-GPL` files for details.
 
 License information for third party dependencies must be correctly provided for CI to pass.
-See `script/licenses/zed-licenses.toml` and the
+See `script/licenses/xenomorphic-licenses.toml` and the
 [`cargo-about` book](https://embarkstudios.github.io/cargo-about/cli/generate/config.html#crate-configuration) for details.
