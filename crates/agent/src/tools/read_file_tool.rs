@@ -58,19 +58,19 @@ pub struct ReadFileToolInput {
 pub struct ReadFileTool {
     project: Entity<Project>,
     action_log: Entity<ActionLog>,
-    update_agent_location: bool,
+    agent_thread_id: Arc<str>,
 }
 
 impl ReadFileTool {
     pub fn new(
         project: Entity<Project>,
         action_log: Entity<ActionLog>,
-        update_agent_location: bool,
+        agent_thread_id: Arc<str>,
     ) -> Self {
         Self {
             project,
             action_log,
-            update_agent_location,
+            agent_thread_id,
         }
     }
 }
@@ -322,17 +322,16 @@ impl AgentTool for ReadFileTool {
             };
 
             project.update(cx, |project, cx| {
-                if self.update_agent_location {
-                    project.set_agent_location(
-                        Some(AgentLocation {
-                            buffer: buffer.downgrade(),
-                            position: anchor.unwrap_or_else(|| {
-                                text::Anchor::min_for_buffer(buffer.read(cx).remote_id())
-                            }),
+                project.set_agent_location(
+                    Some(AgentLocation {
+                        agent_thread_id: self.agent_thread_id.clone(),
+                        buffer: buffer.downgrade(),
+                        position: anchor.unwrap_or_else(|| {
+                            text::Anchor::min_for_buffer(buffer.read(cx).remote_id())
                         }),
-                        cx,
-                    );
-                }
+                    }),
+                    cx,
+                );
                 if let Ok(LanguageModelToolResultContent::Text(text)) = &result {
                     let text: &str = text;
                     let markdown = MarkdownCodeBlock {

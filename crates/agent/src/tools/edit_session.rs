@@ -2,6 +2,8 @@ mod reindent;
 mod streaming_fuzzy_matcher;
 mod streaming_parser;
 
+use std::sync::Arc;
+
 use crate::{Thread, ToolCallEventStream};
 use agent_thread::Diff;
 use action_log::ActionLog;
@@ -175,15 +177,13 @@ impl EditSessionContext {
     }
 
     fn set_agent_location(&self, buffer: WeakEntity<Buffer>, position: text::Anchor, cx: &mut App) {
-        let should_update_agent_location = self
+        let agent_thread_id = self
             .thread
-            .read_with(cx, |thread, _cx| !thread.is_subagent())
-            .unwrap_or_default();
-        if should_update_agent_location {
-            self.project.update(cx, |project, cx| {
-                project.set_agent_location(Some(AgentLocation { buffer, position }), cx);
-            });
-        }
+            .read_with(cx, |thread, _cx| thread.id().0.clone())
+            .unwrap_or_else(|_| Arc::from("unknown"));
+        self.project.update(cx, |project, cx| {
+            project.set_agent_location(Some(AgentLocation { agent_thread_id, buffer, position }), cx);
+        });
     }
 
     async fn ensure_buffer_saved(&self, buffer: &Entity<Buffer>, cx: &mut AsyncApp) {

@@ -509,14 +509,9 @@ struct ResolvedLocation {
     position: Anchor,
 }
 
-impl From<&ResolvedLocation> for AgentLocation {
-    fn from(value: &ResolvedLocation) -> Self {
-        Self {
-            buffer: value.buffer.downgrade(),
-            position: value.position,
-        }
-    }
-}
+// Removed: AgentLocation now requires agent_thread_id, which ResolvedLocation doesn't have.
+// Conversion is done inline in resolve_locations().
+
 
 #[derive(Debug, Clone)]
 pub enum SelectedPermissionParams {
@@ -2029,7 +2024,7 @@ impl AgentThread {
 
     pub fn resolve_locations(&mut self, id: schema::ToolCallId, cx: &mut Context<Self>) {
         let project = self.project.clone();
-        let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id = self.session_id.0.clone();
         let Some((_, tool_call)) = self.tool_call_mut(&id) else {
             return;
         };
@@ -2051,7 +2046,7 @@ impl AgentThread {
                 if let Some(Some(location)) = resolved_locations.last() {
                     project.update(cx, |project, cx| {
                         let should_ignore = if let Some(agent_location) = project
-                            .agent_location()
+                            .agent_location_for(&agent_thread_id)
                             .filter(|agent_location| agent_location.buffer == location.buffer)
                         {
                             let snapshot = location.buffer.read(cx).snapshot();
@@ -2065,15 +2060,23 @@ impl AgentThread {
                         } else {
                             false
                         };
-                        if !should_ignore && should_update_agent_location {
-                            project.set_agent_location(Some(location.into()), cx);
+                        if !should_ignore {
+                            project.set_agent_location(Some(AgentLocation {
+                                agent_thread_id: agent_thread_id.clone(),
+                                buffer: location.buffer.downgrade(),
+                                position: location.position,
+                            }), cx);
                         }
                     });
                 }
 
                 let resolved_locations = resolved_locations
                     .iter()
-                    .map(|l| l.as_ref().map(|l| AgentLocation::from(l)))
+                    .map(|l| l.as_ref().map(|l| AgentLocation {
+                        agent_thread_id: agent_thread_id.clone(),
+                        buffer: l.buffer.downgrade(),
+                        position: l.position,
+                    }))
                     .collect::<Vec<_>>();
 
                 if tool_call.resolved_locations != resolved_locations {
@@ -2310,10 +2313,9 @@ impl AgentThread {
                 .await?;
 
             this.update(cx, |this, cx| {
-                if this.parent_session_id.is_none() {
-                    this.project
-                        .update(cx, |project, cx| project.set_agent_location(None, cx));
-                }
+                let agent_thread_id = this.session_id.0.clone();
+                this.project
+                    .update(cx, |project, cx| project.remove_agent_location(&agent_thread_id, cx));
 
                 let is_same_turn = this
                     .running_turn
@@ -2620,7 +2622,7 @@ impl AgentThread {
         let limit = limit.unwrap_or(u32::MAX);
         let project = self.project.clone();
         let action_log = self.action_log.clone();
-        let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id = self.session_id.0.clone();
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2674,17 +2676,16 @@ impl AgentThread {
             let start = snapshot.anchor_before(start_position);
             let end = snapshot.anchor_before(Point::new(line.saturating_add(limit), 0));
 
-            if should_update_agent_location {
-                project.update(cx, |project, cx| {
-                    project.set_agent_location(
-                        Some(AgentLocation {
-                            buffer: buffer.downgrade(),
-                            position: start,
-                        }),
-                        cx,
-                    );
-                });
-            }
+            project.update(cx, |project, cx| {
+                project.set_agent_location(
+                    Some(AgentLocation {
+                        agent_thread_id: agent_thread_id.clone(),
+                        buffer: buffer.downgrade(),
+                        position: start,
+                    }),
+                    cx,
+                );
+            });
 
             Ok(snapshot.text_for_range(start..end).collect::<String>())
         })
@@ -2698,7 +2699,7 @@ impl AgentThread {
     ) -> Task<Result<()>> {
         let project = self.project.clone();
         let action_log = self.action_log.clone();
-        let should_update_agent_location = self.parent_session_id.is_none();
+        let agent_thread_id = self.session_id.0.clone();
         cx.spawn(async move |this, cx| {
             let load = project.update(cx, |project, cx| {
                 let path = project
@@ -2726,20 +2727,19 @@ impl AgentThread {
                 })
                 .await;
 
-            if should_update_agent_location {
-                project.update(cx, |project, cx| {
-                    project.set_agent_location(
-                        Some(AgentLocation {
-                            buffer: buffer.downgrade(),
-                            position: edits
-                                .last()
-                                .map(|(range, _)| range.end)
-                                .unwrap_or(Anchor::min_for_buffer(buffer.read(cx).remote_id())),
-                        }),
-                        cx,
-                    );
-                });
-            }
+            project.update(cx, |project, cx| {
+                project.set_agent_location(
+                    Some(AgentLocation {
+                        agent_thread_id: agent_thread_id.clone(),
+                        buffer: buffer.downgrade(),
+                        position: edits
+                            .last()
+                            .map(|(range, _)| range.end)
+                            .unwrap_or(Anchor::min_for_buffer(buffer.read(cx).remote_id())),
+                    }),
+                    cx,
+                );
+            });
 
             let format_on_save = cx.update(|cx| {
                 action_log.update(cx, |action_log, cx| {
