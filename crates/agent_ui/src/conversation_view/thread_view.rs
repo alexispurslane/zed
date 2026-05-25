@@ -5381,6 +5381,22 @@ impl ThreadView {
                             }
                         });
 
+                    let new_from_summary = ContextMenuEntry::new("New from Summary").handler({
+                        let entity = entity.clone();
+                        move |window, cx| {
+                            entity.update(cx, |this, cx| {
+                                let session_id = this.thread.read(cx).session_id().clone();
+                                window.dispatch_action(
+                                    crate::NewNativeAgentThreadFromSummary {
+                                        from_session_id: session_id,
+                                    }
+                                    .boxed_clone(),
+                                    cx,
+                                );
+                            });
+                        }
+                    });
+
                     menu.when_some(focus, |menu, focus| menu.context(focus))
                         .when_some(context_menu_link, |menu, url| {
                             menu.entry("Copy Link", None, move |_, cx| {
@@ -5397,6 +5413,7 @@ impl ThreadView {
                         .separator()
                         .item(scroll_item)
                         .item(open_thread_as_markdown)
+                        .item(new_from_summary)
                 })
             })
             .into_any_element()
