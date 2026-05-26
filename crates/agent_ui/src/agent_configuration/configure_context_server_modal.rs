@@ -31,7 +31,7 @@ use ui::{
 use util::ResultExt as _;
 use workspace::{ModalView, Workspace};
 
-use crate::AddContextServer;
+use xenomorphic_actions::agent::AddContextServer;
 
 enum ConfigurationTarget {
     New,

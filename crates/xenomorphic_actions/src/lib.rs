@@ -505,6 +505,8 @@ pub mod agent {
             ResetAgentZoom,
             /// Pastes clipboard content without any formatting.
             PasteRaw,
+            /// Opens the MCP server configuration modal.
+            AddContextServer,
         ]
     );
 

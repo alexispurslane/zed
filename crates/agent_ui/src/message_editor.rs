@@ -627,7 +627,9 @@ impl MessageEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[insert_thread_summary] Called for session {}", session_id);
         if self.thread_store.is_none() {
+            log::error!("[insert_thread_summary] No thread_store, returning");
             return;
         }
         let Some(workspace) = self.workspace.upgrade() else {
@@ -1034,6 +1036,7 @@ impl MessageEditor {
                         Some(self.workspace.clone()),
                         None,
                         self.editor.clone(),
+                        None,
                         window,
                         cx,
                     ) else {
@@ -1141,6 +1144,7 @@ impl MessageEditor {
                             Some(self.workspace.clone()),
                             None,
                             self.editor.clone(),
+                            None,
                             window,
                             cx,
                         ) else {
@@ -1363,6 +1367,7 @@ impl MessageEditor {
                         Some(weak_workspace),
                         None,
                         editor,
+                        None,
                         window,
                         cx,
                     ) else {
@@ -1644,6 +1649,7 @@ impl MessageEditor {
                 Some(self.workspace.clone()),
                 None,
                 self.editor.clone(),
+                None,
                 window,
                 cx,
             ) else {
@@ -4022,6 +4028,7 @@ mod tests {
                     Some(message_editor.workspace.clone()),
                     None,
                     message_editor.editor.clone(),
+                    None,
                     window,
                     cx,
                 ) else {
@@ -4180,6 +4187,7 @@ mod tests {
                     Some(message_editor.workspace.clone()),
                     None,
                     message_editor.editor.clone(),
+                    None,
                     window,
                     cx,
                 ) else {

@@ -61,6 +61,10 @@ pub struct MentionSet {
     project: WeakEntity<Project>,
     thread_store: Option<Entity<ThreadStore>>,
     mentions: HashMap<CreaseId, (MentionUri, MentionTask)>,
+    /// In-progress (or completed) thread summary generations, keyed by source SessionId.
+    /// Survives crease deletion so that the generation is not lost if the user
+    /// deletes the pill from the editor.
+    thread_summary_generations: HashMap<schema::SessionId, Entity<agent::SummaryProgress>>,
 }
 
 impl MentionSet {
@@ -72,7 +76,17 @@ impl MentionSet {
             project,
             thread_store,
             mentions: HashMap::default(),
+            thread_summary_generations: HashMap::default(),
         }
+    }
+
+    /// Look up the progress entity for an in-progress (or completed) thread summary
+    /// generation, by the source thread's session ID.
+    pub fn summary_progress_for_session(
+        &self,
+        session_id: &schema::SessionId,
+    ) -> Option<Entity<agent::SummaryProgress>> {
+        self.thread_summary_generations.get(session_id).cloned()
     }
 
     pub fn contents(
@@ -126,7 +140,18 @@ impl MentionSet {
         match mention_uri {
             MentionUri::Fetch { url } => self.confirm_mention_for_fetch(url, http_client, cx),
             MentionUri::Directory { .. } => Task::ready(Ok(Mention::Link)),
-            MentionUri::Thread { id, .. } => self.confirm_mention_for_thread(id, cx),
+            MentionUri::Thread { id, .. } => {
+                let progress = if let Some(existing) = self.thread_summary_generations.get(&id) {
+                    log::info!("[mention_set] Reusing existing SummaryProgress for session {}", id);
+                    existing.clone()
+                } else {
+                    log::info!("[mention_set] Creating new SummaryProgress for session {}", id);
+                    let progress = cx.new(agent::SummaryProgress::new);
+                    self.thread_summary_generations.insert(id.clone(), progress.clone());
+                    progress
+                };
+                self.confirm_mention_for_thread(id, progress, cx)
+            }
             MentionUri::File { abs_path } => {
                 self.confirm_mention_for_file(abs_path, supports_images, cx)
             }
@@ -219,6 +244,24 @@ impl MentionSet {
             start_anchor.to_offset(&snapshot.buffer_snapshot()) + content_len + 1usize,
         );
 
+        // For thread mentions, create or reuse the SummaryProgress entity
+        // before inserting the crease so it can be passed to the fold button.
+        let summary_progress = match &mention_uri {
+            MentionUri::Thread { id, .. } => {
+                let progress = if let Some(existing) = self.thread_summary_generations.get(id) {
+                    log::info!("[confirm_mention_completion] Reusing existing SummaryProgress for session {}", id);
+                    existing.clone()
+                } else {
+                    log::info!("[confirm_mention_completion] Creating new SummaryProgress for session {}", id);
+                    let progress = cx.new(agent::SummaryProgress::new);
+                    self.thread_summary_generations.insert(id.clone(), progress.clone());
+                    progress
+                };
+                Some(progress)
+            }
+            _ => None,
+        };
+
         let crease = if let MentionUri::File { abs_path } = &mention_uri
             && is_raster_image_path(abs_path)
         {
@@ -247,6 +290,7 @@ impl MentionSet {
                 Some(workspace.downgrade()),
                 Some(image),
                 editor.clone(),
+                summary_progress,
                 window,
                 cx,
             )
@@ -261,6 +305,7 @@ impl MentionSet {
                 Some(workspace.downgrade()),
                 None,
                 editor.clone(),
+                summary_progress,
                 window,
                 cx,
             )
@@ -274,7 +319,19 @@ impl MentionSet {
                 self.confirm_mention_for_fetch(url, workspace.read(cx).client().http_client(), cx)
             }
             MentionUri::Directory { .. } => Task::ready(Ok(Mention::Link)),
-            MentionUri::Thread { id, .. } => self.confirm_mention_for_thread(id, cx),
+            MentionUri::Thread { id, .. } => {
+                // Progress entity was already created/looked up above and stored
+                // in self.thread_summary_generations. Retrieve it to pass through.
+                let progress = self
+                    .thread_summary_generations
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        log::warn!("[confirm_mention_for_uri] No stored SummaryProgress for session {}, creating fallback", id);
+                        cx.new(agent::SummaryProgress::new)
+                    });
+                self.confirm_mention_for_thread(id, progress, cx)
+            }
             MentionUri::File { abs_path } => {
                 self.confirm_mention_for_file(abs_path, supports_images, cx)
             }
@@ -518,14 +575,22 @@ impl MentionSet {
     fn confirm_mention_for_thread(
         &mut self,
         id: schema::SessionId,
+        progress: Entity<agent::SummaryProgress>,
         cx: &mut Context<Self>,
     ) -> Task<Result<Mention>> {
+        log::info!(
+            "[confirm_mention_for_thread] Starting for session {}, progress entity id: {:?}",
+            id,
+            progress.entity_id()
+        );
         let Some(thread_store) = self.thread_store.clone() else {
+            log::error!("[confirm_mention_for_thread] No thread_store available");
             return Task::ready(Err(anyhow!(
                 "Thread mentions are only supported for the native agent"
             )));
         };
         let Some(project) = self.project.upgrade() else {
+            log::error!("[confirm_mention_for_thread] Project entity dropped");
             return Task::ready(Err(anyhow!("project not found")));
         };
 
@@ -536,14 +601,17 @@ impl MentionSet {
         let delegate = AgentServerDelegate;
         let connection = server.connect(delegate, project.clone(), cx);
         cx.spawn(async move |_, cx| {
+            log::info!("[confirm_mention_for_thread] Waiting for agent connection for session {}", id);
             let agent = connection.await?;
             let agent = agent.downcast::<agent::NativeAgentConnection>().unwrap();
+            log::info!("[confirm_mention_for_thread] Agent connected, calling thread_summary for session {}", id);
             let summary = agent
                 .0
                 .update(cx, |agent, cx| {
-                    agent.thread_summary(id, project.clone(), cx)
+                    agent.thread_summary(id, project.clone(), Some(progress), cx)
                 })
                 .await?;
+            log::info!("[confirm_mention_for_thread] Summary result: {} chars", summary.len());
             Ok(Mention::Text {
                 content: summary.to_string(),
                 tracked_buffers: Vec::new(),
@@ -653,7 +721,8 @@ mod tests {
         let mention_set = cx.new(|_cx| MentionSet::new(project.downgrade(), thread_store));
 
         let task = mention_set.update(cx, |mention_set, cx| {
-            mention_set.confirm_mention_for_thread(schema::SessionId::new("thread-1"), cx)
+            let progress = cx.new(agent::SummaryProgress::new);
+            mention_set.confirm_mention_for_thread(schema::SessionId::new("thread-1"), progress, cx)
         });
 
         let error = task.await.unwrap_err();
@@ -779,6 +848,7 @@ pub(crate) async fn insert_images_as_context(
                 None,
                 Some(Task::ready(Ok(image.clone())).shared()),
                 editor.clone(),
+                None,
                 window,
                 cx,
             )
@@ -936,10 +1006,12 @@ pub(crate) fn insert_crease_for_mention(
     workspace: Option<WeakEntity<Workspace>>,
     image: Option<Shared<Task<Result<Arc<Image>, String>>>>,
     editor: Entity<Editor>,
+    summary_progress: Option<Entity<agent::SummaryProgress>>,
     window: &mut Window,
     cx: &mut App,
 ) -> Option<(CreaseId, postage::barrier::Sender)> {
     let (tx, rx) = postage::barrier::channel();
+    let editor_weak = editor.downgrade();
 
     let crease_id = editor.update(cx, |editor, cx| {
         let snapshot = editor.buffer().read(cx).snapshot(cx);
@@ -959,7 +1031,8 @@ pub(crate) fn insert_crease_for_mention(
                 start..end,
                 rx,
                 image,
-                cx.weak_entity(),
+                editor_weak,
+                summary_progress,
                 cx,
             ),
             merge_adjacent: false,
@@ -1161,10 +1234,22 @@ fn render_mention_fold_button(
     mut loading_finished: postage::barrier::Receiver,
     image_task: Option<Shared<Task<Result<Arc<Image>, String>>>>,
     editor: WeakEntity<Editor>,
+    summary_progress: Option<Entity<agent::SummaryProgress>>,
     cx: &mut App,
 ) -> Arc<dyn Send + Sync + Fn(FoldId, Range<Anchor>, &mut App) -> AnyElement> {
+    let summary_progress_observer = summary_progress.clone();
     let loading = cx.new(|cx| {
+        // Observe the SummaryProgress entity so the pill re-renders as tokens arrive.
+        if let Some(progress) = &summary_progress {
+            let progress = progress.clone();
+            cx.observe(&progress, |_, _, cx| {
+                cx.notify();
+            })
+            .detach();
+        }
+
         let loading = cx.spawn(async move |this, cx| {
+            // Wait for the mention content-loading barrier to resolve.
             loading_finished.recv().await;
             this.update(cx, |this: &mut LoadingContext, cx| {
                 this.loading = None;
@@ -1183,6 +1268,7 @@ fn render_mention_fold_button(
             editor,
             loading: Some(loading),
             image: image_task.clone(),
+            summary_progress: summary_progress_observer,
         }
     });
     Arc::new(move |_fold_id, _fold_range, _cx| loading.clone().into_any_element())
@@ -1199,6 +1285,9 @@ struct LoadingContext {
     editor: WeakEntity<Editor>,
     loading: Option<Task<()>>,
     image: Option<Shared<Task<Result<Arc<Image>, String>>>>,
+    /// If this crease represents a thread summary, holds the progress entity
+    /// for the in-progress (or completed) summary generation.
+    summary_progress: Option<Entity<agent::SummaryProgress>>,
 }
 
 impl Render for LoadingContext {
@@ -1210,11 +1299,58 @@ impl Render for LoadingContext {
 
         let id = ElementId::from(("loading_context", self.id));
 
+        // Read progress from the SummaryProgress entity if available.
+        let (progress_text, is_complete) = self
+            .summary_progress
+            .as_ref()
+            .map(|progress| {
+                let p = progress.read(cx);
+                let text = if p.is_complete {
+                    SharedString::from("done")
+                } else if p.output_tokens > 0 {
+                    SharedString::from(format!("{} tokens", p.output_tokens))
+                } else {
+                    SharedString::from("summarizing...")
+                };
+                (Some(text), p.is_complete)
+            })
+            .unwrap_or((None, false));
+
+        // If the summary is complete, stop the loading animation.
+        let is_loading = self.loading.is_some() && !is_complete;
+
+        // Build a click override for thread summary pills that opens the
+        // SummaryModal instead of navigating to the source thread.
+        let on_click_override = self
+            .summary_progress
+            .as_ref()
+            .and_then(|progress| {
+                let workspace = self.workspace.clone()?;
+                let progress = progress.clone();
+                let label = self.label.clone();
+                Some(Arc::new(move |window: &mut Window, cx: &mut App| {
+                    let Some(workspace) = workspace.upgrade() else { return };
+                    let progress = progress.clone();
+                    let label = label.clone();
+                    workspace.update(cx, |workspace, cx| {
+                        workspace.toggle_modal(window, cx, |_window, cx| {
+                            crate::summary_modal::SummaryModal::new(
+                                progress,
+                                label,
+                                cx,
+                            )
+                        });
+                    });
+                }) as Arc<dyn Fn(&mut Window, &mut App) + 'static>)
+            });
+
         MentionCrease::new(id, self.icon.clone(), self.label.clone())
             .mention_uri(self.mention_uri.clone())
             .workspace(self.workspace.clone())
             .is_toggled(is_in_text_selection)
-            .is_loading(self.loading.is_some())
+            .is_loading(is_loading)
+            .progress_text(progress_text)
+            .on_click_override(on_click_override)
             .when_some(self.tooltip.clone(), |this, tooltip_text| {
                 this.tooltip(tooltip_text)
             })

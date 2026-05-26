@@ -3,6 +3,7 @@ mod legacy_thread;
 mod native_agent_server;
 pub mod outline;
 mod pattern_extraction;
+pub mod summary_progress;
 mod templates;
 #[cfg(test)]
 mod tests;
@@ -16,6 +17,7 @@ pub use db::*;
 use itertools::Itertools;
 pub use native_agent_server::NativeAgentServer;
 pub use pattern_extraction::*;
+pub use summary_progress::SummaryProgress;
 pub use shell_command_parser::extract_commands;
 pub use templates::*;
 pub use thread::*;
@@ -956,22 +958,31 @@ impl NativeAgent {
         &mut self,
         id: schema::SessionId,
         project: Entity<Project>,
+        progress: Option<gpui::Entity<crate::summary_progress::SummaryProgress>>,
         cx: &mut Context<Self>,
     ) -> Task<Result<SharedString>> {
+        log::info!(
+            "[thread_summary] Called for session {}, has_progress: {}",
+            id,
+            progress.is_some()
+        );
         let thread = self.open_thread(id.clone(), project, cx);
         cx.spawn(async move |this, cx| {
+            log::info!("[thread_summary] Waiting for open_thread to complete for session {}", id);
             let agent_thread = thread.await?;
+            log::info!("[thread_summary] open_thread completed, calling thread.summary() for session {}", id);
             let result = this
                 .update(cx, |this, cx| {
                     this.sessions
                         .get(&id)
                         .unwrap()
                         .thread
-                        .update(cx, |thread, cx| thread.summary(cx))
+                        .update(cx, |thread, cx| thread.summary(progress, cx))
                 })?
                 .await
                 .context("Failed to generate summary")?;
 
+            log::info!("[thread_summary] Summary generation completed for session {}", id);
             this.update(cx, |this, cx| this.close_session(&id, cx))?
                 .await?;
             drop(agent_thread);

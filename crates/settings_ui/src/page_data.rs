@@ -7612,7 +7612,7 @@ fn ai_page(cx: &App) -> SettingsPage {
                     original_window
                         .update(cx, |_workspace, original_window, cx| {
                             original_window
-                                .dispatch_action(xenomorphic_actions::agent::OpenSettings.boxed_clone(), cx);
+                                .dispatch_action(xenomorphic_actions::agent::AddContextServer.boxed_clone(), cx);
                             original_window.activate_window();
                         })
                         .ok();

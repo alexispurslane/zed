@@ -2615,20 +2615,48 @@ impl Thread {
         self.title_generation_failed
     }
 
-    pub fn summary(&mut self, cx: &mut Context<Self>) -> Shared<Task<Option<SharedString>>> {
+    pub fn summary(
+        &mut self,
+        progress: Option<gpui::Entity<crate::summary_progress::SummaryProgress>>,
+        cx: &mut Context<Self>,
+    ) -> Shared<Task<Option<SharedString>>> {
         if let Some(summary) = self.summary.as_ref() {
+            log::info!("[summary] Returning cached summary for thread {}", self.id);
+            // Populate the progress observer with the cached summary so the UI
+            // shows the existing content instead of "Waiting for generation to begin".
+            if let Some(progress) = progress.as_ref() {
+                progress.update(cx, |p, cx| {
+                    p.partial_text = summary.to_string();
+                    p.output_tokens = summary.lines().count();
+                    p.is_complete = true;
+                    cx.notify();
+                });
+            }
             return Task::ready(Some(summary.clone())).shared();
         }
         if let Some(task) = self.pending_summary_generation.clone() {
+            log::info!(
+                "[summary] Returning in-progress summary task for thread {} \
+                 (new progress observer will not receive updates from existing task)",
+                self.id
+            );
             return task;
         }
         let Some(model) = self.summarization_model.clone() else {
-            log::error!("No summarization model available");
+            log::error!("[summary] No summarization model available for thread {}", self.id);
             return Task::ready(None).shared();
         };
+        log::debug!(
+            "[summary] Starting summary generation for thread {} with model {}, progress observer present: {}",
+            self.id,
+            model.id().0,
+            progress.is_some()
+        );
         let mut request = LanguageModelRequest {
             intent: Some(CompletionIntent::ThreadContextSummarization),
             temperature: AgentSettings::temperature_for_model(&model, cx),
+            thinking_allowed: false,
+            speed: Some(Speed::Fast),
             ..Default::default()
         };
 
@@ -2643,23 +2671,79 @@ impl Thread {
             reasoning_details: None,
         });
 
+        log::debug!(
+            "[summary] Thread {} request has {} messages, starting stream",
+            self.id,
+            request.messages.len()
+        );
+
+        let progress_weak = progress.as_ref().map(|p| p.downgrade());
+
         let task = cx
             .spawn(async move |this, cx| {
+                log::info!("[summary] Spawn task started, awaiting stream_completion");
                 let mut summary = String::new();
-                let mut messages = model.stream_completion(request, cx).await.log_err()?;
+                let mut chunk_count: usize = 0;
+                let stream_result = model.stream_completion(request, cx).await;
+                if let Err(e) = &stream_result {
+                    log::error!("[summary] stream_completion failed: {:?}", e);
+                }
+                let mut messages = stream_result.log_err()?;
                 while let Some(event) = messages.next().await {
-                    let event = event.log_err()?;
+                    let event = match event {
+                        Ok(event) => event,
+                        Err(e) => {
+                            log::error!("[summary] Stream event error: {:?}", e);
+                            // If the progress observer is still alive, mark it as errored.
+                            if let Some(progress_weak) = &progress_weak {
+                                if let Some(progress) = progress_weak.upgrade() {
+                                    progress.update(cx, |p, cx| {
+                                        p.mark_error(e.to_string(), cx);
+                                    });
+                                }
+                            }
+                            continue;
+                        }
+                    };
                     let text = match event {
                         LanguageModelCompletionEvent::Text(text) => text,
                         _ => continue,
                     };
 
-                    let mut lines = text.lines();
-                    summary.extend(lines.next());
+                    chunk_count += 1;
+                    summary.push_str(&text);
+
+                    // Update the progress observer if one was provided.
+                    if let Some(progress_weak) = &progress_weak {
+                        if let Some(progress) = progress_weak.upgrade() {
+                            progress.update(cx, |p, cx| {
+                                p.append_text(&text, cx);
+                            });
+                        } else {
+                            if chunk_count == 1 {
+                                log::warn!("[summary] Progress observer was dropped before first update");
+                            }
+                        }
+                    }
                 }
 
-                log::debug!("Setting summary: {}", summary);
+                log::debug!(
+                    "[summary] Stream complete for thread, {} chunks, {} chars",
+                    chunk_count,
+                    summary.len()
+                );
                 let summary = SharedString::from(summary);
+
+                // Mark the progress observer as complete.
+                if let Some(progress_weak) = &progress_weak {
+                    if let Some(progress) = progress_weak.upgrade() {
+                        progress.update(cx, |p, cx| {
+                            p.mark_complete(cx);
+                        });
+                    } else {
+                        log::warn!("[summary] Progress observer dropped before completion");
+                    }
+                }
 
                 this.update(cx, |this, cx| {
                     this.summary = Some(summary.clone());

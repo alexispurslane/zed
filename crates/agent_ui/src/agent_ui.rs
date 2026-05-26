@@ -30,6 +30,7 @@ mod thread_import;
 pub mod thread_metadata_store;
 pub mod thread_worktree_archive;
 pub mod threads_archive_view;
+mod summary_modal;
 mod ui;
 
 use std::rc::Rc;
@@ -72,6 +73,7 @@ pub use thread_import::{
 };
 use xenomorphic_actions;
 pub use xenomorphic_actions::{CreateWorktree, NewWorktreeBranchTarget, SwitchWorktree};
+pub use xenomorphic_actions::agent::AddContextServer;
 
 pub const DEFAULT_THREAD_TITLE: &str = "New Agent Thread";
 const PARALLEL_AGENT_LAYOUT_BACKFILL_KEY: &str = "parallel_agent_layout_backfilled";
@@ -88,8 +90,6 @@ actions!(
         CycleFavoriteModels,
         /// Expands the message editor to full size.
         ExpandMessageEditor,
-        /// Adds a context server to the configuration.
-        AddContextServer,
         /// Archives the currently selected thread.
         ArchiveSelectedThread,
         /// Removes the currently selected thread.

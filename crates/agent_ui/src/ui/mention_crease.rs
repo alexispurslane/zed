@@ -1,10 +1,10 @@
-use std::{ops::RangeInclusive, path::PathBuf, time::Duration};
+use std::{ops::RangeInclusive, path::PathBuf, sync::Arc, time::Duration};
 
 use agent_thread::MentionUri;
 use agent_thread::schema;
 use editor::{Editor, SelectionEffects, scroll::Autoscroll};
 use gpui::{
-    Animation, AnimationExt, AnyView, Context, IntoElement, TaskExt, WeakEntity, Window,
+    Animation, AnimationExt, AnyView, App, Context, IntoElement, TaskExt, WeakEntity, Window,
     pulsating_between,
 };
 use rope::Point;
@@ -25,6 +25,11 @@ pub struct MentionCrease {
     is_loading: bool,
     tooltip: Option<SharedString>,
     image_preview: Option<Box<dyn Fn(&mut Window, &mut App) -> AnyView + 'static>>,
+    /// Short text showing progress (e.g. "234 tokens") shown after the label.
+    progress_text: Option<SharedString>,
+    /// Optional click handler that overrides the default `open_mention_uri` behavior.
+    /// Used for thread summary pills to open the SummaryModal instead of navigating.
+    on_click_override: Option<Arc<dyn Fn(&mut Window, &mut App) + 'static>>,
 }
 
 impl MentionCrease {
@@ -43,6 +48,8 @@ impl MentionCrease {
             is_loading: false,
             tooltip: None,
             image_preview: None,
+            progress_text: None,
+            on_click_override: None,
         }
     }
 
@@ -78,6 +85,19 @@ impl MentionCrease {
         self.image_preview = Some(Box::new(builder));
         self
     }
+
+    pub fn progress_text(mut self, text: impl Into<Option<SharedString>>) -> Self {
+        self.progress_text = text.into();
+        self
+    }
+
+    pub fn on_click_override(
+        mut self,
+        handler: Option<Arc<dyn Fn(&mut Window, &mut App) + 'static>>,
+    ) -> Self {
+        self.on_click_override = handler;
+        self
+    }
 }
 
 impl RenderOnce for MentionCrease {
@@ -102,9 +122,17 @@ impl RenderOnce for MentionCrease {
             .when_some(
                 self.mention_uri.clone().zip(self.workspace.clone()),
                 |this, (mention_uri, workspace)| {
-                    this.on_click(move |_event, window, cx| {
-                        open_mention_uri(mention_uri.clone(), &workspace, window, cx);
-                    })
+                    // If a click override was provided (e.g. for thread summary pills),
+                    // use it instead of the default navigation.
+                    if let Some(on_click_override) = self.on_click_override.clone() {
+                        this.on_click(move |_event, window, cx| {
+                            on_click_override(window, cx);
+                        })
+                    } else {
+                        this.on_click(move |_event, window, cx| {
+                            open_mention_uri(mention_uri.clone(), &workspace, window, cx);
+                        })
+                    }
                 },
             )
             .child(
@@ -119,8 +147,17 @@ impl RenderOnce for MentionCrease {
                             .color(Color::Muted),
                     )
                     .child(self.label.clone())
+                    .when_some(self.progress_text.clone(), |this, progress| {
+                        this.child(
+                            Label::new(format!("\u{00b7}{}", progress))
+                                .size(LabelSize::XSmall)
+                                .color(Color::Muted),
+                        )
+                    })
                     .map(|this| {
-                        if is_loading {
+                        // When we have progress text, don't strobe — the updating
+                        // token count itself provides visual feedback.
+                        if is_loading && self.progress_text.is_none() {
                             this.with_animation(
                                 "loading-context-crease",
                                 Animation::new(Duration::from_secs(2))
