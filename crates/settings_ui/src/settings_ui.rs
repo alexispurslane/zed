@@ -760,6 +760,11 @@ pub struct SettingsWindow {
     shown_errors: HashSet<String>,
     pub(crate) regex_validation_error: Option<String>,
     last_copied_link_path: Option<&'static str>,
+    /// Inline MCP server editor state. When Some, the MCP section shows an expandable
+    /// JSON editor for adding a new server instead of the collapsed "Add Custom Server" button.
+    mcp_editor: Option<Entity<Editor>>,
+    /// Whether the inline MCP editor is showing the Remote (HTTP) tab.
+    mcp_editor_is_http: bool,
 }
 
 struct SearchDocument {
@@ -837,6 +842,7 @@ enum SettingsPageItem {
     SubPageLink(SubPageLink),
     DynamicItem(DynamicItem),
     ActionLink(ActionLink),
+    CustomItem(CustomItem),
 }
 
 impl std::fmt::Debug for SettingsPageItem {
@@ -854,6 +860,9 @@ impl std::fmt::Debug for SettingsPageItem {
             }
             SettingsPageItem::ActionLink(action_link) => {
                 write!(f, "ActionLink({})", action_link.title)
+            }
+            SettingsPageItem::CustomItem(custom_item) => {
+                write!(f, "CustomItem({})", custom_item.title)
             }
         }
     }
@@ -1145,6 +1154,14 @@ impl SettingsPageItem {
                 )
                 .when(bottom_border, |this| this.child(Divider::horizontal()))
                 .into_any_element(),
+            SettingsPageItem::CustomItem(custom_item) => (custom_item.render)(
+                settings_window,
+                item_index,
+                bottom_border,
+                extra_bottom_padding,
+                window,
+                cx,
+            ),
         }
     }
 }
@@ -1395,6 +1412,30 @@ struct ActionLink {
 }
 
 impl PartialEq for ActionLink {
+    fn eq(&self, other: &Self) -> bool {
+        self.title == other.title
+    }
+}
+
+struct CustomItem {
+    title: SharedString,
+    description: Option<SharedString>,
+    render: Arc<
+        dyn Fn(
+                &SettingsWindow,
+                usize,
+                bool,
+                bool,
+                &mut Window,
+                &mut Context<SettingsWindow>,
+            ) -> AnyElement
+            + Send
+            + Sync,
+    >,
+    files: FileMask,
+}
+
+impl PartialEq for CustomItem {
     fn eq(&self, other: &Self) -> bool {
         self.title == other.title
     }
@@ -1664,6 +1705,8 @@ impl SettingsWindow {
             regex_validation_error: None,
             list_state,
             last_copied_link_path: None,
+            mcp_editor: None,
+            mcp_editor_is_http: false,
         };
 
         this.fetch_files(window, cx);
@@ -1856,7 +1899,8 @@ impl SettingsWindow {
                             any_found_since_last_header = true;
                         }
                     }
-                    SettingsPageItem::ActionLink(ActionLink { files, .. }) => {
+                    SettingsPageItem::ActionLink(ActionLink { files, .. })
+                    | SettingsPageItem::CustomItem(CustomItem { files, .. }) => {
                         if !files.contains(current_file) {
                             page_filter[index] = false;
                         } else {
@@ -2106,6 +2150,21 @@ impl SettingsWindow {
                             &mut fuzzy_match_candidates,
                             key_index,
                             action_link.title.as_ref(),
+                        );
+                    }
+                    SettingsPageItem::CustomItem(custom_item) => {
+                        documents.push(SearchDocument {
+                            id: key_index,
+                            words: split_into_words(&[
+                                page.title,
+                                header_str,
+                                custom_item.title.as_ref(),
+                            ]),
+                        });
+                        push_candidates(
+                            &mut fuzzy_match_candidates,
+                            key_index,
+                            custom_item.title.as_ref(),
                         );
                     }
                 }
@@ -3721,6 +3780,222 @@ impl SettingsWindow {
         }
         return index.expect("No root entry found");
     }
+
+    /// Opens the inline MCP server editor in the AI settings page.
+    pub(crate) fn open_mcp_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.mcp_editor.is_some() {
+            return;
+        }
+        let is_http = self.mcp_editor_is_http;
+        let initial_text = if is_http {
+            context_server_http_input(None)
+        } else {
+            context_server_input(None)
+        };
+        let editor = cx.new(|cx| {
+            let mut editor = Editor::auto_height(4, 16, window, cx);
+            editor.set_text(initial_text, window, cx);
+            editor.set_show_gutter(false, cx);
+            editor.set_soft_wrap_mode(language::language_settings::SoftWrap::None, cx);
+            editor
+        });
+        self.mcp_editor = Some(editor);
+
+        // Set up JSONC highlighting asynchronously
+        let languages = AppState::global(cx).languages.clone();
+        let editor = self.mcp_editor.clone().unwrap();
+        cx.spawn(async move |_this, cx| {
+            let jsonc_language = languages.language_for_name("jsonc").await.ok();
+            if let Some(lang) = jsonc_language {
+                editor.update(cx, |editor, cx| {
+                    if let Some(buffer) = editor.buffer().read(cx).as_singleton() {
+                        buffer.update(cx, |buffer, cx| buffer.set_language(Some(lang), cx))
+                    }
+                });
+            }
+        }).detach();
+
+        cx.notify();
+    }
+
+    /// Closes the inline MCP server editor.
+    pub(crate) fn close_mcp_editor(&mut self, cx: &mut Context<Self>) {
+        self.mcp_editor = None;
+        cx.notify();
+    }
+
+    /// Switches the MCP editor between Local and Remote tabs.
+    pub(crate) fn set_mcp_editor_is_http(&mut self, is_http: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.mcp_editor_is_http == is_http {
+            return;
+        }
+        self.mcp_editor_is_http = is_http;
+        if let Some(editor) = &self.mcp_editor {
+            let new_text = if is_http {
+                context_server_http_input(None)
+            } else {
+                context_server_input(None)
+            };
+            editor.update(cx, |editor, cx| {
+                editor.set_text(new_text, window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    /// Confirms the inline MCP editor: parses the JSON, writes settings, starts the server.
+    pub(crate) fn confirm_mcp_editor(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(editor) = &self.mcp_editor else {
+            return;
+        };
+        let text = editor.read(cx).text(cx);
+        let is_http = self.mcp_editor_is_http;
+
+        let result = if is_http {
+            parse_http_input(&text)
+        } else {
+            parse_input(&text)
+        };
+
+        match result {
+            Ok((id, settings)) => {
+                let fs = <dyn fs::Fs>::global(cx);
+                let id_str = id.clone();
+                cx.global_mut::<SettingsStore>().update_settings_file(fs, move |content, _cx| {
+                    content.project.context_servers.insert(id_str, settings);
+                });
+                self.mcp_editor = None;
+                cx.notify();
+            }
+            Err(err) => {
+                // For now, log the error. Could show inline error later.
+                log::info!("[mcp_editor] Failed to parse server config: {}", err);
+            }
+        }
+    }
+}
+
+/// Generates the default JSONC input template for a new local (stdio) MCP server.
+fn context_server_input(existing: Option<(&str, &settings_content::ContextServerCommand)>) -> String {
+    let (name, command, args, env) = match existing {
+        Some((id, cmd)) => {
+            let args = serde_json::to_string(&cmd.args).unwrap();
+            let env = serde_json::to_string(&cmd.env.clone().unwrap_or_default()).unwrap();
+            let cmd_path = serde_json::to_string(&cmd.path).unwrap();
+            (id.to_string(), cmd_path, args, env)
+        }
+        None => (
+            "some-mcp-server".to_string(),
+            "".to_string(),
+            "[]".to_string(),
+            "{}".to_string(),
+        ),
+    };
+
+    format!(
+        r#"{{
+  /// Configure an MCP server that runs locally via stdin/stdout
+  ///
+  /// The name of your MCP server
+  "{name}": {{
+    /// The command which runs the MCP server
+    "command": {command},
+    /// The arguments to pass to the MCP server
+    "args": {args},
+    /// The environment variables to set
+    "env": {env}
+  }}
+}}"#
+    )
+}
+
+/// Generates the default JSONC input template for a new remote (HTTP) MCP server.
+fn context_server_http_input(existing: Option<(&str, &str, &HashMap<String, String>)>) -> String {
+    let (name, url, headers) = match existing {
+        Some((id, url, headers)) => {
+            let header = if headers.is_empty() {
+                r#"// "Authorization": "Bearer <token>""#.to_string()
+            } else {
+                let json = serde_json::to_string_pretty(&headers).unwrap();
+                let mut lines = json.split("\n").collect::<Vec<_>>();
+                if lines.len() > 1 {
+                    lines.remove(0);
+                    lines.pop();
+                }
+                lines
+                    .into_iter()
+                    .map(|line| format!("  {}", line))
+                    .collect::<String>()
+            };
+            (id.to_string(), url.to_string(), header)
+        }
+        None => (
+            "some-remote-server".to_string(),
+            "https://example.com/mcp".to_string(),
+            r#"// "Authorization": "Bearer <token>""#.to_string(),
+        ),
+    };
+
+    format!(
+        r#"{{
+  /// Configure an MCP server that you connect to over HTTP
+  ///
+  /// The name of your remote MCP server
+  "{name}": {{
+    /// The URL of the remote MCP server
+    "url": "{url}",
+    "headers": {{
+     /// Any headers to send along
+     {headers}
+    }}
+  }}
+}}"#
+    )
+}
+
+/// Parses the JSONC input for a local (stdio) MCP server.
+/// Returns (server_name, ContextServerSettingsContent).
+fn parse_input(text: &str) -> anyhow::Result<(Arc<str>, settings_content::ContextServerSettingsContent)> {
+    let value: serde_json::Value = serde_json_lenient::from_str(text)?;
+    let object = value.as_object().context("Expected object")?;
+    anyhow::ensure!(object.len() == 1, "Expected exactly one key-value pair");
+    let (context_server_name, value) = object.into_iter().next().unwrap();
+    let command: settings_content::ContextServerCommand = serde_json::from_value(value.clone())?;
+    Ok((
+        Arc::from(context_server_name.clone()),
+        settings_content::ContextServerSettingsContent::Stdio {
+            enabled: true,
+            remote: false,
+            command,
+        },
+    ))
+}
+
+/// Parses the JSONC input for a remote (HTTP) MCP server.
+/// Returns (server_name, ContextServerSettingsContent).
+fn parse_http_input(text: &str) -> anyhow::Result<(Arc<str>, settings_content::ContextServerSettingsContent)> {
+    #[derive(serde::Deserialize)]
+    struct Temp {
+        url: String,
+        #[serde(default)]
+        headers: collections::HashMap<String, String>,
+    }
+    let value: collections::HashMap<String, Temp> = serde_json_lenient::from_str(text)?;
+    if value.len() != 1 {
+        anyhow::bail!("Expected exactly one context server configuration");
+    }
+
+    let (key, value) = value.into_iter().next().unwrap();
+
+    Ok((
+        Arc::from(key),
+        settings_content::ContextServerSettingsContent::Http {
+            enabled: true,
+            url: value.url,
+            headers: value.headers,
+            timeout: None,
+        },
+    ))
 }
 
 impl Render for SettingsWindow {

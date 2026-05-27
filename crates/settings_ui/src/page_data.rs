@@ -1,4 +1,4 @@
-use gpui::{Action as _, App};
+use gpui::{Action as _, App, Context, Window, prelude::*};
 use itertools::Itertools as _;
 use settings::{LanguageSettingsContent, SemanticTokens, SettingsContent};
 use std::sync::{Arc, OnceLock};
@@ -7,7 +7,7 @@ use theme::SystemAppearance;
 use ui::IntoElement;
 
 use crate::{
-    ActionLink, DynamicItem, PROJECT, SettingField, SettingItem, SettingsFieldMetadata,
+    ActionLink, CustomItem, DynamicItem, PROJECT, SettingField, SettingItem, SettingsFieldMetadata,
     SettingsPage, SettingsPageItem, SubPageLink, USER, active_language, all_language_names,
     pages::{
         render_agent_profiles_setup_page,
@@ -7598,26 +7598,13 @@ fn ai_page(cx: &App) -> SettingsPage {
     fn mcp_servers_section() -> [SettingsPageItem; 2] {
         [
             SettingsPageItem::SectionHeader("MCP Servers"),
-            SettingsPageItem::ActionLink(ActionLink {
-                title: "Configure MCP Servers".into(),
+            SettingsPageItem::CustomItem(CustomItem {
+                title: "MCP Servers".into(),
                 description: Some(
                     "Add and configure Model Context Protocol (MCP) servers \
                      connected directly or via a Xenomorphic extension.".into(),
                 ),
-                button_text: "Open".into(),
-                on_click: Arc::new(|settings_window, window, cx| {
-                    let Some(original_window) = settings_window.original_window else {
-                        return;
-                    };
-                    original_window
-                        .update(cx, |_workspace, original_window, cx| {
-                            original_window
-                                .dispatch_action(xenomorphic_actions::agent::AddContextServer.boxed_clone(), cx);
-                            original_window.activate_window();
-                        })
-                        .ok();
-                    window.remove_window();
-                }),
+                render: Arc::new(render_mcp_servers_inline),
                 files: USER,
             }),
         ]
@@ -9507,6 +9494,287 @@ fn write_helix_mode_inner(settings: &mut SettingsContent, value: Option<bool>) {
         settings.vim_mode = Some(false);
     }
     settings.helix_mode = value;
+}
+
+fn render_mcp_servers_inline(
+    settings_window: &crate::SettingsWindow,
+    _item_index: usize,
+    _bottom_border: bool,
+    _extra_bottom_padding: bool,
+    _window: &mut Window,
+    cx: &mut Context<crate::SettingsWindow>,
+) -> gpui::AnyElement {
+    use settings::{ContextServerSettingsContent, Settings as _};
+    use theme::ActiveTheme;
+    use theme_settings::ThemeSettings;
+    use ui::{
+        Button, ButtonCommon, ButtonStyle, Clickable, Color, Icon, IconName, IconSize, Label,
+        LabelCommon, LabelSize, Switch, ToggleState, div, h_flex, v_flex, relative,
+    };
+
+    let merged = cx.global::<settings::SettingsStore>().merged_settings();
+    // Collect server data into owned values so the element tree doesn't borrow from cx.
+    let servers: Vec<(Arc<str>, ContextServerSettingsContent)> = merged
+        .project
+        .context_servers
+        .iter()
+        .map(|(name, config)| (name.clone(), config.clone()))
+        .collect();
+
+    let mut content = v_flex()
+        .group("setting-item")
+        .px_8()
+        .child(
+            h_flex()
+                .id("mcp-servers")
+                .w_full()
+                .min_w_0()
+                .pt_4()
+                .pb_4()
+                .child(
+                    v_flex()
+                        .relative()
+                        .w_full()
+                        .child(Label::new("MCP Servers"))
+                        .child(
+                            Label::new(
+                                "Add and configure Model Context Protocol (MCP) \
+                                 servers connected directly or via a Xenomorphic extension.",
+                            )
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                        ),
+                ),
+        );
+
+    if servers.is_empty() {
+        content = content.child(
+            h_flex()
+                .px_8()
+                .pb_2()
+                .child(
+                    Label::new("No MCP servers configured.")
+                        .size(LabelSize::Small)
+                        .color(Color::Muted),
+                ),
+        );
+    } else {
+        for (name, config) in servers {
+            let type_label: gpui::SharedString = match &config {
+                ContextServerSettingsContent::Stdio { .. } => "Local",
+                ContextServerSettingsContent::Http { .. } => "Remote",
+                ContextServerSettingsContent::Extension { .. } => "Extension",
+            }
+            .into();
+            let enabled = match &config {
+                ContextServerSettingsContent::Stdio { enabled, .. } => *enabled,
+                ContextServerSettingsContent::Http { enabled, .. } => *enabled,
+                ContextServerSettingsContent::Extension { enabled, .. } => *enabled,
+            };
+            let name_for_toggle = name.clone();
+
+            content = content.child(
+                h_flex()
+                    .px_8()
+                    .py_1p5()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        Switch::new(
+                            gpui::SharedString::from(name.as_ref()),
+                            if enabled {
+                                ToggleState::Selected
+                            } else {
+                                ToggleState::Unselected
+                            },
+                        )
+                        .on_click({
+                            let name = name_for_toggle.clone();
+                            move |state, _window, cx| {
+                                let new_enabled = *state == ToggleState::Selected;
+                                let fs = <dyn fs::Fs>::global(cx);
+                                let name = name.clone();
+                                cx.global_mut::<settings::SettingsStore>()
+                                    .update_settings_file(fs, move |settings, _cx| {
+                                        if let Some(server) =
+                                            settings.project.context_servers.get_mut(&name)
+                                        {
+                                            server.set_enabled(new_enabled);
+                                        }
+                                    });
+                            }
+                        }),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .child(Label::new(gpui::SharedString::from(name.as_ref()))),
+                    )
+                    .child(
+                        Label::new(type_label)
+                            .size(LabelSize::Small)
+                            .color(Color::Muted),
+                    ),
+            );
+        }
+    }
+
+    // Add Server buttons / Inline editor
+    let original_window = settings_window.original_window;
+    let mcp_editor = settings_window.mcp_editor.clone();
+    let mcp_editor_is_http = settings_window.mcp_editor_is_http;
+
+    if let Some(editor) = mcp_editor {
+        // Render inline editor
+        use editor::{Editor, EditorElement, EditorStyle};
+        use theme_settings::ThemeSettings;
+
+        let tab = |label: &'static str, active: bool| {
+            div()
+                .id(label)
+                .cursor_pointer()
+                .p_1()
+                .text_sm()
+                .border_b_1()
+                .when(active, |this| {
+                    this.border_color(cx.theme().colors().border_focused)
+                })
+                .when(!active, |this| {
+                    this.border_color(gpui::transparent_black())
+                        .text_color(cx.theme().colors().text_muted)
+                        .hover(|s| s.text_color(cx.theme().colors().text))
+                })
+                .child(label)
+        };
+
+        content = content.child(
+            v_flex()
+                .px_8()
+                .pb_4()
+                .gap_2()
+                // Tabs
+                .child(
+                    h_flex()
+                        .pt_1()
+                        .mb_2p5()
+                        .gap_1()
+                        .border_b_1()
+                        .border_color(cx.theme().colors().border.opacity(0.5))
+                        .child(
+                            tab("Local", !mcp_editor_is_http).on_click(cx.listener(|this, _, window, cx| {
+                                this.set_mcp_editor_is_http(false, window, cx);
+                            })),
+                        )
+                        .child(
+                            tab("Remote", mcp_editor_is_http).on_click(cx.listener(|this, _, window, cx| {
+                                this.set_mcp_editor_is_http(true, window, cx);
+                            })),
+                        ),
+                )
+                // Description
+                .child(
+                    Label::new("Check the server docs for required arguments and environment variables.")
+                        .size(LabelSize::Small)
+                        .color(Color::Muted),
+                )
+                // Editor
+                .child(
+                    div()
+                        .p_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(cx.theme().colors().border_variant)
+                        .bg(cx.theme().colors().editor_background)
+                        .child({
+                            let settings = ThemeSettings::get_global(cx);
+                            let text_style = gpui::TextStyle {
+                                color: cx.theme().colors().text,
+                                font_family: settings.buffer_font.family.clone(),
+                                font_fallbacks: settings.buffer_font.fallbacks.clone(),
+                                font_size: settings.buffer_font_size(cx).into(),
+                                font_weight: settings.buffer_font.weight,
+                                line_height: relative(settings.buffer_line_height.value()),
+                                ..Default::default()
+                            };
+                            EditorElement::new(
+                                &editor,
+                                EditorStyle {
+                                    background: cx.theme().colors().editor_background,
+                                    local_player: cx.theme().players().local(),
+                                    text: text_style,
+                                    syntax: cx.theme().syntax().clone(),
+                                    ..Default::default()
+                                },
+                            )
+                        }),
+                )
+                // Buttons
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .justify_end()
+                        .child(
+                            Button::new("mcp-editor-cancel", "Cancel")
+                                .on_click(cx.listener(|this, _, _window, cx| {
+                                    this.close_mcp_editor(cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("mcp-editor-confirm", "Add Server")
+                                .style(ButtonStyle::Filled)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_mcp_editor(window, cx);
+                                })),
+                        ),
+                ),
+        );
+    } else {
+        // Render buttons
+        content = content.child(
+            h_flex()
+                .px_8()
+                .pt_2()
+                .pb_4()
+                .gap_2()
+                .justify_end()
+                .child(
+                    Button::new("mcp-add-custom", "Add Custom Server")
+                        .start_icon(Icon::new(IconName::Plus).size(IconSize::Small))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.open_mcp_editor(window, cx);
+                        })),
+                )
+                .child(
+                    Button::new("mcp-add-extension", "Install from Extensions")
+                        .start_icon(
+                            Icon::new(IconName::ArrowUpRight).size(IconSize::Small),
+                        )
+                        .on_click(move |_, _window, cx| {
+                            let Some(original_window) = original_window else {
+                                return;
+                            };
+                            original_window
+                                .update(cx, |_workspace, original_window, cx| {
+                                    original_window.dispatch_action(
+                                        xenomorphic_actions::Extensions {
+                                            category_filter: Some(
+                                                xenomorphic_actions::ExtensionCategoryFilter::ContextServers,
+                                            ),
+                                            id: None,
+                                        }
+                                        .boxed_clone(),
+                                        cx,
+                                    );
+                                    original_window.activate_window();
+                                })
+                                .ok();
+                        }),
+                ),
+        );
+    }
+
+    content.into_any_element()
 }
 
 #[cfg(test)]
