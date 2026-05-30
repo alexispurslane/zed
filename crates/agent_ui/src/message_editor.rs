@@ -746,7 +746,10 @@ impl MessageEditor {
 
         cx.spawn(async move |_, _cx| {
             Self::validate_slash_commands(&text, &available_commands, &agent_id)?;
-            build_task.await
+            log::info!("[agent-send] MessageEditor::contents: slash commands validated, awaiting build_task");
+            let result = build_task.await;
+            log::info!("[agent-send] MessageEditor::contents: build_task resolved, ok={}", result.is_ok());
+            result
         })
     }
 
@@ -771,7 +774,9 @@ impl MessageEditor {
             self.session_capabilities.read().supports_embedded_context();
 
         cx.spawn(async move |_, cx| {
+            log::info!("[agent-send] build_content_blocks: awaiting mention_set.contents");
             let mut contents = contents.await?;
+            log::info!("[agent-send] build_content_blocks: mention contents resolved, count={}", contents.len());
             Ok(editor.update(cx, |editor, cx| {
                 let crease_snapshot = editor.display_map.read(cx).crease_snapshot();
                 let buffer_snapshot = editor.buffer().read(cx).snapshot(cx);
@@ -827,6 +832,11 @@ impl MessageEditor {
     }
 
     pub fn send(&mut self, cx: &mut Context<Self>) {
+        log::info!(
+            "[agent-send] MessageEditor::send: is_empty={}, session_id={:?}",
+            self.is_empty(cx),
+            self.session_id,
+        );
         if !self.is_empty(cx) {
             self.editor.update(cx, |editor, cx| {
                 editor.clear_inlay_hints(cx);
@@ -886,6 +896,7 @@ impl MessageEditor {
     }
 
     fn chat(&mut self, _: &Chat, _: &mut Window, cx: &mut Context<Self>) {
+        log::info!("[agent-send] MessageEditor::chat: is_empty={}", self.is_empty(cx));
         self.send(cx);
     }
 

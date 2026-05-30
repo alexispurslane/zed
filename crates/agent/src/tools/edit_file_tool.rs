@@ -12,7 +12,7 @@ use anyhow::Result;
 use futures::FutureExt as _;
 use gpui::{App, AsyncApp, Entity, Task, WeakEntity};
 use language::LanguageRegistry;
-use project::Project;
+use project::{AgentThreadId, Project};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -1636,8 +1636,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         // Read the file first
@@ -1707,8 +1706,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         // Read the file first
@@ -1793,8 +1791,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         cx.update(|cx| {
@@ -1884,8 +1881,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         cx.update(|cx| {
@@ -1976,8 +1972,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         cx.update(|cx| {
@@ -2055,8 +2050,7 @@ mod tests {
         let read_tool = Arc::new(crate::ReadFileTool::new(
             project.clone(),
             action_log.clone(),
-            true,
-            Arc::from("test-thread"),
+            project::AgentThreadId::from_session_id("test"),
         ));
 
         cx.update(|cx| {

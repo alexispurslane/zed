@@ -336,6 +336,8 @@ pub struct ToolPermissions {
     pub tools: collections::HashMap<Arc<str>, ToolRules>,
 }
 
+impl ToolPermissions {}
+
 impl ToolPermissions {
     /// Returns all invalid regex patterns across all tools.
     pub fn invalid_patterns(&self) -> Vec<&InvalidRegexPattern> {

@@ -1715,17 +1715,19 @@ impl LanguageServer {
         version: i32,
         initial_text: String,
     ) {
-        self.notify::<notification::DidOpenTextDocument>(DidOpenTextDocumentParams {
+        if let Err(err) = self.notify::<notification::DidOpenTextDocument>(DidOpenTextDocumentParams {
             text_document: TextDocumentItem::new(uri, language_id, version, initial_text),
-        })
-        .ok();
+        }) {
+            log::error!("Failed to send textDocument/didOpen to language server {}: {err}", self.server_id);
+        }
     }
 
     pub fn unregister_buffer(&self, uri: Uri) {
-        self.notify::<notification::DidCloseTextDocument>(DidCloseTextDocumentParams {
+        if let Err(err) = self.notify::<notification::DidCloseTextDocument>(DidCloseTextDocumentParams {
             text_document: TextDocumentIdentifier::new(uri),
-        })
-        .ok();
+        }) {
+            log::error!("Failed to send textDocument/didClose to language server {}: {err}", self.server_id);
+        }
     }
 }
 

@@ -1,7 +1,8 @@
 use crate::{
     ApplyCodeActionTool, CodeActionStore, ContextServerRegistry, CopyPathTool, CreateDirectoryTool,
     DbLanguageModel, DbThread, DeletePathTool, DiagnosticsTool, EditFileTool, FetchTool,
-    FindPathTool, FindReferencesTool, GetCodeActionsTool, GoToDefinitionTool, GrepTool,
+    FindPathTool, FindReferencesTool, GetCodeActionsTool, GoToDefinitionTool, GrepResultStore,
+    GrepTool,
     ListDirectoryTool, MovePathTool, NowTool, OpenTool, ProjectSnapshot, ReadFileTool, RenameTool,
     SpawnAgentTool, SystemPromptTemplate, Template, Templates, TerminalTool,
     ToolPermissionDecision, UpdatePlanTool, WebSearchTool, WriteFileTool,
@@ -9,7 +10,7 @@ use crate::{
 };
 use agent_thread::{MentionUri, UserMessageId};
 use action_log::ActionLog;
-use feature_flags::{FeatureFlagAppExt as _, LspToolFeatureFlag, UpdatePlanToolFeatureFlag};
+use feature_flags::{FeatureFlagAppExt as _, UpdatePlanToolFeatureFlag};
 
 use agent_thread::schema;
 use agent_settings::{
@@ -1576,7 +1577,8 @@ impl Thread {
         ));
         self.add_tool(FetchTool::new(self.project.read(cx).client().http_client()));
         self.add_tool(FindPathTool::new(self.project.clone()));
-        self.add_tool(GrepTool::new(self.project.clone()));
+        let grep_result_store: GrepResultStore = cx.new(|_cx| None);
+        self.add_tool(GrepTool::new(self.project.clone(), grep_result_store));
         self.add_tool(ListDirectoryTool::new(self.project.clone()));
         self.add_tool(MovePathTool::new(self.project.clone()));
         self.add_tool(NowTool);
@@ -1603,9 +1605,10 @@ impl Thread {
         self.add_tool(ApplyCodeActionTool::new(
             self.project.clone(),
             code_action_store,
+            self.action_log.clone(),
         ));
         self.add_tool(GoToDefinitionTool::new(self.project.clone()));
-        self.add_tool(RenameTool::new(self.project.clone()));
+        self.add_tool(RenameTool::new(self.project.clone(), self.action_log.clone()));
 
         if self.depth() < MAX_SUBAGENT_DEPTH {
             self.add_tool(SpawnAgentTool::new(environment));
@@ -1808,7 +1811,7 @@ impl Thread {
         T: Into<UserMessageContent>,
     {
         let content = content.into_iter().map(Into::into).collect::<Vec<_>>();
-        log::debug!("Thread::send content: {:?}", content);
+        log::info!("[agent-send] Thread::send: {} content blocks, model={:?}", content.len(), self.model().map(|m| m.name().0.to_string()));
 
         self.messages
             .push(Message::User(UserMessage { id, content }));
@@ -1825,7 +1828,7 @@ impl Thread {
             .model()
             .ok_or_else(|| anyhow!(NoModelConfiguredError))?;
 
-        log::info!("Thread::send called with model: {}", model.name().0);
+        log::info!("[agent-send] Thread::send_existing: model={}, messages={}, about to run_turn", model.name().0, self.messages.len());
         self.advance_prompt_id();
 
         log::debug!("Total messages in thread: {}", self.messages.len());
@@ -1878,6 +1881,8 @@ impl Thread {
         // turn's pending message instead of the old one.
         self.flush_pending_message(cx);
         self.cancel(cx).detach();
+
+        log::info!("[agent-send] Thread::run_turn: spawning async turn task");
 
         let (events_tx, events_rx) = mpsc::unbounded::<Result<ThreadEvent>>();
         let event_stream = ThreadEventStream(events_tx);
@@ -1969,9 +1974,17 @@ impl Thread {
             );
 
             log::debug!("Calling model.stream_completion, attempt {}", attempt);
+            log::info!(
+                "[agent-send] Thread::run_turn_internal: calling model.stream_completion, model={}, attempt={}",
+                model.telemetry_id(),
+                attempt,
+            );
 
             let (mut events, mut error) = match model.stream_completion(request, cx).await {
-                Ok(events) => (events.fuse(), None),
+                Ok(events) => {
+                    log::info!("[agent-send] Thread::run_turn_internal: model.stream_completion returned Ok, got event stream");
+                    (events.fuse(), None)
+                }
                 Err(err) => (stream::empty().boxed().fuse(), Some(err)),
             };
             let mut tool_results: FuturesUnordered<Task<LanguageModelToolResult>> =
@@ -2983,17 +2996,6 @@ impl Thread {
                 } else {
                     None
                 }
-            })
-            .filter(|(tool_name, _)| {
-                cx.has_flag::<LspToolFeatureFlag>()
-                    || !matches!(
-                        tool_name.as_ref(),
-                        FindReferencesTool::NAME
-                            | GetCodeActionsTool::NAME
-                            | ApplyCodeActionTool::NAME
-                            | GoToDefinitionTool::NAME
-                            | RenameTool::NAME
-                    )
             })
             .collect::<BTreeMap<_, _>>();
 

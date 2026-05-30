@@ -2195,6 +2195,12 @@ impl AgentThread {
         message: Vec<schema::ContentBlock>,
         cx: &mut Context<Self>,
     ) -> BoxFuture<'static, Result<Option<schema::PromptResponse>>> {
+        log::info!(
+            "[agent-send] AgentThread::send: session_id={}, message_blocks={}, thread_status={:?}",
+            self.session_id,
+            message.len(),
+            self.status(),
+        );
         let block = ContentBlock::new_combined(
             message.clone(),
             self.project.read(cx).languages().clone(),
@@ -2220,12 +2226,21 @@ impl AgentThread {
                 );
             })
             .ok();
+            log::info!("[agent-send] AgentThread::send: pushed user message entry, about to checkpoint");
 
-            let old_checkpoint = git_store
-                .update(cx, |git, cx| git.checkpoint(cx))
-                .await
-                .context("failed to get old checkpoint")
-                .log_err();
+            let checkpoint_task = git_store
+                .update(cx, |git, cx| git.checkpoint(cx));
+            log::info!("[agent-send] AgentThread::send: got checkpoint task, awaiting");
+            let old_checkpoint = futures::select! {
+                result = checkpoint_task.fuse() => {
+                    log::info!("[agent-send] AgentThread::send: checkpoint resolved, ok={:?}", result.is_ok());
+                    result.context("failed to get old checkpoint").log_err()
+                }
+                _ = cx.background_executor().timer(Duration::from_secs(5)).fuse() => {
+                    log::warn!("[agent-send] AgentThread::send: checkpoint timed out after 5s, proceeding without checkpoint");
+                    None
+                }
+            };
             this.update(cx, |this, cx| {
                 if let Some((_ix, message)) = this.last_user_message() {
                     message.checkpoint = old_checkpoint.map(|git_checkpoint| Checkpoint {
@@ -2233,6 +2248,7 @@ impl AgentThread {
                         show: false,
                     });
                 }
+                log::info!("[agent-send] AgentThread::send run_turn: calling connection.prompt for session {}", request.session_id);
                 this.connection.prompt(message_id, request, cx)
             })?
             .await
@@ -2263,6 +2279,12 @@ impl AgentThread {
         cx: &mut Context<Self>,
         f: impl 'static + AsyncFnOnce(WeakEntity<Self>, &mut AsyncApp) -> Result<schema::PromptResponse>,
     ) -> BoxFuture<'static, Result<Option<schema::PromptResponse>>> {
+        log::info!(
+            "[agent-send] AgentThread::run_turn: session_id={}, had_error={}, turn_id={}",
+            self.session_id,
+            self.had_error,
+            self.turn_id + 1,
+        );
         self.clear_completed_plan_entries(cx);
         self.had_error = false;
 
@@ -2271,11 +2293,15 @@ impl AgentThread {
 
         self.turn_id += 1;
         let turn_id = self.turn_id;
+        log::info!("[agent-send] AgentThread::run_turn: spawning send_task for turn_id={}", turn_id);
         self.running_turn = Some(RunningTurn {
             id: turn_id,
             send_task: cx.spawn(async move |this, cx| {
                 cancel_task.await;
-                tx.send(f(this, cx).await).ok();
+                log::info!("[agent-send] AgentThread::run_turn: cancel_task completed for turn_id={}, running fcallback", turn_id);
+                let result = f(this, cx).await;
+                log::info!("[agent-send] AgentThread::run_turn: f-callback completed for turn_id={}, ok={}", turn_id, result.is_ok());
+                tx.send(result).ok();
             }),
         });
 

@@ -6010,6 +6010,15 @@ impl Project {
         })
     }
 
+    /// Returns true if any language server for the given buffer is still
+    /// starting up (not yet ready to handle requests).
+    pub fn has_starting_language_servers_for(&self, buffer: &Buffer, cx: &mut App) -> bool {
+        self.lsp_store
+            .update(cx, |this, cx| {
+                this.has_starting_language_servers_for_buffer(buffer, cx)
+            })
+    }
+
     pub fn git_init(
         &self,
         path: Arc<Path>,

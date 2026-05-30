@@ -60,6 +60,8 @@ pub struct ProjectSnapshot {
     pub timestamp: DateTime<Utc>,
 }
 
+
+
 pub struct RulesLoadingError {
     pub message: SharedString,
 }
@@ -1215,11 +1217,17 @@ impl NativeAgentConnection {
             log::error!("Session not found in run_turn: {}", session_id);
             return Task::ready(Err(anyhow!("Session not found")));
         };
-        log::debug!("Found session for: {}", session_id);
+        log::info!("[agent-send] NativeAgent::run_turn: found session for {}, calling f-callback", session_id);
 
         let response_stream = match f(thread, cx) {
-            Ok(stream) => stream,
-            Err(err) => return Task::ready(Err(err)),
+            Ok(stream) => {
+                log::info!("[agent-send] NativeAgent::run_turn: f-callback returned Ok, streaming events");
+                stream
+            }
+            Err(err) => {
+                log::error!("[agent-send] NativeAgent::run_turn: f-callback returned Err: {:?}", err);
+                return Task::ready(Err(err));
+            }
         };
         Self::handle_thread_events(response_stream, agent_thread.downgrade(), cx)
     }
@@ -1547,11 +1555,16 @@ impl agent_thread::AgentConnection for NativeAgentConnection {
         log::debug!("Prompt blocks count: {}", params.prompt.len());
 
         let Some(project_state) = self.0.read(cx).session_project_state(&session_id) else {
-            log::error!("Session not found in prompt: {}", session_id);
+            log::error!("[agent-send] Session not found in prompt: {}", session_id);
             if self.0.read(cx).sessions.contains_key(&session_id) {
                 log::error!(
-                    "Session found in sessions map, but not in project state: {}",
+                    "[agent-send] Session found in sessions map, but not in project state: {}",
                     session_id
+                );
+            } else {
+                log::error!(
+                    "[agent-send] Session NOT found in sessions map either. Known sessions: {:?}",
+                    self.0.read(cx).sessions.keys().collect::<Vec<_>>()
                 );
             }
             return Task::ready(Err(anyhow::anyhow!("Session not found")));
@@ -1599,7 +1612,10 @@ impl agent_thread::AgentConnection for NativeAgentConnection {
 
         let path_style = project_state.project.read(cx).path_style(cx);
 
-        self.run_turn(session_id, cx, move |thread, cx| {
+        log::info!("[agent-send] NativeAgentConnection::prompt: session found, calling run_turn for session {}", session_id);
+
+        self.run_turn(session_id.clone(), cx, move |thread, cx| {
+            log::info!("[agent-send] NativeAgentConnection::prompt run_turn callback: calling Thread::send for session {}", session_id);
             let content: Vec<UserMessageContent> = params
                 .prompt
                 .into_iter()
@@ -1609,7 +1625,10 @@ impl agent_thread::AgentConnection for NativeAgentConnection {
             log::debug!("Message id: {:?}", id);
             log::debug!("Message content: {:?}", content);
 
-            thread.update(cx, |thread, cx| thread.send(id, content, cx))
+            log::info!("[agent-send] NativeAgentConnection::prompt: calling Thread::send for session {}", session_id);
+            let result = thread.update(cx, |thread, cx| thread.send(id, content, cx));
+            log::info!("[agent-send] NativeAgentConnection::prompt: Thread::send returned, ok={:?}", result.as_ref().map(|_| ()));
+            result
         })
     }
 

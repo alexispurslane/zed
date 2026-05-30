@@ -355,7 +355,7 @@ mod test {
     use super::*;
     use fs::Fs as _;
     use gpui::{AppContext, TestAppContext, UpdateGlobal as _};
-    use project::{FakeFs, Project};
+    use project::{AgentThreadId, FakeFs, Project};
     use serde_json::json;
     use settings::SettingsStore;
     use std::path::PathBuf;
@@ -376,7 +376,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
         let (event_stream, _) = ToolCallEventStream::test();
 
         let result = cx
@@ -403,7 +403,7 @@ mod test {
         fs.insert_tree(path!("/root"), json!({})).await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
         let (event_stream, _) = ToolCallEventStream::test();
 
         let result = cx
@@ -436,7 +436,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -470,7 +470,7 @@ mod test {
         let language_registry = project.read_with(cx, |project, _| project.languages().clone());
         language_registry.add(language::rust_lang());
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -550,7 +550,7 @@ mod test {
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
         let result = cx
             .update(|cx| {
                 let input = ReadFileToolInput {
@@ -582,7 +582,7 @@ mod test {
         .await;
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
 
         // start_line of 0 should be treated as 1
         let result = cx
@@ -712,7 +712,7 @@ mod test {
 
         let project = Project::test(fs.clone(), [path!("/project_root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
 
         // Reading a file outside the project worktree should fail
         let result = cx
@@ -907,7 +907,7 @@ mod test {
 
         let project = Project::test(fs.clone(), [path!("/root").as_ref()], cx).await;
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project, action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project, action_log, AgentThreadId::from_session_id("test")));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let read_task = cx.update(|cx| {
@@ -1016,7 +1016,7 @@ mod test {
         .await;
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log.clone(), true));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log.clone(), AgentThreadId::from_session_id("test")));
 
         // Test reading allowed files in worktree1
         let result = cx
@@ -1203,7 +1203,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, AgentThreadId::from_session_id("test")));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let task = cx.update(|cx| {
@@ -1265,7 +1265,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, AgentThreadId::from_session_id("test")));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let task = cx.update(|cx| {
@@ -1328,7 +1328,7 @@ mod test {
         cx.executor().run_until_parked();
 
         let action_log = cx.new(|_| ActionLog::new(project.clone()));
-        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, true));
+        let tool = Arc::new(ReadFileTool::new(project.clone(), action_log, AgentThreadId::from_session_id("test")));
 
         let (event_stream, mut event_rx) = ToolCallEventStream::test();
         let result = cx

@@ -8386,6 +8386,25 @@ impl LspStore {
             .unwrap_or_default()
     }
 
+    /// Returns true if any language server for the given buffer is still
+    /// starting up (not yet ready to handle requests).
+    pub fn has_starting_language_servers_for_buffer(
+        &self,
+        buffer: &Buffer,
+        cx: &mut App,
+    ) -> bool {
+        let Some(local) = self.as_local() else {
+            return false;
+        };
+        let server_ids = local.language_server_ids_for_buffer(buffer, cx);
+        server_ids.iter().any(|id| {
+            matches!(
+                local.language_servers.get(id),
+                Some(LanguageServerState::Starting { .. })
+            )
+        })
+    }
+
     pub fn language_server_for_local_buffer<'a>(
         &'a self,
         buffer: &'a Buffer,

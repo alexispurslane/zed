@@ -800,9 +800,14 @@ impl ConversationView {
         let connect_result = connection_entry.read(cx).wait_for_connection();
 
         let load_task = cx.spawn_in(window, async move |this, cx| {
+            log::info!("[agent-send] ConversationView::initial_state: awaiting connection");
             let connection = match connect_result.await {
-                Ok(AgentConnectedState { connection, .. }) => connection,
+                Ok(AgentConnectedState { connection, .. }) => {
+                    log::info!("[agent-send] ConversationView::initial_state: connection established");
+                    connection
+                }
                 Err(err) => {
+                    log::error!("[agent-send] ConversationView::initial_state: connection FAILED: {:?}", err);
                     this.update_in(cx, |this, window, cx| {
                         this.handle_load_error(err, window, cx);
                         cx.notify();
@@ -814,6 +819,7 @@ impl ConversationView {
 
             let resumed_without_history = false;
             let result = if let Some(session_id) = session_id_to_load.clone() {
+                log::info!("[agent-send] ConversationView::initial_state: loading existing session {}", session_id);
                 cx.update(|_, cx| {
                     if connection.supports_load_session() {
                         connection.clone().load_session(
@@ -831,6 +837,7 @@ impl ConversationView {
                 })
                 .log_err()
             } else {
+                log::info!("[agent-send] ConversationView::initial_state: creating new session");
                 cx.update(|_, cx| {
                     connection
                         .clone()
@@ -840,10 +847,13 @@ impl ConversationView {
             };
 
             let Some(result) = result else {
+                log::error!("[agent-send] ConversationView::initial_state: session creation/load returned None");
                 return;
             };
 
+            log::info!("[agent-send] ConversationView::initial_state: awaiting session creation/load");
             let result = result.await;
+            log::info!("[agent-send] ConversationView::initial_state: session result ok={}", result.is_ok());
 
             this.update_in(cx, |this, window, cx| {
                 match result {

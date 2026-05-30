@@ -1,11 +1,13 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
+use action_log::ActionLog;
 use agent_thread::schema;
 use gpui::{App, Entity, SharedString, Task};
 use project::Project;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use util::ResultExt;
 
 use super::symbol_locator::CodeActionStore;
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
@@ -27,13 +29,19 @@ pub struct ApplyCodeActionToolInput {
 pub struct ApplyCodeActionTool {
     project: Entity<Project>,
     code_action_store: CodeActionStore,
+    action_log: Entity<ActionLog>,
 }
 
 impl ApplyCodeActionTool {
-    pub fn new(project: Entity<Project>, code_action_store: CodeActionStore) -> Self {
+    pub fn new(
+        project: Entity<Project>,
+        code_action_store: CodeActionStore,
+        action_log: Entity<ActionLog>,
+    ) -> Self {
         Self {
             project,
             code_action_store,
+            action_log,
         }
     }
 }
@@ -80,6 +88,7 @@ impl AgentTool for ApplyCodeActionTool {
     ) -> Task<Result<String, String>> {
         let project = self.project.clone();
         let store = self.code_action_store.clone();
+        let action_log = self.action_log.clone();
         cx.spawn(async move |cx| {
             let input = input
                 .recv()
@@ -136,6 +145,16 @@ impl AgentTool for ApplyCodeActionTool {
                         .map(|f| f.full_path(cx).display().to_string())
                         .unwrap_or_else(|| "<untitled>".to_string());
                     writeln!(output, "- {path}").ok();
+                });
+
+                // Save the buffer to disk so the code action edits are actually persisted.
+                project
+                    .update(cx, |project, cx| project.save_buffer(buffer.clone(), cx))
+                    .await
+                    .log_err();
+
+                action_log.update(cx, |log, cx| {
+                    log.buffer_edited(buffer.clone(), cx);
                 });
             }
 

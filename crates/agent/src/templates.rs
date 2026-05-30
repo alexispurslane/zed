@@ -88,4 +88,59 @@ mod tests {
         assert!(!rendered.contains("## Planning"));
         assert!(rendered.contains("test-model"));
     }
+
+    #[test]
+    fn test_grep_guidance_varies_by_lsp_tool_availability() {
+        let project = prompt_store::ProjectContext::default();
+        let templates = Templates::new();
+
+        // When LSP tools are available, grep guidance should be scoped to
+        // non-symbol search and the LSP section should be present.
+        let with_lsp = SystemPromptTemplate {
+            project: &project,
+            available_tools: vec![
+                "grep".into(),
+                "find_references".into(),
+                "go_to_definition".into(),
+                "rename_symbol".into(),
+                "get_code_actions".into(),
+                "apply_code_action".into(),
+            ],
+            model_name: None,
+        };
+        let rendered = with_lsp.render(&templates).unwrap();
+        assert!(
+            rendered.contains("non-symbol"),
+            "with LSP tools: should scope grep to non-symbol search"
+        );
+        assert!(
+            rendered.contains("## Language Server Tools"),
+            "with LSP tools: should include LSP section"
+        );
+        assert!(
+            !rendered.contains("When looking for symbols in the project, prefer the `grep` tool"),
+            "with LSP tools: should NOT tell model to prefer grep for symbols"
+        );
+
+        // When no LSP tools are available, grep guidance should fall back to
+        // the original symbol-search advice and the LSP section should be absent.
+        let without_lsp = SystemPromptTemplate {
+            project: &project,
+            available_tools: vec!["grep".into(), "read_file".into()],
+            model_name: None,
+        };
+        let rendered = without_lsp.render(&templates).unwrap();
+        assert!(
+            rendered.contains("When looking for symbols in the project, prefer the `grep` tool"),
+            "without LSP tools: should prefer grep for symbols"
+        );
+        assert!(
+            !rendered.contains("## Language Server Tools"),
+            "without LSP tools: should NOT include LSP section"
+        );
+        assert!(
+            !rendered.contains("non-symbol"),
+            "without LSP tools: should NOT mention non-symbol scoping"
+        );
+    }
 }

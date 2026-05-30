@@ -556,6 +556,7 @@ impl ThreadView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[agent-send] ThreadView::handle_message_editor_event: {:?}", event);
         match event {
             MessageEditorEvent::Send => self.send(window, cx),
             MessageEditorEvent::SendImmediately => self.interrupt_and_send(window, cx),
@@ -597,6 +598,7 @@ impl ThreadView {
                 .get(thread.profile())
                 .is_some_and(|profile| profile.tools.is_empty())
         });
+        log::info!("[agent-send] resolve_message_contents: expand={}", expand);
         message_editor.update(cx, |message_editor, cx| message_editor.contents(expand, cx))
     }
 
@@ -818,6 +820,7 @@ impl ThreadView {
         let thread = &self.thread;
 
         if self.is_loading_contents {
+            log::warn!("[agent-send] ThreadView::send: bailing, is_loading_contents=true");
             return;
         }
 
@@ -826,24 +829,34 @@ impl ThreadView {
         let is_editor_empty = message_editor.read(cx).is_empty(cx);
         let is_generating = thread.read(cx).status() != ThreadStatus::Idle;
 
+        log::info!(
+            "[agent-send] ThreadView::send: is_editor_empty={}, is_generating={}, is_loading_contents=false",
+            is_editor_empty,
+            is_generating,
+        );
+
         let has_queued = self.has_queued_messages();
         if is_editor_empty && self.can_fast_track_queue && has_queued {
             self.can_fast_track_queue = false;
+            log::info!("[agent-send] ThreadView::send: fast-tracking queued message");
             self.send_queued_message_at_index(0, true, window, cx);
             return;
         }
 
         if is_editor_empty {
+            log::warn!("[agent-send] ThreadView::send: bailing, editor is empty");
             return;
         }
 
         if is_generating {
+            log::info!("[agent-send] ThreadView::send: thread generating, queueing message");
             cx.emit(ThreadViewEvent::Interacted);
             self.queue_message(message_editor, window, cx);
             return;
         }
 
         cx.emit(ThreadViewEvent::Interacted);
+        log::info!("[agent-send] ThreadView::send: calling send_impl");
         self.send_impl(message_editor, window, cx)
     }
 
@@ -853,6 +866,7 @@ impl ThreadView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[agent-send] send_impl: resolving message contents");
         let contents = self.resolve_message_contents(&message_editor, cx);
 
         self.thread_error.take();
@@ -892,6 +906,12 @@ impl ThreadView {
         let is_first_message = self.thread.read(cx).entries().is_empty();
         let thread = self.thread.downgrade();
 
+        log::info!(
+            "[agent-send] send_content: is_first_message={}, is_loading_contents={}",
+            is_first_message,
+            self.is_loading_contents,
+        );
+
         self.is_loading_contents = true;
 
         let guard = cx.new(|_| ());
@@ -902,9 +922,14 @@ impl ThreadView {
         .detach();
 
         let task = cx.spawn_in(window, async move |this, cx| {
-            let Some((contents, tracked_buffers)) = contents_task.await? else {
+            log::info!("[agent-send] send_content async: awaiting contents_task");
+            let contents_result = contents_task.await;
+            log::info!("[agent-send] send_content async: contents_task resolved, ok={}", contents_result.is_ok());
+            let Some((contents, tracked_buffers)) = contents_result? else {
+                log::warn!("[agent-send] send_content async: contents were empty/None, returning early");
                 return Ok(());
             };
+            log::info!("[agent-send] send_content async: got {} content blocks", contents.len());
 
             let generation = this.update(cx, |this, cx| {
                 this.clear_external_source_prompt_warning(cx);
@@ -954,6 +979,7 @@ impl ThreadView {
                 }
             }
 
+            log::info!("[agent-send] send_content async: about to call thread.send()");
             let send = thread.update(cx, |thread, cx| {
                 thread.action_log().update(cx, |action_log, cx| {
                     for buffer in tracked_buffers {
@@ -964,6 +990,7 @@ impl ThreadView {
 
                 thread.send(contents, cx)
             })?;
+            log::info!("[agent-send] send_content async: thread.send() returned future, about to await it");
 
             let _ = this.update(cx, |this, cx| {
                 this.sync_generating_indicator(cx);
@@ -971,6 +998,7 @@ impl ThreadView {
             });
 
             let res = send.await;
+            log::info!("[agent-send] send_content async: thread.send() await completed, ok={}", res.is_ok());
             drop(_stop_turn);
             if res.is_ok() {
                 let _ = this.update(cx, |this, _| this.in_flight_prompt.take());

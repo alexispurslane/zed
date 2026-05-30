@@ -3,7 +3,7 @@ use agent_thread::schema;
 use anyhow::Result;
 use futures::{FutureExt as _, StreamExt};
 use gpui::{App, Entity, SharedString, Task};
-use language::{OffsetRangeExt, ParseStatus, Point};
+use language::{Anchor, OffsetRangeExt, OutlineItem, ParseStatus, Point};
 use project::{
     Project, SearchResults, WorktreeSettings,
     search::{SearchQuery, SearchResult},
@@ -16,16 +16,22 @@ use util::RangeExt;
 use util::markdown::MarkdownInlineCode;
 use util::paths::PathMatcher;
 
-/// Searches the contents of files in the project with a regular expression
+/// Searches the contents of files in the project with a regular expression.
+///
+/// When called without a `path` parameter:
+/// - If there are 50 or fewer matches, returns all matches with full details (file paths, line
+///   numbers, code snippets, and parent symbol chains).
+/// - If there are more than 50 matches, returns a summary listing each file with a match, the
+///   number of matches in that file, and a total match count. Call grep again with the `path`
+///   parameter set to a specific file to see detailed results for that file.
+/// When called with a `path` parameter, returns all matches within that file with full details.
 ///
 /// - Prefer this tool to path search when searching for symbols in the project, because you won't need to guess what path it's in.
 /// - Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)
 /// - Pass an `include_pattern` if you know how to narrow your search on the files system
 /// - Never use this tool to search for paths. Only search file contents with this tool.
-/// - Use this tool when you need to find files containing specific patterns
-/// - Results are paginated with 20 matches per page. Use the optional 'offset' parameter to request subsequent pages.
 /// - DO NOT use HTML entities solely to escape characters in the tool parameters.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GrepToolInput {
     /// A regex pattern to search for in the entire project. Note that the regex will be parsed by the Rust `regex` crate.
     ///
@@ -48,6 +54,23 @@ pub struct GrepToolInput {
     /// Use "**/*.rs" to search Rust files across all root directories.
     /// </example>
     pub include_pattern: Option<String>,
+    /// An optional relative path to filter matches by. When provided, only matches
+    /// in the specified file are shown with full details. When omitted, all matches
+    /// are returned (as a summary if there are many, or in full if there are few).
+    ///
+    /// This path should never be absolute, and the first component of the path should
+    /// always be a root directory in a project. Use this to drill into the file-level
+    /// details after seeing the summary from a previous grep call.
+    ///
+    /// <example>
+    /// If the project has the following root directories:
+    ///
+    /// - lorem
+    /// - ipsum
+    ///
+    /// If you want matches for `dolor.rs` in `ipsum`, you should use the path `ipsum/dolor.rs`.
+    /// </example>
+    pub path: Option<String>,
     /// Optional starting position for paginated results (0-based).
     /// When not provided, starts from the beginning.
     #[serde(default)]
@@ -62,17 +85,81 @@ impl GrepToolInput {
     pub fn page(&self) -> u32 {
         1 + (self.offset / RESULTS_PER_PAGE)
     }
+
+    fn is_same_query(&self, other: &Self) -> bool {
+        self.regex == other.regex
+            && self.case_sensitive == other.case_sensitive
+            && self.include_pattern == other.include_pattern
+    }
 }
 
 const RESULTS_PER_PAGE: u32 = 20;
+const SUMMARY_THRESHOLD: usize = 50;
+
+const CONTEXT_LINES: u32 = 2;
+const MAX_ANCESTOR_LINES: u32 = 10;
+const MAX_LINE_DISPLAY_LEN: usize = 200;
+
+fn truncate_long_lines(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        if line.len() > MAX_LINE_DISPLAY_LEN {
+            let truncated: String = line.chars().take(MAX_LINE_DISPLAY_LEN).collect();
+            out.push_str(&truncated);
+            out.push('…');
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    // Remove the trailing newline added by the loop if the original
+    // text did not end with one.
+    if !text.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+pub type GrepResultStore = Entity<Option<PendingGrepResults>>;
+
+#[derive(Clone)]
+pub struct PendingGrepResults {
+    pub query_input: GrepToolInput,
+    pub file_results: Vec<FileGrepResults>,
+    pub total_matches: usize,
+}
+
+impl PendingGrepResults {
+    fn is_empty(&self) -> bool {
+        self.total_matches == 0
+    }
+}
+
+#[derive(Clone)]
+pub struct FileGrepResults {
+    pub path: String,
+    pub buffer: Entity<language::Buffer>,
+    pub match_ranges: Vec<MatchRange>,
+}
+
+#[derive(Clone)]
+pub struct MatchRange {
+    pub display_range: std::ops::Range<Point>,
+    pub ancestor_range: Option<std::ops::Range<Point>>,
+    pub parent_symbols: Vec<OutlineItem<Anchor>>,
+}
 
 pub struct GrepTool {
     project: Entity<Project>,
+    result_store: GrepResultStore,
 }
 
 impl GrepTool {
-    pub fn new(project: Entity<Project>) -> Self {
-        Self { project }
+    pub fn new(project: Entity<Project>, result_store: GrepResultStore) -> Self {
+        Self {
+            project,
+            result_store,
+        }
     }
 }
 
@@ -101,7 +188,12 @@ impl AgentTool for GrepTool {
                     ""
                 };
 
-                if page > 1 {
+                if let Some(path) = &input.path {
+                    format!(
+                        "Search {} for regex {regex_str}{case_info}",
+                        MarkdownInlineCode(path)
+                    )
+                } else if page > 1 {
                     format!("Get page {page} of search results for regex {regex_str}{case_info}")
                 } else {
                     format!("Search files for regex {regex_str}{case_info}")
@@ -118,99 +210,200 @@ impl AgentTool for GrepTool {
         event_stream: ToolCallEventStream,
         cx: &mut App,
     ) -> Task<Result<Self::Output, Self::Output>> {
-        const CONTEXT_LINES: u32 = 2;
-        const MAX_ANCESTOR_LINES: u32 = 10;
-
         let project = self.project.clone();
-        cx.spawn(async move |cx|  {
+        let result_store = self.result_store.clone();
+        cx.spawn(async move |cx| {
             let input = input
                 .recv()
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let results = cx.update(|cx| {
-                let path_style = project.read(cx).path_style(cx);
+            let filter_path = input.path.as_deref().filter(|p| !p.is_empty());
 
-                let include_matcher = PathMatcher::new(
-                    input
-                        .include_pattern
-                        .as_ref()
-                        .into_iter()
-                        .collect::<Vec<_>>(),
-                    path_style,
-                )
-                .map_err(|error| format!("invalid include glob pattern: {error}"))?;
-
-                // Exclude global file_scan_exclusions and private_files settings
-                let exclude_matcher = {
-                    let global_settings = WorktreeSettings::get_global(cx);
-                    let exclude_patterns = global_settings
-                        .file_scan_exclusions
-                        .sources()
-                        .chain(global_settings.private_files.sources());
-
-                    PathMatcher::new(exclude_patterns, path_style)
-                        .map_err(|error| format!("invalid exclude pattern: {error}"))?
-                };
-
-                let query = SearchQuery::regex(
-                    &input.regex,
-                    false,
-                    input.case_sensitive,
-                    false,
-                    false,
-                    include_matcher,
-                    exclude_matcher,
-                    true, // Always match file include pattern against *full project paths* that start with a project root.
-                    None,
-                )
-                .map_err(|error| error.to_string())?;
-
-                Ok::<_, String>(
-                    project.update(cx, |project, cx| project.search(query, cx)),
-                )
-            })?;
-
-            let project = project.downgrade();
-            // Keep the search alive for the duration of result iteration. Dropping this task is the
-            // cancellation mechanism; we intentionally do not detach it.
-            let SearchResults {rx, _task_handle}  = results;
-            futures::pin_mut!(rx);
-
-            let mut output = String::new();
-            let mut skips_remaining = input.offset;
-            let mut matches_found = 0;
-            let mut has_more_matches = false;
-
-            'outer: loop {
-                let search_result = futures::select! {
-                    result = rx.next().fuse() => result,
-                    _ = event_stream.cancelled_by_user().fuse() => {
-                        return Err("Search cancelled by user".to_string());
+            // If a filter path is provided, try to use cached results from a previous summary call.
+            if let Some(filter_path) = filter_path {
+                let cached = result_store.read_with(cx, |store, _| store.clone());
+                if let Some(pending) = cached {
+                    if pending.query_input.is_same_query(&input) {
+                        return render_file_detail(&pending, filter_path, cx);
                     }
-                };
+                }
+                // No matching cache; fall through to re-run the search with an include_pattern filter.
+                return run_search_and_render_file(
+                    project,
+                    &input,
+                    filter_path,
+                    event_stream,
+                    result_store,
+                    cx,
+                )
+                .await;
+            }
 
-                let (buffer, ranges) = match search_result {
-                    Some(SearchResult::Buffer { buffer, ranges }) => (buffer, ranges),
-                    Some(SearchResult::LimitReached) => {
-                        has_more_matches = true;
-                        break;
-                    }
-                    Some(SearchResult::WaitingForScan | SearchResult::Searching) => continue,
-                    None => break,
-                };
+            // No filter path: run the full search and decide summary vs. detail.
+            run_search_and_render(
+                project,
+                &input,
+                event_stream,
+                result_store,
+                cx,
+            )
+            .await
+        })
+    }
+}
+
+async fn run_search_and_render(
+    project: Entity<Project>,
+    input: &GrepToolInput,
+    event_stream: ToolCallEventStream,
+    result_store: GrepResultStore,
+    cx: &mut gpui::AsyncApp,
+) -> Result<String, String> {
+    let collected = collect_search_results(project, input, event_stream, cx).await?;
+
+    if collected.is_empty() {
+        return Ok("No matches found".into());
+    }
+
+    if collected.total_matches > SUMMARY_THRESHOLD {
+        // Store results for drill-in, then show summary.
+        result_store.update(cx, |store, _| {
+            *store = Some(collected.clone());
+        });
+
+        let mut file_counts: Vec<(String, usize)> = collected
+            .file_results
+            .iter()
+            .map(|fr| (fr.path.clone(), fr.match_ranges.len()))
+            .collect();
+        file_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        let mut output = format!(
+            "Found {} matches across {} file(s):\n\n",
+            collected.total_matches,
+            file_counts.len(),
+        );
+
+        for (path, count) in &file_counts {
+            writeln!(output, "- {path}: {count} match(es)").ok();
+        }
+
+        write!(
+            output,
+            "\nCall grep again with a `path` parameter set to one of the files above to see detailed match results within that file."
+        )
+        .ok();
+
+        Ok(output)
+    } else {
+        // Few enough results to show in full.
+        render_full_detail(&collected, input, cx)
+    }
+}
+
+async fn run_search_and_render_file(
+    project: Entity<Project>,
+    input: &GrepToolInput,
+    filter_path: &str,
+    event_stream: ToolCallEventStream,
+    result_store: GrepResultStore,
+    cx: &mut gpui::AsyncApp,
+) -> Result<String, String> {
+    let collected = collect_search_results(project, input, event_stream, cx).await?;
+
+    if collected.is_empty() {
+        return Ok(format!("No matches found in '{filter_path}'."));
+    }
+
+    // Store results in case the agent wants to drill into another file.
+    result_store.update(cx, |store, _| {
+        *store = Some(collected.clone());
+    });
+
+    render_file_detail(&collected, filter_path, cx)
+}
+
+async fn collect_search_results(
+    project: Entity<Project>,
+    input: &GrepToolInput,
+    event_stream: ToolCallEventStream,
+    cx: &mut gpui::AsyncApp,
+) -> Result<PendingGrepResults, String> {
+    let results = cx.update(|cx| {
+        let path_style = project.read(cx).path_style(cx);
+
+        let include_matcher = PathMatcher::new(
+            input
+                .include_pattern
+                .as_ref()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            path_style,
+        )
+        .map_err(|error| format!("invalid include glob pattern: {error}"))?;
+
+        let exclude_matcher = {
+            let global_settings = WorktreeSettings::get_global(cx);
+            let exclude_patterns = global_settings
+                .file_scan_exclusions
+                .sources()
+                .chain(global_settings.private_files.sources());
+
+            PathMatcher::new(exclude_patterns, path_style)
+                .map_err(|error| format!("invalid exclude pattern: {error}"))?
+        };
+
+        let query = SearchQuery::regex(
+            &input.regex,
+            false,
+            input.case_sensitive,
+            false,
+            false,
+            include_matcher,
+            exclude_matcher,
+            true,
+            None,
+        )
+        .map_err(|error| error.to_string())?;
+
+        Ok::<_, String>(
+            project.update(cx, |project, cx| project.search(query, cx)),
+        )
+    })?;
+
+    let project_weak = project.downgrade();
+    let SearchResults {
+        rx,
+        _task_handle,
+    } = results;
+    futures::pin_mut!(rx);
+
+    let mut file_results: Vec<FileGrepResults> = Vec::new();
+    let mut total_matches: usize = 0;
+
+    loop {
+        let search_result = futures::select! {
+            result = rx.next().fuse() => result,
+            _ = event_stream.cancelled_by_user().fuse() => {
+                return Err("Search cancelled by user".to_string());
+            }
+        };
+
+        match search_result {
+            Some(SearchResult::Buffer { buffer, ranges }) => {
                 if ranges.is_empty() {
                     continue;
                 }
 
-                let (Some(path), mut parse_status) = buffer.read_with(cx, |buffer, cx| {
-                    (buffer.file().map(|file| file.full_path(cx)), buffer.parse_status())
+                let Some(path) = buffer.read_with(cx, |buffer, cx| {
+                    buffer.file().map(|file| file.full_path(cx).display().to_string())
                 }) else {
                     continue;
                 };
 
-                // Check if this file should be excluded based on its worktree settings
-                if let Ok(Some(project_path)) = project.read_with(cx, |project, cx| {
+                // Check worktree-level exclusions
+                if let Ok(Some(project_path)) = project_weak.read_with(cx, |project, cx| {
                     project.find_project_path(&path, cx)
                 }) {
                     if cx.update(|cx| {
@@ -222,28 +415,42 @@ impl AgentTool for GrepTool {
                     }
                 }
 
+                // Wait for parsing to finish so syntax info is available.
+                let mut parse_status = buffer.read_with(cx, |buffer, _cx| buffer.parse_status());
                 while *parse_status.borrow() != ParseStatus::Idle {
                     parse_status.changed().await.map_err(|e| e.to_string())?;
                 }
 
                 let snapshot = buffer.read_with(cx, |buffer, _cx| buffer.snapshot());
 
-                let mut ranges = ranges
+                let match_ranges: Vec<MatchRange> = ranges
                     .into_iter()
                     .map(|range| {
                         let matched = range.to_point(&snapshot);
                         let matched_end_line_len = snapshot.line_len(matched.end.row);
-                        let full_lines = Point::new(matched.start.row, 0)..Point::new(matched.end.row, matched_end_line_len);
+                        let full_lines = Point::new(matched.start.row, 0)
+                            ..Point::new(matched.end.row, matched_end_line_len);
                         let symbols = snapshot.symbols_containing(matched.start, None);
 
                         if let Some(ancestor_node) = snapshot.syntax_ancestor(full_lines.clone()) {
-                            let full_ancestor_range = ancestor_node.byte_range().to_point(&snapshot);
-                            let end_row = full_ancestor_range.end.row.min(full_ancestor_range.start.row + MAX_ANCESTOR_LINES);
+                            let full_ancestor_range =
+                                ancestor_node.byte_range().to_point(&snapshot);
+                            let end_row = full_ancestor_range
+                                .end
+                                .row
+                                .min(full_ancestor_range.start.row + MAX_ANCESTOR_LINES);
                             let end_col = snapshot.line_len(end_row);
-                            let capped_ancestor_range = Point::new(full_ancestor_range.start.row, 0)..Point::new(end_row, end_col);
+                            let capped_ancestor_range = Point::new(
+                                full_ancestor_range.start.row,
+                                0,
+                            )..Point::new(end_row, end_col);
 
                             if capped_ancestor_range.contains_inclusive(&full_lines) {
-                                return (capped_ancestor_range, Some(full_ancestor_range), symbols)
+                                return MatchRange {
+                                    display_range: capped_ancestor_range,
+                                    ancestor_range: Some(full_ancestor_range),
+                                    parent_symbols: symbols,
+                                };
                             }
                         }
 
@@ -257,83 +464,198 @@ impl AgentTool for GrepTool {
                         );
                         matched.end.column = snapshot.line_len(matched.end.row);
 
-                        (matched, None, symbols)
+                        MatchRange {
+                            display_range: matched,
+                            ancestor_range: None,
+                            parent_symbols: symbols,
+                        }
                     })
-                    .peekable();
+                    .collect();
 
-                let mut file_header_written = false;
+                total_matches += match_ranges.len();
+                file_results.push(FileGrepResults {
+                    path,
+                    buffer,
+                    match_ranges,
+                });
+            }
+            Some(SearchResult::LimitReached) => break,
+            Some(SearchResult::WaitingForScan | SearchResult::Searching) => continue,
+            None => break,
+        }
+    }
 
-                while let Some((mut range, ancestor_range, parent_symbols)) = ranges.next(){
-                    if skips_remaining > 0 {
-                        skips_remaining -= 1;
-                        continue;
-                    }
+    Ok(PendingGrepResults {
+        query_input: input.clone(),
+        file_results,
+        total_matches,
+    })
+}
 
-                    // We'd already found a full page of matches, and we just found one more.
-                    if matches_found >= RESULTS_PER_PAGE {
-                        has_more_matches = true;
-                        break 'outer;
-                    }
+fn render_full_detail(
+    results: &PendingGrepResults,
+    _input: &GrepToolInput,
+    cx: &gpui::AsyncApp,
+) -> Result<String, String> {
+    let mut output = String::new();
+    let mut matches_found = 0;
 
-                    while let Some((next_range, _, _)) = ranges.peek() {
-                        if range.end.row >= next_range.start.row {
-                            range.end = next_range.end;
-                            ranges.next();
-                        } else {
-                            break;
-                        }
-                    }
+    for file_result in &results.file_results {
+        let snapshot = file_result.buffer.read_with(cx, |buffer, _cx| buffer.snapshot());
 
-                    if !file_header_written {
-                        writeln!(output, "\n## Matches in {}", path.display())
-                            .ok();
-                        file_header_written = true;
-                    }
+        let mut file_header_written = false;
+        let mut ranges = file_result.match_ranges.iter().peekable();
 
-                    let end_row = range.end.row;
-                    output.push_str("\n### ");
+        while let Some(match_range) = ranges.next() {
+            // Merge overlapping/adjacent ranges for display.
+            let mut display_range = match_range.display_range.clone();
+            let ancestor_range = match_range.ancestor_range.clone();
+            let parent_symbols = match_range.parent_symbols.clone();
 
-                    for symbol in parent_symbols {
-                        write!(output, "{} › ", symbol.text)
-                            .ok();
-                    }
-
-                    if range.start.row == end_row {
-                        writeln!(output, "L{}", range.start.row + 1)
-                            .ok();
-                    } else {
-                        writeln!(output, "L{}-{}", range.start.row + 1, end_row + 1)
-                            .ok();
-                    }
-
-                    output.push_str("```\n");
-                    output.extend(snapshot.text_for_range(range));
-                    output.push_str("\n```\n");
-
-                    if let Some(ancestor_range) = ancestor_range
-                        && end_row < ancestor_range.end.row {
-                            let remaining_lines = ancestor_range.end.row - end_row;
-                            writeln!(output, "\n{} lines remaining in ancestor node. Read the file to see all.", remaining_lines)
-                                .ok();
-                        }
-
-                    matches_found += 1;
+            while let Some(next) = ranges.peek() {
+                if display_range.end.row >= next.display_range.start.row {
+                    display_range.end = next.display_range.end.clone();
+                    ranges.next();
+                } else {
+                    break;
                 }
             }
 
-            if matches_found == 0 {
-                Ok("No matches found".into())
-            } else if has_more_matches {
-                Ok(format!(
-                    "Showing matches {}-{} (there were more matches found; use offset: {} to see next page):\n{output}",
-                    input.offset + 1,
-                    input.offset + matches_found,
-                    input.offset + RESULTS_PER_PAGE,
-                ))
-            } else {
-                Ok(format!("Found {matches_found} matches:\n{output}"))
+            if !file_header_written {
+                writeln!(output, "\n## Matches in {}", file_result.path).ok();
+                file_header_written = true;
             }
-        })
+
+            let end_row = display_range.end.row;
+            output.push_str("\n### ");
+
+            for symbol in &parent_symbols {
+                write!(output, "{} › ", symbol.text).ok();
+            }
+
+            if display_range.start.row == end_row {
+                writeln!(output, "L{}", display_range.start.row + 1).ok();
+            } else {
+                writeln!(
+                    output,
+                    "L{}-{}",
+                    display_range.start.row + 1,
+                    end_row + 1
+                )
+                .ok();
+            }
+
+            output.push_str("```\n");
+            let raw_text: String = snapshot.text_for_range(display_range.clone()).collect();
+            output.push_str(&truncate_long_lines(&raw_text));
+            output.push_str("\n```\n");
+
+            if let Some(ancestor_range) = ancestor_range && end_row < ancestor_range.end.row {
+                let remaining_lines = ancestor_range.end.row - end_row;
+                writeln!(
+                    output,
+                    "\n{} lines remaining in ancestor node. Read the file to see all.",
+                    remaining_lines
+                )
+                .ok();
+            }
+
+            matches_found += 1;
+        }
+    }
+
+    let header = if matches_found == 0 {
+        return Ok("No matches found".into());
+    } else {
+        format!("Found {matches_found} matches:")
+    };
+
+    Ok(format!("{header}\n{output}"))
+}
+
+fn render_file_detail(
+    results: &PendingGrepResults,
+    filter_path: &str,
+    cx: &gpui::AsyncApp,
+) -> Result<String, String> {
+    let mut output = String::new();
+    let mut matches_found = 0;
+
+    for file_result in &results.file_results {
+        if file_result.path != filter_path
+            && !file_result.path.ends_with(&format!("/{filter_path}"))
+        {
+            continue;
+        }
+
+        let snapshot = file_result.buffer.read_with(cx, |buffer, _cx| buffer.snapshot());
+
+        let mut file_header_written = false;
+        let mut ranges = file_result.match_ranges.iter().peekable();
+
+        while let Some(match_range) = ranges.next() {
+            let mut display_range = match_range.display_range.clone();
+            let ancestor_range = match_range.ancestor_range.clone();
+            let parent_symbols = match_range.parent_symbols.clone();
+
+            while let Some(next) = ranges.peek() {
+                if display_range.end.row >= next.display_range.start.row {
+                    display_range.end = next.display_range.end.clone();
+                    ranges.next();
+                } else {
+                    break;
+                }
+            }
+
+            if !file_header_written {
+                writeln!(output, "\n## Matches in {}", file_result.path).ok();
+                file_header_written = true;
+            }
+
+            let end_row = display_range.end.row;
+            output.push_str("\n### ");
+
+            for symbol in &parent_symbols {
+                write!(output, "{} › ", symbol.text).ok();
+            }
+
+            if display_range.start.row == end_row {
+                writeln!(output, "L{}", display_range.start.row + 1).ok();
+            } else {
+                writeln!(
+                    output,
+                    "L{}-{}",
+                    display_range.start.row + 1,
+                    end_row + 1
+                )
+                .ok();
+            }
+
+            output.push_str("```\n");
+            let raw_text: String = snapshot.text_for_range(display_range.clone()).collect();
+            output.push_str(&truncate_long_lines(&raw_text));
+            output.push_str("\n```\n");
+
+            if let Some(ancestor_range) = ancestor_range && end_row < ancestor_range.end.row {
+                let remaining_lines = ancestor_range.end.row - end_row;
+                writeln!(
+                    output,
+                    "\n{} lines remaining in ancestor node. Read the file to see all.",
+                    remaining_lines
+                )
+                .ok();
+            }
+
+            matches_found += 1;
+        }
+    }
+
+    if matches_found == 0 {
+        Ok(format!("No matches found in '{filter_path}'."))
+    } else {
+        Ok(format!(
+            "Found {matches_found} match(es) in `{filter_path}`:\n{output}"
+        ))
     }
 }
 
@@ -377,6 +699,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "println".to_string(),
             include_pattern: Some("root/**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -396,6 +719,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "fn".to_string(),
             include_pattern: Some("root/**/src/**".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -418,6 +742,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "fn".to_string(),
             include_pattern: None,
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -454,6 +779,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "uppercase".to_string(),
             include_pattern: Some("**/*.txt".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -468,6 +794,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "uppercase".to_string(),
             include_pattern: Some("**/*.txt".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: true,
         };
@@ -482,6 +809,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "LOWERCASE".to_string(),
             include_pattern: Some("**/*.txt".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: true,
         };
@@ -497,6 +825,7 @@ mod tests {
         let input = GrepToolInput {
             regex: "lowercase".to_string(),
             include_pattern: Some("**/*.txt".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: true,
         };
@@ -594,10 +923,10 @@ mod tests {
     async fn test_grep_top_level_function(cx: &mut TestAppContext) {
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line at the top level of the file
         let input = GrepToolInput {
             regex: "This is at the top level".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -623,10 +952,10 @@ mod tests {
     async fn test_grep_function_body(cx: &mut TestAppContext) {
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line inside a function body
         let input = GrepToolInput {
             regex: "Function in nested module".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -654,10 +983,10 @@ mod tests {
     async fn test_grep_function_args_and_body(cx: &mut TestAppContext) {
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line with a function argument
         let input = GrepToolInput {
             regex: "second_arg".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -689,10 +1018,10 @@ mod tests {
         use unindent::Unindent;
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line inside an if block
         let input = GrepToolInput {
             regex: "Inside if block".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -719,10 +1048,10 @@ mod tests {
         use unindent::Unindent;
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line in the middle of a long function - should show message about remaining lines
         let input = GrepToolInput {
             regex: "Line 5".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -759,10 +1088,10 @@ mod tests {
         use unindent::Unindent;
         let project = setup_syntax_test(cx).await;
 
-        // Test: Line in the long function
         let input = GrepToolInput {
             regex: "Line 12".to_string(),
             include_pattern: Some("**/*.rs".to_string()),
+            path: None,
             offset: 0,
             case_sensitive: false,
         };
@@ -791,7 +1120,11 @@ mod tests {
         project: Entity<Project>,
         cx: &mut TestAppContext,
     ) -> String {
-        let tool = Arc::new(GrepTool { project });
+        let result_store: GrepResultStore = cx.new(|_cx| None);
+        let tool = Arc::new(GrepTool {
+            project,
+            result_store,
+        });
         let task = cx.update(|cx| {
             tool.run(
                 ToolInput::resolved(input),
@@ -876,6 +1209,7 @@ mod tests {
             GrepToolInput {
                 regex: "outside_function".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -894,6 +1228,7 @@ mod tests {
             GrepToolInput {
                 regex: "main".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -912,6 +1247,7 @@ mod tests {
             GrepToolInput {
                 regex: "special_configuration".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -929,6 +1265,7 @@ mod tests {
             GrepToolInput {
                 regex: "custom_metadata".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -947,6 +1284,7 @@ mod tests {
             GrepToolInput {
                 regex: "SECRET_KEY".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -964,6 +1302,7 @@ mod tests {
             GrepToolInput {
                 regex: "private_key_content".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -982,6 +1321,7 @@ mod tests {
             GrepToolInput {
                 regex: "sensitive_data".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -1000,6 +1340,7 @@ mod tests {
             GrepToolInput {
                 regex: "normal_file_content".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -1018,6 +1359,7 @@ mod tests {
             GrepToolInput {
                 regex: "outside_function".to_string(),
                 include_pattern: Some("../outside_project/**/*.rs".to_string()),
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -1111,6 +1453,7 @@ mod tests {
             GrepToolInput {
                 regex: "secret".to_string(),
                 include_pattern: None,
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },
@@ -1165,6 +1508,7 @@ mod tests {
             GrepToolInput {
                 regex: "secret".to_string(),
                 include_pattern: Some("worktree1/**/*.rs".to_string()),
+                path: None,
                 offset: 0,
                 case_sensitive: false,
             },

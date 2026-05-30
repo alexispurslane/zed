@@ -7,10 +7,11 @@ use project::Project;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::symbol_locator::{CodeActionStore, PendingCodeActions, SymbolLocator};
+use super::symbol_locator::{CodeActionStore, LineLocator, PendingCodeActions};
 use crate::{AgentTool, ToolCallEventStream, ToolInput};
 
-/// Gets the list of available code actions at a symbol location from the language server.
+/// Gets the list of available code actions at a specific line in a file from
+/// the language server.
 ///
 /// Code actions include quick fixes, refactorings, and other automated transformations
 /// suggested by the language server (e.g. "Add missing import", "Extract to function").
@@ -18,12 +19,12 @@ use crate::{AgentTool, ToolCallEventStream, ToolInput};
 /// Returns a numbered list of available actions. Use apply_code_action with the
 /// corresponding number to apply one.
 ///
-/// Before using this tool, use read_file or grep to find the exact symbol
-/// name and line number.
+/// You must specify the file path and the exact line number where you want
+/// to see code actions.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GetCodeActionsToolInput {
-    /// The symbol to get code actions for.
-    pub symbol: SymbolLocator,
+    /// The location to get code actions for.
+    pub location: LineLocator,
 }
 
 pub struct GetCodeActionsTool {
@@ -56,7 +57,11 @@ impl AgentTool for GetCodeActionsTool {
         _cx: &mut App,
     ) -> SharedString {
         if let Ok(input) = input {
-            format!("Get code actions for `{}`", input.symbol.symbol_name).into()
+            format!(
+                "Get code actions at {}:{}",
+                input.location.file_path, input.location.line
+            )
+            .into()
         } else {
             "Get code actions".into()
         }
@@ -76,11 +81,11 @@ impl AgentTool for GetCodeActionsTool {
                 .await
                 .map_err(|e| format!("Failed to receive tool input: {e}"))?;
 
-            let resolved = input.symbol.resolve(&project, cx).await?;
+            let (buffer, position) = input.location.resolve(&project, cx).await?;
 
             let actions_task = project.update(cx, |project, cx| {
-                let range = resolved.position..resolved.position;
-                project.code_actions(&resolved.buffer, range, None, cx)
+                let range = position..position;
+                project.code_actions(&buffer, range, None, cx)
             });
 
             let actions = actions_task
@@ -91,8 +96,8 @@ impl AgentTool for GetCodeActionsTool {
             if actions.is_empty() {
                 store.update(cx, |store, _cx| *store = None);
                 return Ok(format!(
-                    "No code actions available for '{}' at this location.",
-                    input.symbol.symbol_name
+                    "No code actions available at {}:{}.",
+                    input.location.file_path, input.location.line
                 ));
             }
 
@@ -109,7 +114,7 @@ impl AgentTool for GetCodeActionsTool {
             store.update(cx, |store, _cx| {
                 *store = Some(PendingCodeActions {
                     actions,
-                    buffer: resolved.buffer,
+                    buffer,
                 });
             });
 
